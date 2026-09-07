@@ -1,0 +1,21 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+packages/data/cache/
+packages/data/downloads/
+packages/data/out/
+
+# Claude Code local-only settings
+.claude/settings.local.json
