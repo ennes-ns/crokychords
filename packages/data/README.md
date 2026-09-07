@@ -68,7 +68,7 @@ Tokens are relative to the tonic of the mode the table belongs to.
 | Degree + quality | `I`, `ii`, `vii°`, `III+` | uppercase major/aug, lowercase minor/dim |
 | Borrowed root | `bVII`, `#iv°` | accidental of the borrowed root vs. the home scale |
 | Extension | `V7`, `IVmaj7`, `iiø7`, `vii°7`, `V9`, `V11`, `V13` | after the numeral |
-| Sus / add | `Vsus4`, `IVsus2`, `Iadd9` | after the extension |
+| Sus / add | `Vsus4`, `IVsus2`, `Iadd9`, `V7add6add11` | sus first, then adds ascending |
 | Secondary | `V/vi`, `V7/V`, `vii°/ii` | function first, then the target degree |
 | Inversion | `I/1`, `V7/3`, `V/vi/1` | always last: `/1` first, `/2` second, `/3` third |
 | Undecoded bits | `V7alt1`, `IVx4` | raw markers, see `sind.py`; rare |

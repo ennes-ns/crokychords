@@ -66,7 +66,8 @@ def test_alterations_and_adds():
     assert tok("major", 5, 8, 1) == "V7(b5)"
     assert tok("major", 5, 8, 34) == "V7(#5)(b13)"
     assert tok("major", 9) == "Iadd11"
-    assert tok("major", 17) == "I6"
+    assert tok("major", 17) == "Iadd6"
+    assert tok("major", 25, 8) == "Imaj7add6add11"
 
 
 def test_circle_of_fifths_borrow():

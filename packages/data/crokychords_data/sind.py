@@ -252,8 +252,8 @@ def to_token(chord: Chord, home_scale: str) -> str:
 def _suffixes(token: str, chord: Chord) -> str:
     for s in chord.sus:
         token += f"sus{s}"
-    for a in chord.adds:
-        token += "6" if a == 6 else f"add{a}"
+    for a in sorted(chord.adds):
+        token += f"add{a}"
     for bit, label in ALTERATIONS:
         if chord.alterations & bit:
             token += f"({label})"
