@@ -2,9 +2,12 @@
   "name": "crokychords",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "description": "Chord-progression editor with data-driven chord suggestions (Hookpad-style), on the road to a DAW MIDI plugin.",
   "packageManager": "pnpm@10.33.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "pnpm --filter @crokychords/web dev",
     "build": "pnpm -r build",
@@ -22,5 +25,10 @@
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.35.0",
     "vitest": "^3.2.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

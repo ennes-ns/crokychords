@@ -1,0 +1,5 @@
+# Project toolchain, managed by mise (https://mise.jdx.dev). Run `mise install` once.
+[tools]
+node = "22"
+pnpm = "10.33.0"
+uv = "latest"
