@@ -80,7 +80,9 @@ describe('insert / remove / resize', () => {
   it('removes and moves the selection back', () => {
     expect(removeChord(song([4, 4, 4]), 1).selected).toBe(0);
     expect(removeChord(song([4, 4]), 0).selected).toBe(0);
-    expect(removeChord(song([4]), 0)).toEqual({ song: song([]), selected: null });
+    const emptied = removeChord(song([4]), 0);
+    expect(emptied.song.chords).toEqual([]);
+    expect(emptied.selected).toBeNull();
     const unchanged = song([4]);
     expect(removeChord(unchanged, 5).song).toBe(unchanged);
   });

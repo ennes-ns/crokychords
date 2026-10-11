@@ -1,6 +1,6 @@
 # Spec: Tracks v1 — multi-channel "band" (rhythm, octave, MIDI channel per layer)
 
-Status: spec ready (2026-10-11). Owner: main session. Two PRs, in order:
+Status: part A done (2026-10-11), part B spec ready. Owner: main session. Two PRs, in order:
 **A** `packages/core` (implementer agent), then **B** `apps/web` (implementer agent).
 Depends on `core-v1` and `web-v1` being merged.
 
@@ -124,7 +124,9 @@ Algorithm for one chord `c` starting at beat `s` lasting `d` beats (rests produc
 2. For `k = 0, 1, 2, …` while `k * pattern.length < d`: for each step, `t = k*length + step.at`;
    if `t >= d` skip. Note length `len = step.length`; if `t + len > d` then `len = d - t` (`tail: 'cut'`).
    With `tail: 'sustain'`, additionally the last step that starts inside the chord is extended
-   so that `t + len = d`.
+   so that `t + len = d`, and a step at least as long as the pattern (`sustain`, `pad`,
+   `bass-whole`) is played once and held to the chord end instead of re-triggering every
+   repetition (so a 6-beat chord gives one 6-beat note).
 3. Resolve `step.notes` against the voicing: `chord` → upper tones (all but the bass element;
    for `root-only` → the single note), `bass` → element 0, `root` → root pitch class in
    `track.octave`, `fifth` → bass + 7 (if that pitch class is in the chord, else root), `top` →

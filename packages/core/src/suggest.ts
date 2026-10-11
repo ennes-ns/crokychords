@@ -209,15 +209,28 @@ export function suggestNext(
   return [];
 }
 
-/** The unigram row: the most common chords of the mode. */
+export interface PopularOptions {
+  /** default 12 */
+  limit?: number;
+  filter?: (token: string) => boolean;
+}
+
+/**
+ * The unigram row: the most common chords of the mode. The third argument is either the
+ * limit (default 12) or options with `limit` and `filter`; probabilities are normalised over
+ * the whole row before filter and limit, as in suggestNext.
+ */
 export function popularChords(
   table: NgramTable,
   mode: Mode,
-  limit = DEFAULT_SUGGESTION_LIMIT,
+  limitOrOpts: number | PopularOptions = {},
 ): Suggestion[] {
+  const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
   const modeTable = table.modes[mode];
   const row = modeTable === undefined ? undefined : lookup(modeTable, '');
-  return row === undefined ? [] : rankRow(row, [], undefined, limit);
+  return row === undefined
+    ? []
+    : rankRow(row, [], opts.filter, opts.limit ?? DEFAULT_SUGGESTION_LIMIT);
 }
 
 /** Hand-seeded starter table (major and minor) so the app works without a data build. */

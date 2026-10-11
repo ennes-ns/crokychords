@@ -20,10 +20,14 @@ pnpm --filter @crokychords/core build
 |--------|---------|
 | `theory` | `PitchClass`, `Mode`, `MODES`, `SCALES`, `Key`, `Degree`, `isMode`, `toPitchClass`, `degreePitch`, `pitchClassOf`, `noteName`, `keySignature`, `keyPrefersFlats`, `parseNoteName`, `midiNote` |
 | `chords` | `Chord`, `Quality`, `Extension`, `Alteration`, `Accidental`, `AppliedTarget`, `QUALITIES`, `EXTENSIONS`, `ALTERATIONS`, `isDiminishedExtension`, `chordIntervals`, `chordRootPitchClass`, `chordPitchClasses`, `chordBassPitchClass`, `chordName`, `voiceChord`, `VoicingOptions` |
+| `diatonic` | `diatonicQuality(degree, mode)`, `diatonicTriadToken(degree, mode)`, `isDiatonic(chordOrToken, mode)` |
 | `token` | `parseToken`, `formatToken`, `tryParseToken`, `isRestToken`, `REST_TOKEN`, `TokenError` |
 | `progression` | `Song`, `SongChord`, `createSong`, `validateSong`, `songKey`, `totalBeats`, `chordAtBeat`, `songTokens`, `serializeSong`, `deserializeSong`, `SongError`, `DEFAULT_SONG_TITLE` |
-| `suggest` | `NgramTable`, `NgramMode`, `NgramSource`, `NgramChordInfo`, `parseNgramTable`, `suggestNext`, `popularChords`, `Suggestion`, `SuggestOptions`, `seedTable`, `NgramTableError`, `DEFAULT_MIN_CONTEXT_COUNT`, `DEFAULT_SUGGESTION_LIMIT` |
-| `midi` | `songToMidi`, `MidiOptions`, `encodeVlq` |
+| `suggest` | `NgramTable`, `NgramMode`, `NgramSource`, `NgramChordInfo`, `parseNgramTable`, `suggestNext`, `popularChords`, `Suggestion`, `SuggestOptions`, `PopularOptions`, `seedTable`, `NgramTableError`, `DEFAULT_MIN_CONTEXT_COUNT`, `DEFAULT_SUGGESTION_LIMIT` |
+| `tracks` | `Track`, `TrackRole`, `TRACK_ROLES`, `TrackVoicing`, `Pattern`, `PatternStep`, `PatternTail`, `NoteSelector`, `NOTE_SELECTOR_NAMES`, `newTrackId`, `cloneTrack`, `clonePattern` |
+| `patterns` | `PATTERN_PRESETS`, `patternPreset`, `patternRoles`, `ROLE_DEFAULTS`, `RoleDefaults`, `DEFAULT_GATE`, `createTrack`, `DEFAULT_TRACKS` |
+| `render` | `renderTrack`, `renderSong`, `layoutPattern`, `NoteEvent`, `RenderOptions`, `StepOccurrence` |
+| `midi` | `songToMidi` (returns `Uint8Array<ArrayBuffer>`, a valid `BlobPart`), `MidiOptions`, `encodeVlq` |
 
 ```ts
 import { parseToken, chordName, voiceChord, suggestNext, seedTable } from '@crokychords/core';
@@ -62,3 +66,52 @@ suggestNext(table, 'dorian', ['i', 'IV'], { limit: 8, minContextCount: 20 });
 `suggestNext` uses stupid backoff: the longest context suffix (up to `maxContext`) whose row has
 at least `minContextCount` observations; the unigram row is the last resort. Probabilities are
 normalised over the whole row before `filter` and `limit`.
+
+`popularChords(table, mode, limit)` still takes a positional limit; pass
+`{ limit, filter }` instead to filter the unigram row (probabilities stay normalised over the
+whole row, as in `suggestNext`).
+
+## Tracks (the band)
+
+A song (schema 2) carries `tracks`: layers such as chords, bass, arpeggio and pad. Each track
+has its own MIDI channel (0-15), octave, voicing (`close` or `root-only`), velocity, gate,
+transpose, mute flag and a rhythm `Pattern`, so a DAW can route every channel to its own
+instrument. `createSong()` starts with `DEFAULT_TRACKS()` (Chords ch 0 `sustain`, Bass ch 1
+`bass-quarters`, Arp ch 2 `arp-up-8` muted); `createTrack(role, overrides)` applies a role's
+defaults (`ROLE_DEFAULTS`). Ids are `'trk-' + 8 base36 chars` from `Math.random` (inject a
+`random` function for deterministic ids). `validateSong` migrates schema-1 songs by adding the
+default tracks, and reports bad track fields with paths like `tracks[1].pattern.steps[2].at`.
+`serializeSong` writes schema 2 (a hand-built song object without `tracks` is written as
+schema 1 and migrated on load).
+
+A pattern restarts at every chord and loops while it fits; steps that start at or after the
+chord end are dropped and steps crossing it are cut (`tail: 'cut'`, the default). With
+`tail: 'sustain'` the step(s) starting last are extended to the chord end, and a step at least
+as long as the pattern is held across repetitions instead of re-triggered, so `sustain`, `pad`
+and `bass-whole` hold one note for a chord of any length. `layoutPattern(pattern, beats)`
+exposes this placement.
+
+`renderTrack(song, track)` and `renderSong(song, tracks)` turn a song into `NoteEvent`s
+(`trackId`, `channel`, `note`, `velocity`, `start` and `duration` in beats). Note selectors
+resolve against `voiceChord` with the bass and the upper voicing both in `track.octave`:
+`chord` = upper tones, `bass` = the bass note, `root` = the root in `track.octave`, `fifth` =
+bass + 7 when that pitch class is in the chord (else the root), `top` = the highest tone,
+`{ index }` = upper tone `index mod n`, `12 * floor(index / n)` higher (an 8-step arp over a
+triad climbs an octave). Velocity is `round(track.velocity * accent)` clamped to 1..127 and
+duration is the step length times `track.gate`. Transpose is applied last; notes outside
+0..127 are skipped. Muted tracks render nothing unless `{ includeMuted: true }`. `renderSong`
+sorts by start, then channel, then note (ties keep track order).
+
+`songToMidi` writes SMF format 1 when the song has tracks: track 0 is the conductor (song
+title or `trackName`, tempo, time and key signature), followed by one chunk per unmuted
+track (all with `includeMuted`) with a track name, a MIDI channel prefix (`FF 20`) and its
+notes on its channel. The format-0 options (`channel`, `velocity`, `gate`, `octave`,
+`bassOctave`) are ignored then. A song object without `tracks` still gets the format-0 file.
+
+```ts
+import { createSong, renderSong, songToMidi } from '@crokychords/core';
+
+const song = createSong({ chords: [{ token: 'I', beats: 4 }, { token: 'V7', beats: 4 }] });
+renderSong(song, song.tracks ?? []); // [{ trackId, channel: 0, note: 60, start: 0, ... }, ...]
+new Blob([songToMidi(song)], { type: 'audio/midi' }); // format 1, one track per layer
+```

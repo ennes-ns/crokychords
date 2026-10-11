@@ -1,25 +1,42 @@
 import { describe, expect, it } from 'vitest';
 import { voiceChord } from '../src/chords';
 import { encodeVlq, songToMidi } from '../src/midi';
+import { DEFAULT_TRACKS, createTrack, patternPreset } from '../src/patterns';
+import type { Song } from '../src/progression';
 import { createSong } from '../src/progression';
 import type { Mode } from '../src/theory';
+import { renderTrack } from '../src/render';
 import { parseToken } from '../src/token';
 import type { SmfEvent } from './smf-reader';
 import { decodeVlq, readSmf } from './smf-reader';
 
 const C = { tonic: 0, mode: 'major' } as const;
 
-const song = createSong({
-  title: 'Three chords',
-  tempo: 100,
-  meter: { beats: 3, unit: 4 },
-  chords: [
-    { token: 'I', beats: 2 },
-    { token: 'rest', beats: 1 },
-    { token: 'V7', beats: 1.5 },
-    { token: 'vi/1', beats: 2 },
-  ],
-});
+/** The same song as a schema-1 object (no tracks): songToMidi writes format 0 for it. */
+function schema1(s: Song): Song {
+  return {
+    schema: 1,
+    title: s.title,
+    key: s.key,
+    tempo: s.tempo,
+    meter: s.meter,
+    chords: s.chords,
+  };
+}
+
+const song = schema1(
+  createSong({
+    title: 'Three chords',
+    tempo: 100,
+    meter: { beats: 3, unit: 4 },
+    chords: [
+      { token: 'I', beats: 2 },
+      { token: 'rest', beats: 1 },
+      { token: 'V7', beats: 1.5 },
+      { token: 'vi/1', beats: 2 },
+    ],
+  }),
+);
 
 const meta = (events: SmfEvent[], type: number): SmfEvent | undefined =>
   events.find((e) => e.status === 0xff && e.metaType === type);
@@ -134,7 +151,8 @@ describe('songToMidi', () => {
 
   it('writes key signatures with the minor flag by mode', () => {
     const sig = (tonic: string, m: Mode): number[] | undefined =>
-      meta(readSmf(songToMidi(createSong({ key: { tonic, mode: m } }))).events, 0x59)?.data;
+      meta(readSmf(songToMidi(schema1(createSong({ key: { tonic, mode: m } })))).events, 0x59)
+        ?.data;
     expect(sig('D', 'major')).toEqual([2, 0]);
     expect(sig('F', 'major')).toEqual([0xff, 0]);
     expect(sig('C', 'minor')).toEqual([0xfd, 1]);
@@ -144,7 +162,7 @@ describe('songToMidi', () => {
   });
 
   it('encodes UTF-8 track names', () => {
-    const smfName = readSmf(songToMidi(createSong({ title: 'Café ♪ 🎹' })));
+    const smfName = readSmf(songToMidi(schema1(createSong({ title: 'Café ♪ 🎹' }))));
     const bytes = meta(smfName.events, 0x03)?.data ?? [];
     expect(bytes).toEqual([
       ...[0x43, 0x61, 0x66, 0xc3, 0xa9, 0x20],
@@ -154,7 +172,7 @@ describe('songToMidi', () => {
   });
 
   it('writes an empty song as meta events only', () => {
-    const empty = readSmf(songToMidi(createSong()));
+    const empty = readSmf(songToMidi(schema1(createSong())));
     expect(empty.events.map((e) => e.metaType)).toEqual([0x03, 0x51, 0x58, 0x59, 0x2f]);
     expect(empty.events[4]?.tick).toBe(0);
   });
@@ -166,5 +184,145 @@ describe('songToMidi', () => {
     expect(() => songToMidi(song, { gate: 1.5 })).toThrow(RangeError);
     expect(() => songToMidi(song, { ppq: 0 })).toThrow(RangeError);
     expect(() => songToMidi(song, { octave: 12 })).toThrow(RangeError);
+  });
+});
+
+describe('songToMidi with tracks (format 1)', () => {
+  let n = 0;
+  const band = DEFAULT_TRACKS(() => (n++ % 36) / 36); // Chords ch0, Bass ch1, Arp ch2 (muted)
+  const tracked = createSong({
+    title: 'Band',
+    tempo: 100,
+    meter: { beats: 3, unit: 4 },
+    chords: [
+      { token: 'I', beats: 4 },
+      { token: 'rest', beats: 1 },
+      { token: 'V7', beats: 2 },
+    ],
+    tracks: band,
+  });
+  const file = readSmf(songToMidi(tracked));
+  const status = (e: SmfEvent): number => e.status & 0xf0;
+  const channelOf = (e: SmfEvent): number => e.status & 0x0f;
+
+  it('writes a format 1 header: conductor plus one track per unmuted track', () => {
+    expect(file.format).toBe(1);
+    expect(file.trackCount).toBe(3);
+    expect(file.tracks).toHaveLength(3);
+    expect(file.ppq).toBe(480);
+    const all = readSmf(songToMidi(tracked, { includeMuted: true }));
+    expect(all.trackCount).toBe(4);
+  });
+
+  it('puts name, tempo, time and key signature in the conductor track only', () => {
+    const conductor = file.tracks[0]?.events ?? [];
+    expect(conductor.map((e) => [e.tick, e.metaType])).toEqual([
+      [0, 0x03],
+      [0, 0x51],
+      [0, 0x58],
+      [0, 0x59],
+      [7 * 480, 0x2f],
+    ]);
+    expect(String.fromCharCode(...(meta(conductor, 0x03)?.data ?? []))).toBe('Band');
+    expect(meta(conductor, 0x51)?.data).toEqual([0x09, 0x27, 0xc0]);
+    expect(meta(conductor, 0x58)?.data).toEqual([3, 2, 24, 8]);
+    const named = readSmf(songToMidi(tracked, { trackName: 'Conductor' })).tracks[0]?.events ?? [];
+    expect(String.fromCharCode(...(meta(named, 0x03)?.data ?? []))).toBe('Conductor');
+  });
+
+  it('starts every track with its name and a MIDI channel prefix', () => {
+    const heads = file.tracks.slice(1).map((t) => t.events.slice(0, 2));
+    expect(
+      heads.map(([name, prefix]) => [
+        String.fromCharCode(...(name?.data ?? [])),
+        name?.metaType,
+        prefix?.metaType,
+        prefix?.data,
+      ]),
+    ).toEqual([
+      ['Chords', 0x03, 0x20, [0]],
+      ['Bass', 0x03, 0x20, [1]],
+    ]);
+  });
+
+  it('writes the rendered notes on the track channel at the right ticks', () => {
+    for (const [i, track] of band.slice(0, 2).entries()) {
+      const events = file.tracks[i + 1]?.events ?? [];
+      const ons = events.filter((e) => status(e) === 0x90);
+      const offs = events.filter((e) => status(e) === 0x80);
+      expect(ons.every((e) => channelOf(e) === track.channel)).toBe(true);
+      expect(offs.every((e) => channelOf(e) === track.channel)).toBe(true);
+      const rendered = renderTrack(tracked, track);
+      expect(ons.map((e) => [e.tick, e.data[0], e.data[1]]).sort()).toEqual(
+        rendered.map((e) => [Math.round(e.start * 480), e.note, e.velocity]).sort(),
+      );
+      expect(offs.map((e) => [e.tick, e.data[0]]).sort()).toEqual(
+        rendered.map((e) => [Math.round((e.start + e.duration) * 480), e.note]).sort(),
+      );
+      expect(events[events.length - 1]).toMatchObject({ metaType: 0x2f, tick: 7 * 480 });
+    }
+    // Chords: the sustain pattern holds I for 4 beats * gate 0.9, V7 starts after the rest.
+    const chords = file.tracks[1]?.events ?? [];
+    expect(notesAt(chords, 0x90, 0)).toEqual([60, 64, 67]);
+    expect(notesAt(chords, 0x80, Math.round(4 * 0.9 * 480))).toEqual([60, 64, 67]);
+    expect(notesAt(chords, 0x90, 5 * 480)).toEqual(voiceChord(parseToken('V7'), C).slice(1));
+    // Bass: quarter notes on channel 1 (status 0x91), C2 then G2.
+    const bass = file.tracks[2]?.events ?? [];
+    expect(bass.filter((e) => e.status === 0x91).map((e) => [e.tick, e.data[0]])).toEqual([
+      [0, 36],
+      [480, 36],
+      [960, 36],
+      [1440, 36],
+      [2400, 43],
+      [2880, 43],
+    ]);
+  });
+
+  it('writes muted tracks only with includeMuted', () => {
+    const all = readSmf(songToMidi(tracked, { includeMuted: true }));
+    const arp = all.tracks[3]?.events ?? [];
+    expect(String.fromCharCode(...(arp[0]?.data ?? []))).toBe('Arp');
+    expect(arp[1]?.data).toEqual([2]);
+    expect(arp.filter((e) => e.status === 0x92)).toHaveLength(8 + 4);
+  });
+
+  it('ignores the format-0 voicing options when the song has tracks', () => {
+    const opts = { channel: 9, velocity: 10, gate: 0.1, octave: 2, bassOctave: 1 };
+    expect(songToMidi(tracked, opts)).toEqual(songToMidi(tracked));
+    expect(readSmf(songToMidi(tracked, { ppq: 96 })).ppq).toBe(96);
+  });
+
+  it('puts note-offs before note-ons when a note is re-triggered', () => {
+    const chords = createTrack('chords', { id: 'c', gate: 1, pattern: patternPreset('quarters') });
+    chords.pattern.steps = chords.pattern.steps.map((st) => ({ ...st, length: 1 }));
+    const legato = createSong({ chords: [{ token: 'I', beats: 2 }], tracks: [chords] });
+    const events = readSmf(songToMidi(legato)).tracks[1]?.events ?? [];
+    expect(events.filter((e) => e.tick === 480).map((e) => status(e))).toEqual([
+      0x80, 0x80, 0x80, 0x90, 0x90, 0x90,
+    ]);
+  });
+
+  it('writes a conductor-only file for an empty band', () => {
+    const empty = readSmf(
+      songToMidi(createSong({ chords: [{ token: 'I', beats: 4 }], tracks: [] })),
+    );
+    expect([empty.format, empty.trackCount]).toEqual([1, 1]);
+    expect(empty.events[empty.events.length - 1]).toMatchObject({ metaType: 0x2f, tick: 1920 });
+  });
+
+  it('returns a Uint8Array over its own ArrayBuffer (a valid BlobPart)', () => {
+    const bytes: Uint8Array<ArrayBuffer> = songToMidi(tracked);
+    expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
+    expect(bytes.byteOffset).toBe(0);
+    expect(bytes.buffer.byteLength).toBe(bytes.length);
+    expect(songToMidi(song).buffer.byteLength).toBe(songToMidi(song).length);
+  });
+
+  it('rejects an invalid track channel', () => {
+    const bad = createSong({
+      chords: tracked.chords,
+      tracks: [createTrack('bass', { channel: 16 })],
+    });
+    expect(() => songToMidi(bad)).toThrow(RangeError);
   });
 });

@@ -169,6 +169,17 @@ describe('popularChords', () => {
     expect(popularChords(table, 'major')).toHaveLength(4);
     expect(popularChords(table, 'minor', 5)).toEqual([]);
   });
+
+  it('accepts options with limit and filter (probabilities over the whole row)', () => {
+    expect(popularChords(table, 'major', { limit: 2 })).toEqual(popularChords(table, 'major', 2));
+    expect(popularChords(table, 'major', {})).toHaveLength(4);
+    expect(popularChords(table, 'major', { filter: (t) => t !== 'I', limit: 2 })).toEqual([
+      { token: 'IV', probability: 60 / 250, count: 60, contextUsed: [] },
+      { token: 'V', probability: 60 / 250, count: 60, contextUsed: [] },
+    ]);
+    expect(popularChords(table, 'major', { filter: () => false })).toEqual([]);
+    expect(popularChords(table, 'minor', { limit: 3 })).toEqual([]);
+  });
 });
 
 describe('seedTable', () => {

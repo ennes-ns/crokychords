@@ -15,13 +15,22 @@ export interface SmfEvent {
   data: number[];
 }
 
+export interface SmfTrack {
+  /** Declared byte length of the track chunk. */
+  length: number;
+  events: SmfEvent[];
+}
+
 export interface Smf {
   format: number;
   trackCount: number;
   ppq: number;
   /** Declared byte length of the first track chunk. */
   trackLength: number;
+  /** Events of the first track. */
   events: SmfEvent[];
+  /** Every track chunk, in file order. */
+  tracks: SmfTrack[];
 }
 
 class Reader {
@@ -63,17 +72,10 @@ class Reader {
   }
 }
 
-export function readSmf(bytes: Uint8Array): Smf {
-  const r = new Reader(bytes);
-  if (r.ascii(4) !== 'MThd') throw new Error('Missing MThd');
-  if (r.uint(4) !== 6) throw new Error('Header length must be 6');
-  const format = r.uint(2);
-  const trackCount = r.uint(2);
-  const ppq = r.uint(2);
+function readTrack(r: Reader): SmfTrack {
   if (r.ascii(4) !== 'MTrk') throw new Error('Missing MTrk');
-  const trackLength = r.uint(4);
-  const end = r.pos + trackLength;
-
+  const length = r.uint(4);
+  const end = r.pos + length;
   const events: SmfEvent[] = [];
   let tick = 0;
   while (r.pos < end) {
@@ -94,8 +96,27 @@ export function readSmf(bytes: Uint8Array): Smf {
       events.push({ tick, delta, status, data: r.take(size) });
     }
   }
-  if (r.pos !== end || end !== bytes.length) throw new Error('Track length mismatch');
-  return { format, trackCount, ppq, trackLength, events };
+  if (r.pos !== end) throw new Error('Track length mismatch');
+  const last = events[events.length - 1];
+  if (last?.metaType !== 0x2f) throw new Error('Track does not end with End of Track');
+  return { length, events };
+}
+
+/** Read a format 0 or format 1 file; every declared track chunk must be present and exact. */
+export function readSmf(bytes: Uint8Array): Smf {
+  const r = new Reader(bytes);
+  if (r.ascii(4) !== 'MThd') throw new Error('Missing MThd');
+  if (r.uint(4) !== 6) throw new Error('Header length must be 6');
+  const format = r.uint(2);
+  const trackCount = r.uint(2);
+  const ppq = r.uint(2);
+  if (format === 0 && trackCount !== 1) throw new Error('Format 0 must have one track');
+  const tracks: SmfTrack[] = [];
+  for (let i = 0; i < trackCount; i++) tracks.push(readTrack(r));
+  if (r.pos !== bytes.length) throw new Error('Trailing bytes after the last track');
+  const first = tracks[0];
+  if (first === undefined) throw new Error('No tracks');
+  return { format, trackCount, ppq, trackLength: first.length, events: first.events, tracks };
 }
 
 /** Decode a VLQ from a byte array (exported for testing the writer's encoder). */

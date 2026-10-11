@@ -1,11 +1,17 @@
 import type { VoicingOptions } from './chords';
 import { voiceChord } from './chords';
 import type { Song } from './progression';
-import { songKey } from './progression';
+import { songKey, totalBeats } from './progression';
+import { renderTrack } from './render';
 import type { Mode } from './theory';
 import { keySignature } from './theory';
 import { isRestToken, parseToken } from './token';
+import type { Track } from './tracks';
 
+/**
+ * `channel`, `velocity`, `bassOctave`, `octave` and `gate` only apply to songs without tracks
+ * (format 0); with tracks they come from each track.
+ */
 export interface MidiOptions {
   /** Ticks per quarter note, default 480. */
   ppq?: number;
@@ -19,8 +25,10 @@ export interface MidiOptions {
   octave?: number;
   /** 0 < gate <= 1: note length as a fraction of the chord's beats, default 0.98. */
   gate?: number;
-  /** Default: song.title. */
+  /** Name of the (conductor) track. Default: song.title. */
   trackName?: string;
+  /** Also write muted tracks (format 1), default false. */
+  includeMuted?: boolean;
 }
 
 const NOTE_OFF_VELOCITY = 64;
@@ -92,23 +100,11 @@ interface TimedEvent {
   bytes: number[];
 }
 
-/**
- * Standard MIDI File, format 0, one track. Running status is not used. One beat of the
- * song is one quarter note (`ppq` ticks); rests advance time only.
- */
-export function songToMidi(song: Song, opts: MidiOptions = {}): Uint8Array {
-  const ppq = checkInt('ppq', opts.ppq ?? 480, 1, 0x7fff);
-  const channel = checkInt('channel', opts.channel ?? 0, 0, 15);
-  const velocity = checkInt('velocity', opts.velocity ?? 96, 1, 127);
-  const gate = opts.gate ?? 0.98;
-  if (!(gate > 0 && gate <= 1)) throw new RangeError(`gate must be in (0, 1], got ${gate}`);
-  const voicing: VoicingOptions = {};
-  if (opts.bassOctave !== undefined) voicing.bassOctave = opts.bassOctave;
-  if (opts.octave !== undefined) voicing.octave = opts.octave;
-
+/** Track name, tempo, time signature and key signature at tick 0. */
+function conductorMeta(song: Song, trackName: string): number[] {
   const key = songKey(song);
   const meta: number[] = [];
-  const name = utf8(opts.trackName ?? song.title);
+  const name = utf8(trackName);
   meta.push(0, 0xff, 0x03, ...encodeVlq(name.length), ...name);
   const usPerQuarter = Math.round(60_000_000 / song.tempo);
   checkInt('microseconds per quarter', usPerQuarter, 1, 0xffffff);
@@ -120,7 +116,80 @@ export function songToMidi(song: Song, opts: MidiOptions = {}): Uint8Array {
   meta.push(0, 0xff, 0x58, 0x04, numerator, denominatorPower, 24, 8);
   const sf = keySignature(key);
   meta.push(0, 0xff, 0x59, 0x02, sf & 0xff, MINOR_FLAG_MODES.has(key.mode) ? 1 : 0);
+  return meta;
+}
 
+/** Track chunk body: `head` (delta-timed bytes at tick 0), the events, end of track at >= `end`. */
+function trackBody(head: readonly number[], events: TimedEvent[], end: number): number[] {
+  // Stable sort: note-offs before note-ons at the same tick, otherwise insertion order.
+  events.sort((a, b) => a.tick - b.tick || a.order - b.order);
+  const track = [...head];
+  let now = 0;
+  for (const e of events) {
+    track.push(...encodeVlq(e.tick - now), ...e.bytes);
+    now = e.tick;
+  }
+  track.push(...encodeVlq(Math.max(now, end) - now), 0xff, 0x2f, 0x00);
+  return track;
+}
+
+function chunk(body: readonly number[]): number[] {
+  return [0x4d, 0x54, 0x72, 0x6b, ...uint32(body.length), ...body];
+}
+
+function smf(
+  format: 0 | 1,
+  ppq: number,
+  tracks: readonly (readonly number[])[],
+): Uint8Array<ArrayBuffer> {
+  const bytes = [
+    ...[0x4d, 0x54, 0x68, 0x64, ...uint32(6), ...uint16(format), ...uint16(tracks.length)],
+    ...uint16(ppq),
+    ...tracks.flatMap(chunk),
+  ];
+  const out = new Uint8Array(new ArrayBuffer(bytes.length));
+  out.set(bytes);
+  return out;
+}
+
+function noteEvents(
+  channel: number,
+  note: number,
+  velocity: number,
+  on: number,
+  off: number,
+): TimedEvent[] {
+  checkInt('note', note, 0, 127);
+  return [
+    { tick: on, order: 1, bytes: [0x90 | channel, note, velocity] },
+    { tick: off, order: 0, bytes: [0x80 | channel, note, NOTE_OFF_VELOCITY] },
+  ];
+}
+
+/**
+ * Standard MIDI File. One beat of the song is one quarter note (`ppq` ticks); rests advance
+ * time only. Running status is not used; note-offs come before note-ons at the same tick.
+ *
+ * - Song with `tracks` (schema 2): format 1. Track 0 is the conductor (name, tempo, time and
+ *   key signature); then one track per unmuted track (all with `opts.includeMuted`) in song
+ *   order, each with a track name, a MIDI channel prefix and the events of renderTrack on
+ *   the track's channel.
+ * - Song without `tracks` (schema 1): format 0, one track, every chord voiced with
+ *   voiceChord and held for `beats * gate`.
+ */
+export function songToMidi(song: Song, opts: MidiOptions = {}): Uint8Array<ArrayBuffer> {
+  const ppq = checkInt('ppq', opts.ppq ?? 480, 1, 0x7fff);
+  if (song.tracks !== undefined) return multiTrackMidi(song, song.tracks, ppq, opts);
+
+  const channel = checkInt('channel', opts.channel ?? 0, 0, 15);
+  const velocity = checkInt('velocity', opts.velocity ?? 96, 1, 127);
+  const gate = opts.gate ?? 0.98;
+  if (!(gate > 0 && gate <= 1)) throw new RangeError(`gate must be in (0, 1], got ${gate}`);
+  const voicing: VoicingOptions = {};
+  if (opts.bassOctave !== undefined) voicing.bassOctave = opts.bassOctave;
+  if (opts.octave !== undefined) voicing.octave = opts.octave;
+
+  const key = songKey(song);
   const events: TimedEvent[] = [];
   let beat = 0;
   for (const chord of song.chords) {
@@ -130,28 +199,35 @@ export function songToMidi(song: Song, opts: MidiOptions = {}): Uint8Array {
     const length = Math.max(1, Math.round(chord.beats * gate * ppq));
     const notes = [...new Set(voiceChord(parseToken(chord.token), key, voicing))];
     for (const note of notes) {
-      checkInt('note', note, 0, 127);
-      events.push({ tick: start, order: 1, bytes: [0x90 | channel, note, velocity] });
-      events.push({
-        tick: start + length,
-        order: 0,
-        bytes: [0x80 | channel, note, NOTE_OFF_VELOCITY],
-      });
+      events.push(...noteEvents(channel, note, velocity, start, start + length));
     }
   }
-  // Stable sort: note-offs before note-ons at the same tick, otherwise insertion order.
-  events.sort((a, b) => a.tick - b.tick || a.order - b.order);
+  const head = conductorMeta(song, opts.trackName ?? song.title);
+  return smf(0, ppq, [trackBody(head, events, Math.round(beat * ppq))]);
+}
 
-  const track = [...meta];
-  let now = 0;
-  for (const e of events) {
-    track.push(...encodeVlq(e.tick - now), ...e.bytes);
-    now = e.tick;
+function multiTrackMidi(
+  song: Song,
+  tracks: readonly Track[],
+  ppq: number,
+  opts: MidiOptions,
+): Uint8Array<ArrayBuffer> {
+  const end = Math.round(totalBeats(song) * ppq);
+  const chunks = [trackBody(conductorMeta(song, opts.trackName ?? song.title), [], end)];
+  const includeMuted = opts.includeMuted === true;
+  for (const track of tracks) {
+    if (track.muted && !includeMuted) continue;
+    const channel = checkInt('track.channel', track.channel, 0, 15);
+    const name = utf8(track.name);
+    const head = [0, 0xff, 0x03, ...encodeVlq(name.length), ...name, 0, 0xff, 0x20, 0x01, channel];
+    const events: TimedEvent[] = [];
+    for (const e of renderTrack(song, track, { includeMuted: true })) {
+      const velocity = checkInt('track.velocity', e.velocity, 1, 127);
+      const on = Math.round(e.start * ppq);
+      const off = Math.max(on + 1, Math.round((e.start + e.duration) * ppq));
+      events.push(...noteEvents(channel, e.note, velocity, on, off));
+    }
+    chunks.push(trackBody(head, events, end));
   }
-  const end = Math.max(now, Math.round(beat * ppq));
-  track.push(...encodeVlq(end - now), 0xff, 0x2f, 0x00);
-
-  const header = [0x4d, 0x54, 0x68, 0x64, ...uint32(6), ...uint16(0), ...uint16(1), ...uint16(ppq)];
-  const trackHeader = [0x4d, 0x54, 0x72, 0x6b, ...uint32(track.length)];
-  return Uint8Array.from([...header, ...trackHeader, ...track]);
+  return smf(1, ppq, chunks);
 }
