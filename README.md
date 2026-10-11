@@ -1,10 +1,12 @@
+<p align="center"><img src="apps/web/public/brand/croky-wordmark.svg" alt="Croky Chords" width="720"></p>
+
 # Croky Chords
 
 A chord-progression editor with data-driven chord suggestions, in the spirit of
 [Hookpad](https://hookpad.hooktheory.com/)'s "Magic Chords", on the road to a DAW MIDI plugin.
 
-> **Status:** early scaffold. The root tooling exists; the packages below are planned but not yet
-> written. See [`docs/HANDOVER.md`](docs/HANDOVER.md) for the full plan and current state.
+> **Status:** core, data builders and the web editor are implemented (see `docs/ROADMAP.md`).
+> Multi-channel tracks ("band") are in progress. Start with [`docs/HANDOVER.md`](docs/HANDOVER.md).
 
 ## What it does (and will do)
 
@@ -66,11 +68,11 @@ probability of each following token. Major and minor keys have separate tables.
 
 The suggestion tables can be built from two sources:
 
-- **Hooktheory API** (`packages/data/hooktheory_fetch.py`). Uses the official
+- **Hooktheory API** (`packages/data/crokychords_data/hooktheory_fetch.py`). Uses the official
   [Trends API](https://www.hooktheory.com/api/trends/docs) with your own account; copy
   `.env.example` to `.env` and fill in `HOOKTHEORY_USERNAME` / `HOOKTHEORY_PASSWORD`. This is
   exactly the statistic Hookpad's Magic Chords shows. Rate-limited, so the script caches and backs off.
-- **Chordonomicon** (`packages/data/chordonomicon_build.py`). An open dataset of ~680k songs with
+- **Chordonomicon** (`packages/data/crokychords_data/chordonomicon_build.py`). An open dataset of ~680k songs with
   chord annotations. Chords are absolute (`C G Amin F`), so the script estimates each song's key and
   converts to Roman numerals before counting n-grams.
 
