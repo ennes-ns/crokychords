@@ -94,6 +94,10 @@ Details in `docs/DATA.md`.
 
 ## Development workflow
 
+The canonical remote is the owner's Forgejo on the mainframe (`git.nschouteren.nl`); GitHub
+(`ennes-ns/crokychords`) is a mirror used by cloud sessions. CI runs on both: `.github/workflows/ci.yml`
+and `.forgejo/workflows/ci.yml` are identical.
+
 This repo is developed with Claude Code. The main session plans and reviews; implementation agents
 work in small pull requests, and every PR gets a code review before merge. Conventions, agent
 definitions and skills live under `.claude/`. Start a new session by reading
