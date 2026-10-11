@@ -19,3 +19,6 @@ packages/data/out/
 
 # Claude Code local-only settings
 .claude/settings.local.json
+
+# Real suggestion tables (personal-use data)
+apps/web/public/data/*.json
