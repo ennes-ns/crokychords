@@ -126,7 +126,20 @@ h2 {
 }
 
 .toolbar .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.toolbar .brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.toolbar .brand-name b {
   color: var(--accent);
 }
 

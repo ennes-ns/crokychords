@@ -112,7 +112,15 @@ export function mountToolbar(root: HTMLElement, store: Store, actions: Actions):
   const tableBox = h('span', { class: 'table-status' });
 
   root.append(
-    h('span', { class: 'brand' }, 'Croky Chords'),
+    h(
+      'span',
+      { class: 'brand' },
+      h('img', {
+        class: 'brand-mark',
+        attrs: { src: '/brand/croky-mark.svg', alt: '', width: '28', height: '28' },
+      }),
+      h('span', { class: 'brand-name' }, h('b', {}, 'Croky'), 'Chords'),
+    ),
     title,
     group('Key', tonic, mode),
     group('BPM', tempo),
