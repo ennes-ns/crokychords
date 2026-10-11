@@ -19,7 +19,7 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 | `packages/data`: Hooktheory API fetcher + Chordonomicon builder | `DATA.md`, agent brief | done |
 | `apps/web` v1: grid, Magic panel, playback, .mid export, Web MIDI out | `specs/web-v1.md` | done |
 | Tracks v1 (A: core): pattern presets, per-track renderer, song schema 2, multi-track MIDI | `specs/tracks-v1.md` | done |
-| Tracks v1 (B: web): Band panel, per-track synth, per-channel Web MIDI, format-1 export | `specs/tracks-v1.md` | in progress |
+| Tracks v1 (B: web): Band panel, per-track synth, per-channel Web MIDI, format-1 export | `specs/tracks-v1.md` | done |
 | Brand: Croky logomark/wordmark/favicon, `BRAND.md` | `BRAND.md` | done |
 | Run a real Hooktheory API crawl with the owner's credentials; validate token mapping against the fixture | — | idea (needs `.env`) |
 

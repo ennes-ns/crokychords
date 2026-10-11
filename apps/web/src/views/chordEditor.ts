@@ -14,6 +14,8 @@ import {
   EXTENSIONS,
   QUALITIES,
   REST_TOKEN,
+  diatonicQuality,
+  diatonicTriadToken,
   formatToken,
   isDiminishedExtension,
   isRestToken,
@@ -23,7 +25,7 @@ import {
 import type { Actions } from '../actions';
 import { h, option, replaceChildren } from '../dom';
 import { MIN_BEATS, setChordBeats } from '../edit';
-import { DEGREES, diatonicQuality, diatonicTriadToken, tokenName } from '../music';
+import { DEGREES, tokenName } from '../music';
 import type { AppState, Store } from '../state';
 
 export type AppliedFunction = 'V' | 'IV' | 'vii°';
@@ -95,7 +97,7 @@ function targetFor(mode: Mode, target: Degree, accidental: Accidental): AppliedT
   return {
     target,
     targetAccidental: accidental,
-    targetQuality: accidental === 0 ? diatonicQuality(mode, target) : 'major',
+    targetQuality: accidental === 0 ? diatonicQuality(target, mode) : 'major',
   };
 }
 
@@ -244,7 +246,7 @@ export function mountChordEditor(root: HTMLElement, store: Store, actions: Actio
 
     if (isRestToken(current.token)) {
       const toChord = button('Make chord', 'rest', () =>
-        actions.setSelectedToken(diatonicTriadToken(song.key.mode, 1)),
+        actions.setSelectedToken(diatonicTriadToken(1, song.key.mode)),
       );
       return [
         head,

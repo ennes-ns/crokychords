@@ -1,25 +1,24 @@
 /**
  * Lookahead scheduler (Chris Wilson, "A Tale of Two Clocks"): a coarse timer wakes every
- * 25 ms and schedules every chord that starts within the next 100 ms on the precise audio
- * clock. Sinks (synth, Web MIDI) receive audio-clock times.
+ * 25 ms and schedules every note event (from core's `renderSong`) that starts within the next
+ * 100 ms on the precise audio clock. Sinks (synth, Web MIDI) receive audio-clock times.
  */
-import type { Song } from '@crokychords/core';
-import { isRestToken, songKey, tryParseToken, voiceChord } from '@crokychords/core';
+import type { NoteEvent, Song } from '@crokychords/core';
+import { renderSong, totalBeats } from '@crokychords/core';
 
 export const TICK_MS = 25;
 export const LOOKAHEAD_S = 0.1;
 /** Delay between pressing Play and the first note, so the first chord is not clipped. */
 export const START_DELAY_S = 0.06;
-/** Notes last this fraction of the chord (a tiny gap re-articulates repeated chords). */
-export const GATE = 0.98;
 
 export interface Clock {
   /** Seconds on the audio clock. */
   now(): number;
 }
 
-export interface ChordSink {
-  playChord(notes: readonly number[], time: number, duration: number): void;
+export interface NoteSink {
+  /** Play `event` at `time` (audio-clock seconds) for `duration` seconds. */
+  playNote(event: NoteEvent, time: number, duration: number): void;
   stopAll(): void;
 }
 
@@ -28,26 +27,21 @@ export interface Timer {
   clearInterval(id: number): void;
 }
 
-export interface PlannedChord {
-  index: number;
-  start: number;
-  beats: number;
-  notes: number[];
+/** The song as note events in beats (unmuted tracks, sorted by start) and its length. */
+export function planSong(song: Song): { events: NoteEvent[]; total: number } {
+  return { events: renderSong(song, song.tracks ?? []), total: totalBeats(song) };
 }
 
-/** The song as note events in beats; rests and unparseable tokens only advance time. */
-export function planSong(song: Song): { events: PlannedChord[]; total: number } {
-  const key = songKey(song);
-  const events: PlannedChord[] = [];
-  let beat = 0;
-  song.chords.forEach((c, index) => {
-    const chord = isRestToken(c.token) ? undefined : tryParseToken(c.token);
-    if (chord !== undefined) {
-      events.push({ index, start: beat, beats: c.beats, notes: voiceChord(chord, key) });
-    }
-    beat += c.beats;
-  });
-  return { events, total: beat };
+/** Index of the first event starting at or after `beat` (events sorted by start). */
+export function firstEventAt(events: readonly NoteEvent[], beat: number): number {
+  let lo = 0;
+  let hi = events.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((events[mid]?.start ?? Infinity) < beat) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 export interface StartOptions {
@@ -57,11 +51,11 @@ export interface StartOptions {
 
 export class Scheduler {
   readonly #clock: Clock;
-  readonly #sinks: () => readonly ChordSink[];
+  readonly #sinks: () => readonly NoteSink[];
   readonly #timer: Timer;
 
   #timerId: number | null = null;
-  #events: PlannedChord[] = [];
+  #events: NoteEvent[] = [];
   #total = 0;
   #loop = false;
   #secondsPerBeat = 0.5;
@@ -74,7 +68,7 @@ export class Scheduler {
   /** Called once when a non-looping song has played to its end. */
   onEnd: (() => void) | null = null;
 
-  constructor(clock: Clock, sinks: () => readonly ChordSink[], timer?: Timer) {
+  constructor(clock: Clock, sinks: () => readonly NoteSink[], timer?: Timer) {
     this.#clock = clock;
     this.#sinks = sinks;
     this.#timer = timer ?? {
@@ -85,6 +79,10 @@ export class Scheduler {
 
   get playing(): boolean {
     return this.#timerId !== null;
+  }
+
+  get secondsPerBeat(): number {
+    return this.#secondsPerBeat;
   }
 
   start(song: Song, options: StartOptions = {}): void {
@@ -111,7 +109,10 @@ export class Scheduler {
     this.#loop = loop;
   }
 
-  /** Follow edits while playing: re-anchor at the current position with the new tempo. */
+  /**
+   * Follow edits while playing (chords, tempo, tracks): re-render the events and re-anchor at
+   * the current position with the new tempo. Already scheduled notes keep sounding.
+   */
   update(song: Song): void {
     if (!this.playing) return;
     const now = this.#clock.now();
@@ -145,15 +146,17 @@ export class Scheduler {
     if (until <= this.#scheduledUntil) return;
 
     const sinks = this.#sinks();
+    const events = this.#events;
     let pass = Math.floor(this.#scheduledUntil / this.#total);
     while (pass * this.#total < until) {
+      // Looping restarts the event list: pass k plays every event shifted by k song lengths.
       const offset = pass * this.#total;
-      for (const event of this.#events) {
-        const beat = offset + event.start;
-        if (beat < this.#scheduledUntil || beat >= until) continue;
-        const time = this.#timeAt(beat);
-        const duration = event.beats * GATE * this.#secondsPerBeat;
-        for (const sink of sinks) sink.playChord(event.notes, time, duration);
+      for (let i = firstEventAt(events, this.#scheduledUntil - offset); i < events.length; i++) {
+        const event = events[i];
+        if (event === undefined || offset + event.start >= until) break;
+        const time = this.#timeAt(offset + event.start);
+        const duration = event.duration * this.#secondsPerBeat;
+        for (const sink of sinks) sink.playNote(event, time, duration);
       }
       if (!this.#loop) break;
       pass += 1;

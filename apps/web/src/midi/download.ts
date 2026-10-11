@@ -12,8 +12,9 @@ export function midiFileName(title: string): string {
   return `${base === '' ? DEFAULT_SONG_TITLE : base}.mid`;
 }
 
+/** The song as a Standard MIDI File: format 1 with one track per unmuted layer. */
 export function midiBlob(song: Song): Blob {
-  return new Blob([new Uint8Array(songToMidi(song))], { type: 'audio/midi' });
+  return new Blob([songToMidi(song)], { type: 'audio/midi' });
 }
 
 /** Download the song as a Standard MIDI File through a temporary <a download>. */

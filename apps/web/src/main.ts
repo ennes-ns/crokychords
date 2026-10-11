@@ -8,6 +8,7 @@ import { keyAction } from './keyboard';
 import { MidiOut, browserMidiAccess } from './midi/webmidi';
 import { browserStorage, loadSong, persistSongs } from './persist';
 import { Store, initialState } from './state';
+import { mountBand } from './views/band';
 import { mountChordEditor } from './views/chordEditor';
 import { mountGrid } from './views/grid';
 import { mountSuggest } from './views/suggest';
@@ -25,6 +26,7 @@ function boot(app: HTMLElement): void {
   const toolbar = h('header');
   const grid = h('section');
   const editor = h('section');
+  const band = h('section');
   const suggest = h('aside');
   const overlay = h(
     'button',
@@ -33,12 +35,13 @@ function boot(app: HTMLElement): void {
   );
   app.append(
     toolbar,
-    h('main', { class: 'workspace' }, h('div', { class: 'left' }, grid, editor), suggest),
+    h('main', { class: 'workspace' }, h('div', { class: 'left' }, grid, editor, band), suggest),
     overlay,
   );
   mountToolbar(toolbar, store, actions);
   mountGrid(grid, store, actions);
   mountChordEditor(editor, store, actions);
+  mountBand(band, store, actions, storage);
   mountSuggest(suggest, store, actions);
 
   // Browsers only start audio from a user gesture: the first click or key press does it.

@@ -59,3 +59,24 @@ export function browserStorage(): SongStorage | null {
     return null;
   }
 }
+
+export const BAND_OPEN_KEY = 'crokychords.bandOpen';
+
+/** Whether the Band panel is expanded (default: open). */
+export function loadBandOpen(storage: SongStorage | null): boolean {
+  if (storage === null) return true;
+  try {
+    return storage.getItem(BAND_OPEN_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function saveBandOpen(storage: SongStorage | null, open: boolean): void {
+  if (storage === null) return;
+  try {
+    storage.setItem(BAND_OPEN_KEY, String(open));
+  } catch {
+    // Not worth a warning: the panel just opens in its default state next time.
+  }
+}

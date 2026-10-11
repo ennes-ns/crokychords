@@ -40,6 +40,12 @@ describe('keyAction', () => {
     expect(keyAction(press('a'))).toBeNull();
   });
 
+  it('maps M to muting the selected track', () => {
+    expect(keyAction(press('m'))).toEqual({ type: 'toggleMute' });
+    expect(keyAction(press('M', { shiftKey: true }))).toEqual({ type: 'toggleMute' });
+    expect(keyAction(press('m', { ctrlKey: true }))).toBeNull();
+  });
+
   it('maps undo and redo on Ctrl and Cmd', () => {
     expect(keyAction(press('z', { ctrlKey: true }))).toEqual({ type: 'undo' });
     expect(keyAction(press('z', { metaKey: true }))).toEqual({ type: 'undo' });

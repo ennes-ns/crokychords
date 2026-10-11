@@ -8,7 +8,8 @@ export type KeyAction =
   | { type: 'togglePlay' }
   | { type: 'deselect' }
   | { type: 'undo' }
-  | { type: 'redo' };
+  | { type: 'redo' }
+  | { type: 'toggleMute' };
 
 export interface KeyLike {
   key: string;
@@ -49,6 +50,8 @@ export function keyAction(e: KeyLike): KeyAction | null {
   if (e.code === 'BracketRight' || e.key === ']' || e.key === '}') {
     return { type: 'resize', delta: e.shiftKey ? 0.25 : 1 };
   }
+
+  if (key === 'm') return { type: 'toggleMute' };
 
   switch (e.key) {
     case 'Backspace':

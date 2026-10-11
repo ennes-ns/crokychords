@@ -1,28 +1,35 @@
+import type { Mode } from '@crokychords/core';
+import { diatonicQuality, diatonicTriadToken, formatToken, isDiatonic } from '@crokychords/core';
 import { describe, expect, it } from 'vitest';
 import {
   DEGREES,
   colorDegree,
   degreeHue,
-  diatonicQuality,
-  diatonicTriadToken,
   isCanonicalToken,
-  isDiatonic,
   tokenName,
+  triadChord,
 } from '../src/music';
 
-describe('diatonic triads', () => {
+describe('triadChord', () => {
+  it('builds a plain root-position triad', () => {
+    expect(formatToken(triadChord(2, 'minor'))).toBe('ii');
+    expect(formatToken(triadChord(7, 'dim'))).toBe('vii°');
+    expect(triadChord(5, 'major')).toMatchObject({ degree: 5, inversion: 0, extension: 'none' });
+  });
+});
+
+// The web app relies on core's diatonic helpers with the (degree, mode) argument order for the
+// 1-7 keys, the chord editor and the diatonic filter.
+describe('diatonic triads (core, as used by the web app)', () => {
   it('follows the Hookpad numeral conventions per mode', () => {
-    const tokens = (mode: Parameters<typeof diatonicTriadToken>[0]) =>
-      ([1, 2, 3, 4, 5, 6, 7] as const).map((d) => diatonicTriadToken(mode, d));
+    const tokens = (mode: Mode) => DEGREES.map((d) => diatonicTriadToken(d, mode));
     expect(tokens('major')).toEqual(['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']);
     expect(tokens('minor')).toEqual(['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII']);
     expect(tokens('harmonicMinor')).toEqual(['i', 'ii°', 'III+', 'iv', 'V', 'VI', 'vii°']);
     expect(tokens('dorian')).toEqual(['i', 'ii', 'III', 'IV', 'v', 'vi°', 'VII']);
-    expect(diatonicQuality('phrygianDominant', 1)).toBe('major');
+    expect(diatonicQuality(1, 'phrygianDominant')).toBe('major');
   });
-});
 
-describe('isDiatonic', () => {
   it('checks every chord tone against the scale', () => {
     expect(isDiatonic('vi7', 'major')).toBe(true);
     expect(isDiatonic('IVmaj7', 'major')).toBe(true);

@@ -1,6 +1,6 @@
-import { createSong } from '@crokychords/core';
+import { createSong, createTrack } from '@crokychords/core';
 import { describe, expect, it, vi } from 'vitest';
-import { HISTORY_LIMIT, Store, activeTable, initialState } from '../src/state';
+import { HISTORY_LIMIT, Store, activeTable, clampTrackSelection, initialState } from '../src/state';
 import { seedTable } from '@crokychords/core';
 
 function songWith(...tokens: string[]) {
@@ -77,6 +77,28 @@ describe('Store', () => {
     store.commit(store.state.song, {}, { base });
     store.undo();
     expect(store.state.song).toBe(base);
+  });
+});
+
+describe('track selection', () => {
+  it('starts empty and is cleared by undo when the track disappears', () => {
+    const base = songWith('I');
+    expect(initialState(base).selectedTrack).toBeNull();
+    const extra = createTrack('pad', { id: 'trk-extra', channel: 3 });
+    const withExtra = { ...base, tracks: [...(base.tracks ?? []), extra] };
+    const store = new Store(initialState(base));
+    store.commit(withExtra, { selectedTrack: 'trk-extra' });
+    expect(store.state.selectedTrack).toBe('trk-extra');
+    store.undo();
+    expect(store.state.selectedTrack).toBeNull();
+  });
+
+  it('clampTrackSelection keeps existing ids only', () => {
+    const song = songWith('I');
+    const id = song.tracks?.[1]?.id ?? '';
+    expect(clampTrackSelection(id, song)).toBe(id);
+    expect(clampTrackSelection('gone', song)).toBeNull();
+    expect(clampTrackSelection(null, song)).toBeNull();
   });
 });
 

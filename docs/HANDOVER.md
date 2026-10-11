@@ -1,5 +1,9 @@
 # Handover: Croky Chords (Hookpad-achtige chord tool → DAW MIDI plugin)
 
+> **Update 2026-10-11:** fase 0 en 1 zijn af (core 408 tests, data 236, web 135), plus Tracks v1
+> (multi-channel band) en het Croky-logo. Zie `docs/ROADMAP.md` voor de actuele status en
+> `docs/specs/` voor de specs. De rest van dit document is de oorspronkelijke handover.
+
 Datum: 2026-09-07. Branch: `claude/hookpad-magic-chords-tool-jlqq58`.
 Geschreven door de cloud-sessie van Claude Code, bedoeld om verder te gaan in een
 **lokale** Claude Code-sessie (daar werkt de Claude-in-Chrome browser-extensie wel).

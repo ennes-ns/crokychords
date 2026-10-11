@@ -1,4 +1,4 @@
-/** Web MIDI output: device list, chords with timestamps, all-notes-off. */
+/** Web MIDI output: device list, notes per channel with timestamps, all-notes-off. */
 import type { MidiPortInfo } from '../state';
 
 /** The parts of the Web MIDI API we use (lets tests pass a fake). */
@@ -37,11 +37,8 @@ export class MidiOut {
   readonly #request: RequestMidiAccess | null;
   #access: MidiAccessLike | null = null;
   #outputId: string | null = null;
-  /** Notes sent since the last all-notes-off, so Stop can release them explicitly. */
-  #sounding = new Set<number>();
-
-  channel = 0;
-  velocity = 96;
+  /** Notes sent per channel since the last all-notes-off, so Stop can release them explicitly. */
+  #sounding = new Map<number, Set<number>>();
 
   /** Called with the current outputs whenever a device appears or disappears. */
   onOutputsChange: ((outputs: MidiPortInfo[]) => void) | null = null;
@@ -75,6 +72,7 @@ export class MidiOut {
     return list;
   }
 
+  /** Switch ports; the old port gets an all-notes-off on every channel we played on. */
   select(id: string | null): void {
     if (id !== this.#outputId) this.allNotesOff();
     this.#outputId = id;
@@ -84,32 +82,71 @@ export class MidiOut {
     return this.#output() === null ? null : this.#outputId;
   }
 
-  /** Note on at `time`, note off `durationMs` later (DOMHighResTimeStamp, performance.now clock). */
-  playChord(notes: readonly number[], time: number, durationMs: number): void {
-    const out = this.#output();
-    if (out === null) return;
-    const on = NOTE_ON | this.channel;
-    const off = NOTE_OFF | this.channel;
-    for (const note of notes) {
-      out.send([on, note, this.velocity], time);
-      this.#sounding.add(note);
-    }
-    for (const note of notes) out.send([off, note, 0], time + durationMs);
+  /** Channels (0-15) that received note-ons since the last all-notes-off, ascending. */
+  get usedChannels(): number[] {
+    return [...this.#sounding.keys()].sort((a, b) => a - b);
   }
 
-  /** Drop pending messages, release every note we sent and send All Notes Off (CC 123). */
-  allNotesOff(): void {
+  /**
+   * Note on at `time`, note off `durationMs` later (DOMHighResTimeStamp, performance.now
+   * clock), on MIDI channel `channel` (0-15) with `velocity` (1-127).
+   */
+  playNote(
+    channel: number,
+    note: number,
+    velocity: number,
+    time: number,
+    durationMs: number,
+  ): void {
     const out = this.#output();
     if (out === null) return;
+    const ch = channel & 0x0f;
+    out.send([NOTE_ON | ch, note & 0x7f, Math.min(127, Math.max(1, Math.round(velocity)))], time);
+    out.send([NOTE_OFF | ch, note & 0x7f, 0], time + durationMs);
+    let notes = this.#sounding.get(ch);
+    if (notes === undefined) {
+      notes = new Set();
+      this.#sounding.set(ch, notes);
+    }
+    notes.add(note & 0x7f);
+  }
+
+  /**
+   * Silence one channel now without dropping other pending messages (a track changed channel
+   * or was muted while playing): note-offs for the notes we sent there, All Sound Off (CC 120)
+   * and All Notes Off (CC 123).
+   */
+  channelOff(channel: number): void {
+    const out = this.#output();
+    if (out === null) return;
+    this.#channelOff(out, channel & 0x0f);
+  }
+
+  /**
+   * Stop: drop pending messages, then on every channel we sent notes on plus `channels` (the
+   * song's track channels) release our notes and send CC 120 and CC 123.
+   */
+  allNotesOff(channels: Iterable<number> = []): void {
+    const out = this.#output();
+    if (out === null) {
+      this.#sounding.clear();
+      return;
+    }
     try {
       out.clear?.();
     } catch {
       // clear() is optional in the spec
     }
-    for (const note of this.#sounding) out.send([NOTE_OFF | this.channel, note, 0]);
+    const all = new Set([...this.#sounding.keys(), ...[...channels].map((c) => c & 0x0f)]);
+    for (const ch of [...all].sort((a, b) => a - b)) this.#channelOff(out, ch);
     this.#sounding.clear();
-    out.send([CONTROL_CHANGE | this.channel, ALL_SOUND_OFF, 0]);
-    out.send([CONTROL_CHANGE | this.channel, ALL_NOTES_OFF, 0]);
+  }
+
+  #channelOff(out: MidiOutputLike, ch: number): void {
+    for (const note of this.#sounding.get(ch) ?? []) out.send([NOTE_OFF | ch, note, 0]);
+    this.#sounding.delete(ch);
+    out.send([CONTROL_CHANGE | ch, ALL_SOUND_OFF, 0]);
+    out.send([CONTROL_CHANGE | ch, ALL_NOTES_OFF, 0]);
   }
 
   #output(): MidiOutputLike | null {

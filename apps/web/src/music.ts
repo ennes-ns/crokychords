@@ -1,12 +1,5 @@
 import type { Chord, Degree, Key, Mode, Quality } from '@crokychords/core';
-import {
-  SCALES,
-  chordName,
-  chordPitchClasses,
-  formatToken,
-  isRestToken,
-  tryParseToken,
-} from '@crokychords/core';
+import { chordName, formatToken, isRestToken, tryParseToken } from '@crokychords/core';
 
 export const DEGREES: readonly Degree[] = [1, 2, 3, 4, 5, 6, 7];
 
@@ -25,22 +18,7 @@ export const MODE_LABELS: Record<Mode, string> = {
 /** Tonic choices for the key picker (one spelling per pitch class). */
 export const TONICS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const;
 
-function step(mode: Mode, index: number): number {
-  const steps = SCALES[mode];
-  const value = steps[index % 7];
-  if (value === undefined) throw new RangeError(`Invalid scale index ${index}`);
-  return value + 12 * Math.floor(index / 7);
-}
-
-/** Quality of the diatonic triad on `degree` of `mode` (stacked thirds of the scale). */
-export function diatonicQuality(mode: Mode, degree: Degree): Quality {
-  const root = step(mode, degree - 1);
-  const third = step(mode, degree + 1) - root;
-  const fifth = step(mode, degree + 3) - root;
-  if (third === 4) return fifth === 8 ? 'aug' : 'major';
-  return fifth === 6 ? 'dim' : 'minor';
-}
-
+/** A plain triad (no extensions, root position) on `degree`. */
 export function triadChord(degree: Degree, quality: Quality): Chord {
   return {
     degree,
@@ -52,19 +30,6 @@ export function triadChord(degree: Degree, quality: Quality): Chord {
     alterations: [],
     inversion: 0,
   };
-}
-
-/** Token of the diatonic triad on `degree`, e.g. 'ii' in major, 'III' in minor, 'vii°'. */
-export function diatonicTriadToken(mode: Mode, degree: Degree): string {
-  return formatToken(triadChord(degree, diatonicQuality(mode, degree)));
-}
-
-/** True when every pitch class of the chord belongs to the scale of the mode. */
-export function isDiatonic(token: string, mode: Mode): boolean {
-  const chord = tryParseToken(token);
-  if (chord === undefined) return false;
-  const scale = new Set(SCALES[mode]);
-  return chordPitchClasses(chord, { tonic: 0, mode }).every((pc) => scale.has(pc));
 }
 
 /** Lead-sheet name of a token ('' for rests and unparseable tokens). */

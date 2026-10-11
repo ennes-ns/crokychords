@@ -1,17 +1,17 @@
 /** Magic Chords panel: next-chord suggestions from the active n-gram table. */
 import type { Mode, Song, Suggestion } from '@crokychords/core';
-import { isRestToken, songKey, suggestNext, tryParseToken } from '@crokychords/core';
-import type { Actions } from '../actions';
-import { h, replaceChildren } from '../dom';
 import {
-  DEGREES,
-  colorDegree,
-  degreeHue,
   diatonicTriadToken,
   isDiatonic,
-  MODE_LABELS,
-  tokenName,
-} from '../music';
+  isRestToken,
+  popularChords,
+  songKey,
+  suggestNext,
+  tryParseToken,
+} from '@crokychords/core';
+import type { Actions } from '../actions';
+import { h, replaceChildren } from '../dom';
+import { DEGREES, MODE_LABELS, colorDegree, degreeHue, tokenName } from '../music';
 import type { AppState, Store } from '../state';
 import { activeTable } from '../state';
 
@@ -62,7 +62,7 @@ export function computeSuggestions(
   });
 
   if (table.modes[mode] === undefined) {
-    const items = DEGREES.map((d) => diatonicTriadToken(mode, d)).map((token) => ({
+    const items = DEGREES.map((d) => diatonicTriadToken(d, mode)).map((token) => ({
       token,
       name: tokenName(token, key),
       probability: null,
@@ -75,11 +75,11 @@ export function computeSuggestions(
     };
   }
 
-  const context = suggestMode === 'popular' ? [] : suggestionContext(song, selected);
-  const suggestions = suggestNext(table, mode, context, {
-    limit: SUGGESTION_LIMIT,
-    filter: suggestionFilter(mode, diatonicOnly),
-  });
+  const options = { limit: SUGGESTION_LIMIT, filter: suggestionFilter(mode, diatonicOnly) };
+  const suggestions =
+    suggestMode === 'popular'
+      ? popularChords(table, mode, options)
+      : suggestNext(table, mode, suggestionContext(song, selected), options);
   const used = suggestions[0]?.contextUsed ?? [];
   return {
     items: suggestions.map(toItem),

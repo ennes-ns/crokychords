@@ -1,6 +1,6 @@
 # Spec: Tracks v1 — multi-channel "band" (rhythm, octave, MIDI channel per layer)
 
-Status: part A done (2026-10-11), part B spec ready. Owner: main session. Two PRs, in order:
+Status: parts A and B done (2026-10-11). Owner: main session. Two PRs, in order:
 **A** `packages/core` (implementer agent), then **B** `apps/web` (implementer agent).
 Depends on `core-v1` and `web-v1` being merged.
 
@@ -212,6 +212,16 @@ channel). Reorder with ▲▼ buttons. Keyboard: `M` toggles mute on the selecte
   channel map (e.g. "Chords ch1 · Bass ch2 · Arp ch3").
 - README: Bitwig setup (one instrument track per channel listening to the virtual port's
   channel N), Ableton (MIDI From → channel), Reaper (input filter by channel).
+
+### B4a. Implementation notes (as built)
+
+- Hover-audition renders the selected track's own pattern over a temporary 2-beat chord at
+  the song tempo (so the bass auditions as bass quarters, the arp as an arpeggio); a muted
+  selected track is still used for auditions because it was picked on purpose.
+- Each preset is listed once in the pattern select, under its first role hint.
+- "New" keeps the band (its DAW routing) and only clears the chords.
+- Changing channel, muting or removing a track sends CC 120/123 on the old channel unless
+  another unmuted track still uses it.
 
 ### B5. Done (PR B)
 

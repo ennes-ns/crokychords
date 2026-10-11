@@ -2,6 +2,8 @@
 import type { Mode } from '@crokychords/core';
 import { MODES, parseNoteName, toPitchClass } from '@crokychords/core';
 import type { Actions } from '../actions';
+import { channelMap, channelMapLabel, songTracks } from '../band';
+import type { Child } from '../dom';
 import { h, option, replaceChildren } from '../dom';
 import { MODE_LABELS, TONICS } from '../music';
 import type { AppState, Store } from '../state';
@@ -109,6 +111,7 @@ export function mountToolbar(root: HTMLElement, store: Store, actions: Actions):
   );
 
   const midiBox = h('span', { class: 'midi' });
+  const channelBox = h('span', { class: 'channel-map', attrs: { 'aria-label': 'MIDI channels' } });
   const tableBox = h('span', { class: 'table-status' });
 
   root.append(
@@ -128,7 +131,7 @@ export function mountToolbar(root: HTMLElement, store: Store, actions: Actions):
     h('span', { class: 'group' }, play, h('label', { class: 'check' }, loop, ' Loop')),
     h('span', { class: 'group' }, undo, redo),
     h('span', { class: 'group' }, newSong, exportMidi),
-    midiBox,
+    h('span', { class: 'group' }, midiBox, channelBox),
     tableBox,
   );
 
@@ -164,6 +167,27 @@ export function mountToolbar(root: HTMLElement, store: Store, actions: Actions):
     replaceChildren(midiBox, select);
   };
 
+  let channelKey: unknown = null;
+  const renderChannels = (state: AppState): void => {
+    const tracks = songTracks(state.song);
+    if (tracks === channelKey) return;
+    channelKey = tracks;
+    channelBox.title = `${channelMapLabel(tracks)}\nEvery track sends on its own MIDI channel.`;
+    const items: Child[] = [];
+    channelMap(tracks).forEach((item, i) => {
+      if (i > 0) items.push(h('span', { class: 'sep', attrs: { 'aria-hidden': 'true' } }, '·'));
+      items.push(
+        h(
+          'span',
+          { class: item.muted ? 'channel muted' : 'channel' },
+          `${item.name} `,
+          h('b', {}, `ch${item.channel}`),
+        ),
+      );
+    });
+    replaceChildren(channelBox, ...items);
+  };
+
   const render = (state: AppState): void => {
     const { song } = state;
     if (document.activeElement !== title && title.value !== song.title) title.value = song.title;
@@ -179,6 +203,7 @@ export function mountToolbar(root: HTMLElement, store: Store, actions: Actions):
     undo.disabled = !store.canUndo;
     redo.disabled = !store.canRedo;
     renderMidi(state);
+    renderChannels(state);
 
     const table = activeTable(state);
     tableBox.className = `table-status ${state.tableStatus}`;

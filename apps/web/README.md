@@ -31,7 +31,8 @@ Firefox after its site-permission prompt; Safari has no Web MIDI.
 | `Shift+[` / `Shift+]` | ... by a quarter beat |
 | `Space` | Play / stop (from the selected chord, or from the start) |
 | `Esc` | Deselect (or leave a text field) |
-| `Ctrl/Cmd+Z` | Undo (50 steps, song edits only) |
+| `M` | Mute / unmute the selected track (Band panel) |
+| `Ctrl/Cmd+Z` | Undo (50 steps, song edits only, including track edits) |
 | `Ctrl/Cmd+Shift+Z`, `Ctrl+Y` | Redo |
 
 Mouse: click a chord to select it; drag the right edge of the selected chord to resize it (snaps
@@ -42,12 +43,43 @@ nothing is selected); **Popular** shows the most common chords of the mode. The 
 below the grid changes degree, accidental, quality, extension, sus, adds, alterations, inversion
 and applied (secondary) function; only combinations with a valid token are offered.
 
+## Band / tracks
+
+The **Band** panel under the chord editor (click its title to collapse it; the app remembers
+the state in `localStorage` as `crokychords.bandOpen`) lists the layers that play the
+progression. A new song starts with three: **Chords** (channel 1, sustained), **Bass**
+(channel 2, quarter notes) and **Arp** (channel 3, eighth-note arpeggio, muted). Every row has:
+
+| Control | What it does |
+|---------|--------------|
+| Mute | Silences the track in playback, auditions fall back to another track, export skips it |
+| Name | Track name (also the track name in the exported MIDI file) |
+| Role | chords, bass, arp, pad or custom: picks the browser timbre. Changing it does **not** touch the other fields; click **apply defaults** to take the role's octave, pattern and velocity |
+| Pattern | Rhythm preset, grouped by role (sustain, half notes, pop ballad, bass root–fifth, arp up 1/16, ...). A pattern that is not a preset shows as a read-only *Custom* label |
+| Oct | Octave of the lowest voiced note (C4 = 4), -1..9 |
+| Ch | MIDI channel 1–16 |
+| Velocity, Gate | Note velocity 1–127 and the sounding fraction of each step (10–100 %) |
+| Transp. | Transpose in semitones, -24..24 |
+| ▲ ▼ ✕ | Reorder, remove (undo brings it back) |
+
+**+ Add track** adds a track of the chosen role with that role's defaults on the next free
+channel. Click a row to select it: `M` mutes it and Magic Chords auditions (hover a
+suggestion, arrow keys, the chord editor) play through it, with its pattern, octave and
+channel; without a selection they use the first unmuted track. The toolbar shows the channel
+map next to the MIDI-out control (`Chords ch1 · Bass ch2 · Arp ch3`, muted tracks struck
+through). In the browser each role has its own synth timbre (chords: detuned saws, bass:
+triangle plus a sub sine, arp: plucky square, pad: slow saw). Track edits are part of the song,
+so undo/redo and the saved song include them; songs saved by older versions get the default
+band when they are loaded.
+
 ## Sending MIDI to a DAW
 
-Click **Enable MIDI out** in the toolbar, then pick an output port. Playback and auditions are
-sent on channel 1 with the same timing as the built-in synth; **Stop** sends note-offs and
-All Notes Off (CC 123). To record in a DAW you need a virtual MIDI port that the browser writes
-to and the DAW reads from:
+Click **Enable MIDI out** in the toolbar, then pick an output port. Every track sends on its own
+MIDI channel (the **Ch** column) with its own velocity, with the same timing as the built-in
+synth. **Stop** sends note-offs, All Sound Off (CC 120) and All Notes Off (CC 123) on every
+channel in use; moving, muting or removing a track during playback does the same on its old
+channel. To record in a DAW you need a virtual MIDI port that the browser writes to and the
+DAW reads from:
 
 - **Windows:** install [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html) and add
   a port. Select it in Croky Chords and enable it as a MIDI input in the DAW.
@@ -60,8 +92,27 @@ to and the DAW reads from:
   the DAW's input port. With PipeWire or JACK, `qpwgraph` / `qjackctl` can draw the same
   connection. Reload the page after creating ports if they do not show up.
 
-**Export MIDI** downloads a Standard MIDI File (`<title>.mid`, format 0, tempo, meter and key
-signature included) that any DAW can import.
+### One instrument per channel
+
+Because each track has its own channel, the DAW can give every layer its own instrument from
+the one virtual port:
+
+- **Bitwig Studio:** add the virtual port once as a *Generic MIDI Keyboard* controller
+  (*Settings* → *Controllers*). Then create one instrument track per Croky track and, in each
+  track's input chooser, pick that controller and the matching channel (*Ch. 2* for the bass);
+  arm or monitor the tracks you want to hear.
+- **Ableton Live:** on each MIDI track set *MIDI From* to the virtual port and the channel
+  selector below it to *Ch. N*; set *Monitor* to *In* (or arm the tracks) to play along.
+- **Reaper:** arm each track, right-click the record-arm button → *Input: MIDI* → the virtual
+  port → *Channel N* (instead of *All channels*), and turn record monitoring on.
+
+Make sure the DAW's own MIDI-thru or omni settings do not also send every channel to every
+track. Muted tracks send nothing.
+
+**Export MIDI** downloads a Standard MIDI File (`<title>.mid`, format 1): a conductor track
+with tempo, meter and key signature, then one track per unmuted layer with its name, a MIDI
+channel prefix and its notes on its channel. Most DAWs import it as one MIDI track per
+layer.
 
 ## Suggestion data (`ngrams.json`)
 

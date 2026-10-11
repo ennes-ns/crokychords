@@ -1,9 +1,25 @@
 /** Everything the views and the keyboard can do, wired to the store, audio and MIDI. */
-import type { Degree, Song } from '@crokychords/core';
-import { createSong, isRestToken, songKey, tryParseToken, voiceChord } from '@crokychords/core';
-import type { AudioEngine, ChordHandle } from './audio/synth';
-import type { ChordSink } from './audio/scheduler';
+import type { Degree, Song, TrackRole } from '@crokychords/core';
+import { createSong, diatonicTriadToken } from '@crokychords/core';
+import type { NoteSink } from './audio/scheduler';
 import { Scheduler } from './audio/scheduler';
+import type { AudioEngine, NoteHandle } from './audio/synth';
+import type { TrackPatch } from './band';
+import {
+  addTrack,
+  applyRoleDefaults,
+  auditionEvents,
+  auditionTrack,
+  channelsToSilence,
+  findTrack,
+  moveTrack,
+  removeTrack,
+  silencedTracks,
+  songTracks,
+  toggleMute,
+  trackChannels,
+  updateTrack,
+} from './band';
 import {
   chordStart,
   clampSelection,
@@ -16,11 +32,12 @@ import {
 import type { KeyAction } from './keyboard';
 import { downloadMidi } from './midi/download';
 import type { MidiOut } from './midi/webmidi';
-import { diatonicTriadToken } from './music';
 import type { Store } from './state';
+import { clampTrackSelection } from './state';
 import { computeSuggestions } from './views/suggest';
 
-export const AUDITION_MS = 600;
+/** Delay before an audition starts, so its attack is not clipped (seconds). */
+const AUDITION_DELAY_S = 0.01;
 
 export interface Actions {
   select(index: number | null): void;
@@ -31,13 +48,25 @@ export interface Actions {
   removeSelected(): void;
   resizeSelected(delta: number): void;
   setSelectedToken(token: string): void;
-  updateSong(song: Song): void;
+  /** Commit an edited song; `base` is the song to undo to (after previews). */
+  updateSong(song: Song, base?: Song): void;
+  /** Show and play an edited song without recording history (range drags). */
+  previewSong(song: Song): void;
+  selectTrack(id: string | null): void;
+  addTrack(role: TrackRole): void;
+  removeTrack(id: string): void;
+  moveTrack(id: string, delta: number): void;
+  updateTrack(id: string, patch: TrackPatch): void;
+  toggleMute(id: string): void;
+  /** Apply ROLE_DEFAULTS of the track's role (octave, pattern, velocity). */
+  applyRoleDefaults(id: string): void;
   newSong(): void;
   undo(): void;
   redo(): void;
   togglePlay(): void;
   stop(): void;
   setLoop(loop: boolean): void;
+  /** Play `token` through the selected track (fallback: the first unmuted track). */
   audition(token: string): void;
   enableMidi(): Promise<void>;
   selectMidiOut(id: string | null): void;
@@ -48,21 +77,35 @@ export interface Actions {
 }
 
 export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): Actions {
-  const synthSink: ChordSink = {
-    playChord: (notes, time, duration) => audio.synth?.playChord(notes, time, duration),
+  const roleOf = (trackId: string): TrackRole =>
+    findTrack(store.state.song, trackId)?.role ?? 'chords';
+  const synthSink: NoteSink = {
+    playNote: (event, time, duration) => {
+      audio.synth?.playNote(event.note, time, duration, {
+        role: roleOf(event.trackId),
+        velocity: event.velocity,
+        track: event.trackId,
+      });
+    },
     stopAll: () => audio.synth?.stopAll(),
   };
-  const midiSink: ChordSink = {
-    playChord: (notes, time, duration) =>
-      midi.playChord(notes, audio.toPerformanceTime(time), duration * 1000),
-    stopAll: () => midi.allNotesOff(),
+  const midiSink: NoteSink = {
+    playNote: (event, time, duration) =>
+      midi.playNote(
+        event.channel,
+        event.note,
+        event.velocity,
+        audio.toPerformanceTime(time),
+        duration * 1000,
+      ),
+    stopAll: () => midi.allNotesOff(trackChannels(songTracks(store.state.song))),
   };
   const scheduler = new Scheduler(
     { now: () => audio.context?.currentTime ?? performance.now() / 1000 },
     () => [synthSink, midiSink],
   );
   let frame: number | null = null;
-  let auditionHandle: ChordHandle | null = null;
+  let auditionHandle: NoteHandle | null = null;
 
   const follow = (): void => {
     const position = scheduler.position();
@@ -82,7 +125,14 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
   scheduler.onEnd = stopped;
 
   store.subscribe((state, previous) => {
-    if (state.song !== previous.song) scheduler.update(state.song);
+    if (state.song === previous.song) return;
+    scheduler.update(state.song);
+    const before = songTracks(previous.song);
+    const after = songTracks(state.song);
+    if (before === after) return;
+    // Tracks muted, removed or moved to another channel: cut what they still hold.
+    for (const id of silencedTracks(before, after)) audio.synth?.stopTrack(id);
+    for (const channel of channelsToSilence(before, after)) midi.channelOff(channel);
   });
 
   const commit = (song: Song, selected: number | null): void => {
@@ -103,13 +153,13 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     appendDefault() {
       const { song } = store.state;
       const top = computeSuggestions({ ...store.state, selected: null }).items[0];
-      const token = top?.token ?? diatonicTriadToken(song.key.mode, 1);
+      const token = top?.token ?? diatonicTriadToken(1, song.key.mode);
       const result = insertAfter(song, null, token);
       commit(result.song, result.selected);
     },
 
     addDegree(degree) {
-      const token = diatonicTriadToken(store.state.song.key.mode, degree);
+      const token = diatonicTriadToken(degree, store.state.song.key.mode);
       actions.insert(token);
       actions.audition(token);
     },
@@ -133,17 +183,55 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       commit(setChordToken(song, selected, token), selected);
     },
 
-    updateSong(song) {
-      store.commit(song);
+    updateSong(song, base) {
+      store.commit(song, {}, base === undefined ? {} : { base });
+    },
+
+    previewSong(song) {
+      store.preview(song);
+    },
+
+    selectTrack(id) {
+      store.set({ selectedTrack: clampTrackSelection(id, store.state.song) });
+    },
+
+    addTrack(role) {
+      const result = addTrack(store.state.song, role);
+      store.commit(result.song, { selectedTrack: result.trackId });
+    },
+
+    removeTrack(id) {
+      const song = removeTrack(store.state.song, id);
+      store.commit(song, { selectedTrack: clampTrackSelection(store.state.selectedTrack, song) });
+    },
+
+    moveTrack(id, delta) {
+      store.commit(moveTrack(store.state.song, id, delta));
+    },
+
+    updateTrack(id, patch) {
+      store.commit(updateTrack(store.state.song, id, patch));
+    },
+
+    toggleMute(id) {
+      store.commit(toggleMute(store.state.song, id));
+    },
+
+    applyRoleDefaults(id) {
+      store.commit(applyRoleDefaults(store.state.song, id));
     },
 
     newSong() {
       actions.stop();
-      const { key, tempo, meter } = store.state.song;
-      store.commit(createSong({ key: { ...key }, tempo, meter: { ...meter } }), {
-        selected: null,
-        cursor: 0,
+      const { key, tempo, meter, tracks } = store.state.song;
+      // The band (and its DAW routing) carries over; only the chords start empty.
+      const song = createSong({
+        key: { ...key },
+        tempo,
+        meter: { ...meter },
+        ...(tracks === undefined ? {} : { tracks }),
       });
+      store.commit(song, { selected: null, cursor: 0 });
     },
 
     undo() {
@@ -170,18 +258,31 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     },
 
     audition(token) {
-      if (isRestToken(token)) return;
-      const chord = tryParseToken(token);
-      if (chord === undefined) return;
-      const notes = voiceChord(chord, songKey(store.state.song));
+      const { song, selectedTrack } = store.state;
+      const track = auditionTrack(song, selectedTrack);
+      const events = auditionEvents(song, token, track);
+      if (events.length === 0) return;
       auditionHandle?.release();
       auditionHandle = null;
+      const secondsPerBeat = 60 / song.tempo;
       const ctx = audio.context;
       const synth = audio.synth;
       if (audio.ready && ctx !== null && synth !== null) {
-        auditionHandle = synth.playChord(notes, ctx.currentTime + 0.01, AUDITION_MS / 1000);
+        const t0 = ctx.currentTime + AUDITION_DELAY_S;
+        const handles = events.map((e) =>
+          synth.playNote(e.note, t0 + e.start * secondsPerBeat, e.duration * secondsPerBeat, {
+            role: track.role,
+            velocity: e.velocity,
+            track: track.id,
+          }),
+        );
+        auditionHandle = { release: (at) => handles.forEach((h) => h.release(at)) };
       }
-      midi.playChord(notes, performance.now(), AUDITION_MS);
+      const now = performance.now();
+      for (const e of events) {
+        const start = now + e.start * secondsPerBeat * 1000;
+        midi.playNote(e.channel, e.note, e.velocity, start, e.duration * secondsPerBeat * 1000);
+      }
     },
 
     async enableMidi() {
@@ -242,6 +343,11 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
         case 'redo':
           actions.redo();
           break;
+        case 'toggleMute': {
+          const id = store.state.selectedTrack;
+          if (id !== null) actions.toggleMute(id);
+          break;
+        }
       }
     },
   };

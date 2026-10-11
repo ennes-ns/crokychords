@@ -15,6 +15,8 @@ export interface AppState {
   song: Song;
   /** Chord index. */
   selected: number | null;
+  /** Id of the track selected in the Band panel (target of `M` and of auditions). */
+  selectedTrack: string | null;
   /** Beat position of the playhead. */
   cursor: number;
   playing: boolean;
@@ -39,6 +41,7 @@ export function initialState(song: Song = createSong()): AppState {
   return {
     song,
     selected: null,
+    selectedTrack: null,
     cursor: 0,
     playing: false,
     loop: false,
@@ -70,7 +73,16 @@ export interface CommitOptions {
   base?: Song;
 }
 
-/** Single store with subscribe/update; undo/redo covers `song` only (50 steps). */
+/** The track selection if that track still exists in `song`, else null. */
+export function clampTrackSelection(selectedTrack: string | null, song: Song): string | null {
+  if (selectedTrack === null) return null;
+  return (song.tracks ?? []).some((t) => t.id === selectedTrack) ? selectedTrack : null;
+}
+
+/**
+ * Single store with subscribe/update; undo/redo covers `song` only (50 steps), which includes
+ * the tracks (the band).
+ */
 export class Store {
   #state: AppState;
   #past: Song[] = [];
@@ -139,7 +151,8 @@ export class Store {
 
   #restore(song: Song): void {
     const selected = clampSelection(this.#state.selected, song.chords.length);
-    this.#emit({ ...this.#state, song, selected });
+    const selectedTrack = clampTrackSelection(this.#state.selectedTrack, song);
+    this.#emit({ ...this.#state, song, selected, selectedTrack });
   }
 
   #emit(next: AppState): void {
