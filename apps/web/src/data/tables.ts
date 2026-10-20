@@ -2,8 +2,14 @@ import type { NgramTable } from '@crokychords/core';
 import { parseNgramTable } from '@crokychords/core';
 import type { Store } from '../state';
 
-/** Where the user drops a real table (git-ignored, never bundled). */
+/** Where a developer drops a full local build (git-ignored, never bundled); wins when present. */
 export const NGRAMS_URL = `${import.meta.env.BASE_URL}data/ngrams.json`;
+
+/** The trimmed Chordonomicon table the app ships with (docs/specs/data-default-table.md). */
+export const DEFAULT_TABLE_URL = `${import.meta.env.BASE_URL}data/default.json`;
+
+/** Tried in order; the first one that is served decides. The seed table is the last resort. */
+export const TABLE_URLS: readonly string[] = [NGRAMS_URL, DEFAULT_TABLE_URL];
 
 export type TableLoadResult =
   | { status: 'loaded'; table: NgramTable }
@@ -44,14 +50,29 @@ export async function loadNgramTable(
   }
 }
 
+/**
+ * Try `urls` in order: the first file that is served wins ('loaded' or 'error'); when none
+ * is served the result is 'seed-only'.
+ */
+export async function loadFirstTable(
+  fetchFn: FetchLike,
+  urls: readonly string[] = TABLE_URLS,
+): Promise<TableLoadResult> {
+  for (const url of urls) {
+    const result = await loadNgramTable(fetchFn, url);
+    if (result.status !== 'seed-only') return result;
+  }
+  return { status: 'seed-only' };
+}
+
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Seed first (already active), then switch to the real table if one is served. */
+/** Seed first (already active), then switch to a served table (local build, else default). */
 export async function loadTables(store: Store, fetchFn: FetchLike): Promise<void> {
   store.set({ tableStatus: 'loading', tableError: null });
-  const result = await loadNgramTable(fetchFn);
+  const result = await loadFirstTable(fetchFn);
   switch (result.status) {
     case 'loaded':
       store.set({ ngrams: result.table, table: 'ngrams', tableStatus: 'loaded' });

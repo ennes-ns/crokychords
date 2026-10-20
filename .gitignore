@@ -19,7 +19,7 @@ packages/data/out/
 # Claude Code local-only settings
 .claude/settings.local.json
 
-# Built suggestion tables (never committed)
+# Built suggestion tables (never committed), except the trimmed default table
 apps/web/public/data/*.json
 
 # Wrangler local state and secrets (apps/api)
@@ -27,3 +27,4 @@ apps/web/public/data/*.json
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+!apps/web/public/data/default.json

@@ -31,7 +31,8 @@ Run `pnpm check` before every commit. Fix formatting with `pnpm format`.
 - One chord-token format everywhere (`roman-numeral-v1`, see `packages/data/README.md`). Never
   invent a second representation; extend the grammar and the fixture instead.
 - Data files (`packages/data/out`, `downloads`, `cache`, `apps/web/public/data/*.json`) are
-  git-ignored and must never be committed. See `docs/DATA.md`.
+  git-ignored and must never be committed; the one exception is the trimmed
+  `apps/web/public/data/default.json`. See `docs/DATA.md`.
 - Croky Chords stands on its own: no references to other chord tools or their data in code, UI
   text, tests or docs.
 - Conventional commits (`feat(core): …`, `fix(web): …`, `docs: …`, `chore: …`).

@@ -1,2 +1,4 @@
-# Built suggestion tables are never committed (see docs/DATA.md).
+# Built suggestion tables are never committed (see docs/DATA.md), except the trimmed
+# default table that the app ships with.
 public/data/*.json
+!public/data/default.json

@@ -5,14 +5,29 @@ The suggestion engine needs a table of chord n-grams. Two sources:
 | Source | How | Fit |
 |--------|-----|-----|
 | **Chordonomicon** | `packages/data/crokychords_data/chordonomicon_build.py --download` (680k songs, 264 MB CSV from Hugging Face). Absolute chord symbols, so the script estimates each song's key. | Open and big; key estimation is approximate; no secondary-dominant inference. |
-| **Seed table** | `packages/core/src/data/seed-ngrams.json`, hand-written. | Lets the app run with nothing downloaded. Approximate. |
+| **Default table** | `apps/web/public/data/default.json`, a trimmed Chordonomicon build (`--trim`, see `docs/specs/data-default-table.md`). | Committed and shipped; what users get out of the box. ~330 KB. |
+| **Seed table** | `packages/core/src/data/seed-ngrams.json`, hand-written. | Fallback when no table is served. Approximate. |
 
 Rules that follow:
 
-- `packages/data/{downloads,cache,out}/` and `apps/web/public/data/*.json` are git-ignored.
-  Built tables never enter the repo or a build; the app loads `ngrams.json` at runtime and
-  falls back to the seed table.
-- Every `ngrams.json` carries `source.name` and `source.license`; the UI shows the source.
+- `packages/data/{downloads,cache,out}/` and `apps/web/public/data/*.json` are git-ignored,
+  with one exception: `apps/web/public/data/default.json`, the trimmed table. It is the only
+  data file in the repo and the only one the production build copies.
+- The app tries `data/ngrams.json` (a local full build, never committed) first, then
+  `data/default.json`, then falls back to the seed table.
+- Every table carries `source.name` and `source.license`; the trimmed one also `source.url`
+  and a `build` block (date, builder version, parameters). The UI shows the source.
+
+### Rebuilding `default.json`
+
+```bash
+cd packages/data
+uv run python -m crokychords_data.chordonomicon_build --download --trim \
+  --generated-at 2026-10-20T00:00:00+00:00 --output ../../apps/web/public/data/default.json
+```
+
+Same CSV, same flags and the same `--generated-at` give a byte-identical file (about 3.5 min
+for the full dataset). Bump `--generated-at` when the table is rebuilt for real.
 
 ## Licensing
 
