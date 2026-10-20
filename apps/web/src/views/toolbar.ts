@@ -48,10 +48,36 @@ const STATUS_LABELS: Record<AppState['tableStatus'], string> = {
   error: 'error',
 };
 
+/** The Akai Fire connection as the toolbar sees it (docs/specs/akai-fire-v1.md). */
+export interface FireControls {
+  connect(): void;
+  disconnect(): void;
+}
+
 export interface ToolbarOptions {
   /** Where the theme choice is persisted (localStorage); null keeps it for this page only. */
   storage?: ThemeStorage | null;
+  /** Shows the "Connect Fire" button when given. */
+  fire?: FireControls;
 }
+
+const FIRE_LABELS: Record<AppState['fire']['status'], string> = {
+  off: 'Connect Fire',
+  pending: 'Fire…',
+  waiting: 'Fire: plug in',
+  connected: 'Fire connected',
+  unsupported: 'No Web MIDI',
+  denied: 'Fire: SysEx denied',
+};
+
+const FIRE_TITLES: Record<AppState['fire']['status'], string> = {
+  off: 'Use an Akai Fire as a controller. The browser asks to control your MIDI devices (SysEx): that lights the pads.',
+  pending: 'Waiting for MIDI access…',
+  waiting: 'Access granted; plug in the Akai Fire. Click to stop.',
+  connected: 'The Akai Fire controls the editor. Click to disconnect.',
+  unsupported: 'This browser has no Web MIDI (use Chrome or Edge).',
+  denied: 'MIDI with SysEx was denied; the Fire needs it for its pads. Click to try again.',
+};
 
 /**
  * The theme switcher: applies the stored theme, and on change applies and stores the new one
@@ -159,6 +185,15 @@ export function mountToolbar(
   const midiBox = h('span', { class: 'midi' });
   const channelBox = h('span', { class: 'channel-map', attrs: { 'aria-label': 'MIDI channels' } });
   const tableBox = h('span', { class: 'table-status' });
+  const fireControls = options.fire;
+  const fireButton =
+    fireControls === undefined
+      ? null
+      : button(FIRE_LABELS.off, FIRE_TITLES.off, () => {
+          const status = store.state.fire.status;
+          if (status === 'connected' || status === 'waiting') fireControls.disconnect();
+          else fireControls.connect();
+        });
 
   root.append(
     h(
@@ -177,7 +212,7 @@ export function mountToolbar(
     h('span', { class: 'group' }, play, h('label', { class: 'check' }, loop, ' Loop')),
     h('span', { class: 'group' }, undo, redo),
     h('span', { class: 'group' }, newSong, exportMidi),
-    h('span', { class: 'group' }, midiBox, channelBox),
+    h('span', { class: 'group' }, midiBox, channelBox, fireButton),
     tableBox,
     themeSwitcher(options.storage ?? null, root.ownerDocument),
   );
@@ -251,6 +286,13 @@ export function mountToolbar(
     redo.disabled = !store.canRedo;
     renderMidi(state);
     renderChannels(state);
+    if (fireButton !== null) {
+      const status = state.fire.status;
+      fireButton.textContent = FIRE_LABELS[status];
+      fireButton.title = FIRE_TITLES[status];
+      fireButton.disabled = status === 'pending' || status === 'unsupported';
+      fireButton.setAttribute('aria-pressed', String(status === 'connected'));
+    }
 
     const table = activeTable(state);
     tableBox.className = `table-status ${state.tableStatus}`;
@@ -291,6 +333,7 @@ export function mountToolbar(
       state.table,
       state.tableStatus,
       state.ngrams,
+      state.fire.status,
     ];
     if (inputs.every((v, i) => v === last[i])) return;
     last = inputs;

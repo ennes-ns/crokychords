@@ -103,3 +103,48 @@ describe('theme switcher', () => {
     expect(document.documentElement.dataset.theme).toBe('pixel');
   });
 });
+
+describe('Connect Fire button', () => {
+  afterEach(() => document.body.replaceChildren());
+
+  function mount(withFire: boolean) {
+    const store = new Store(initialState());
+    const actions = createActions(store, new AudioEngine(), new MidiOut(null));
+    const calls: string[] = [];
+    const toolbar = document.createElement('header');
+    document.body.append(toolbar);
+    mountToolbar(toolbar, store, actions, {
+      storage: null,
+      ...(withFire
+        ? {
+            fire: {
+              connect: () => calls.push('connect'),
+              disconnect: () => calls.push('disconnect'),
+            },
+          }
+        : {}),
+    });
+    const find = () =>
+      [...toolbar.querySelectorAll('button')].find((b) => b.textContent?.includes('Fire'));
+    return { store, calls, find };
+  }
+
+  it('is only there when the app passes a Fire connection', () => {
+    expect(mount(false).find()).toBeUndefined();
+    expect(mount(true).find()?.textContent).toBe('Connect Fire');
+  });
+
+  it('connects, shows the status, and disconnects when connected', () => {
+    const { store, calls, find } = mount(true);
+    find()?.click();
+    expect(calls).toEqual(['connect']);
+    store.set({ fire: { ...store.state.fire, status: 'pending' } });
+    expect(find()?.disabled).toBe(true);
+    store.set({ fire: { ...store.state.fire, status: 'connected' } });
+    expect(find()?.textContent).toBe('Fire connected');
+    find()?.click();
+    expect(calls).toEqual(['connect', 'disconnect']);
+    store.set({ fire: { ...store.state.fire, status: 'denied' } });
+    expect(find()?.textContent).toBe('Fire: SysEx denied');
+  });
+});

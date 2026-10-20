@@ -5,6 +5,8 @@ import { AudioEngine } from './audio/synth';
 import { loadTables } from './data/tables';
 import { h, isEditableTarget } from './dom';
 import { keyAction } from './keyboard';
+import { FireController } from './midi/fire/controller';
+import { FireConnection, bindFirePageEvents, browserFireAccess } from './midi/fire/connect';
 import { MidiOut, browserMidiAccess } from './midi/webmidi';
 import { browserStorage } from './persist';
 import { Store, initialState } from './state';
@@ -69,6 +71,8 @@ async function boot(app: HTMLElement): Promise<void> {
   const audio = new AudioEngine(storage);
   const midi = new MidiOut(browserMidiAccess());
   const actions = createActions(store, audio, midi);
+  const fire = new FireConnection(store, browserFireAccess(), new FireController(store, actions));
+  bindFirePageEvents(fire, window);
 
   const toolbar = h('header');
   const grid = h('section');
@@ -91,7 +95,10 @@ async function boot(app: HTMLElement): Promise<void> {
     ),
     overlay,
   );
-  mountToolbar(toolbar, store, actions, { storage });
+  mountToolbar(toolbar, store, actions, {
+    storage,
+    fire: { connect: () => void fire.connect(), disconnect: () => fire.disconnect() },
+  });
   mountGrid(grid, store, actions);
   mountChordEditor(editor, store, actions);
   mountBand(band, store, actions, storage, audio.sound);

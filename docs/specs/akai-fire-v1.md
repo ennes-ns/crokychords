@@ -1,7 +1,7 @@
 # Spec: Akai Fire controller v1
 
-Status: draft (2026-10-20), research done, prototype in `tools/fire/`. Owner: main session.
-Implementer: Opus agent, one PR on `feat/web-fire` once the open questions at the end are decided.
+Status: v1 implemented (2026-10-20) in `apps/web/src/midi/fire/` (issue #41); decisions in
+section 7. Prototype in `tools/fire/`. Owner: main session.
 
 ## Goal
 
@@ -44,7 +44,7 @@ modifiers and pads support hold-and-tap gestures.
 - **Pads**: SysEx `F0 47 7F 43 65 hh ll [ii rr gg bb]… F7`. `47` Akai, `7F` all-call, `43` Fire,
   `65` write pads. `hh ll` = payload length as two 7-bit bytes (high = bits 7–13, low = bits 0–6).
   `ii` = pad index `row*16 + col` (0–63, top-left first), `rr gg bb` 0–127. Any subset of pads per
-  message; all 64 pads = 256 payload bytes = one 263-byte message.
+  message; all 64 pads = 256 payload bytes = one 264-byte message.
 - **Button LEDs**: CC on the button's own number, value 0 off, 1 dull, 2 bright (single-colour
   buttons); dual-colour buttons (PLAY green/yellow, REC red/yellow, …) use 1–4 for dull/bright of the
   two colours.
@@ -54,7 +54,7 @@ modifiers and pads support hold-and-tap gestures.
   1 mixer, 2 user 1, 3 user 2).
 - **All LEDs off**: CC `0x7F` value 0.
 - **OLED**: SysEx `F0 47 7F 43 0E hh ll 00 07 00 7F <1171 bytes> F7` (bands 0–7 of 8 rows, columns
-  0–127, full frame = 1182 bytes). Pixels are packed seven per byte in a fixed shuffled order; the
+  0–127, full frame = 1183 bytes). Pixels are packed seven per byte in a fixed shuffled order; the
   encoder in `tools/fire/fire.py` (`oled_sysex`, 20 lines) is the reference and ports directly to TS.
   Text needs a bitmap font on the host side (the device has none).
 
@@ -189,8 +189,8 @@ that parameter large (`Length 4 beats`). Redraw only on change and at most ~20 f
 | Chrome asks "control and reprogram your MIDI devices" for SysEx, which sounds scary; since Chrome 124 even plain MIDI prompts | separate opt-in button with one sentence of explanation; if denied, fall back to inputs-only without pad colours (plain MIDI permission) and say so |
 | "FL Studio mode" | none on the device: it is a plain MIDI controller, all behaviour is host-side. Its own DAW script only runs inside that DAW, which must not be open on the same port at the same time on Windows |
 | Two apps on the port | Linux (ALSA sequencer) and macOS share ports: both apps receive input and both paint, last writer wins. Windows opens ports exclusively: a second app fails to open it. Show "Fire busy" and repaint fully on focus |
-| Pad LED refresh | one 263-byte SysEx repaints all 64 pads; diff and coalesce to one message per animation frame, playhead at beat rate |
-| OLED bandwidth | 1182 bytes per frame; redraw on change only, cap ~20 fps |
+| Pad LED refresh | one 264-byte SysEx repaints all 64 pads; diff and coalesce to one message per animation frame, playhead at beat rate |
+| OLED bandwidth | 1183 bytes per frame; redraw on change only, cap ~20 fps |
 | Browser tab in background | Web MIDI keeps working, but timers are throttled: repaint is event-driven, not timer-driven |
 | Stale LEDs after closing the tab | send all-off + blank OLED on `pagehide`; the device keeps the last frame otherwise |
 
@@ -205,7 +205,24 @@ that parameter large (`Length 4 beats`). Redraw only on change and at most ~20 f
 3. **v3:** NOTE mode melody lane (variant B layout: 4 bars × 16 sixteenths, pad = note start, hold+tap
    = note length, encoders = pitch/velocity), then the same protocol module in the native plugin.
 
+### v1 as built (deviations from the plan above)
+
+- Files: `protocol.ts` (encoders/decoder, golden-tested against `tools/fire/fire.py`),
+  `view.ts` (pad colours), `controller.ts` (gestures, button LEDs), `connect.ts` (Web MIDI,
+  repaint, hot-plug). The `fire` state slice holds `status`, `scroll` and `cursor`.
+- The SELECT cursor lives in `fire.cursor`; the Next chord panel does not highlight it yet (v2).
+- Encoder edits (VOLUME, RESONANCE) are previewed per detent and committed as one undo step when
+  the knob is released (touch note off) or another control is used.
+- Hold + tap also shortens: tapping a pad inside the held chord ends it there.
+- Not in v1: PAN inversions, FILTER variants, GRID with SHIFT (move chord), BANK knob page, the
+  inputs-only fallback when SysEx is denied (the button shows "SysEx denied" instead), OLED text
+  beyond the static title.
+
 ## 7. Open questions for the maintainer
+
+Decided 2026-10-20 (issue #41): variant C; SOLO buttons mute tracks; the OLED suggestion list is
+v2 (v1 shows a static title); Web MIDI in the browser behind a "Connect Fire" button.
+
 
 1. Variant C (12 bars + palette row) or variant A (16 bars, no palette)?
 2. SOLO buttons for band mutes, or for jumping to rows/pages?
