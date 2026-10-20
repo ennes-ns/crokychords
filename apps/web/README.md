@@ -25,6 +25,14 @@ Cloud sync of saved progressions (`docs/specs/sync-v1.md`) is off unless the bui
 `VITE_SYNC_API`. A small status next to **+ New** shows synced / syncing / offline / error /
 sign in.
 
+## Themes
+
+The **Theme** select at the end of the toolbar switches between **Default** and **Pixel** (the
+README banner as a UI: pixel fonts, square corners, chunky borders, the brand palette). The
+choice is stored in `localStorage` as `crokychords.theme`. Themes are design tokens (CSS custom
+properties) in `src/themes/`, one file per theme; `styles.css` uses only the tokens. Pixel's
+font (Departure Mono, SIL OFL 1.1) is bundled in `public/fonts/` with its licence. See [`docs/specs/themes-v1.md`](../../docs/specs/themes-v1.md), also for adding a theme.
+
 ## Keyboard shortcuts
 
 | Key | Action |
