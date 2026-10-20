@@ -2,8 +2,9 @@
  * Web Audio poly synth for the built-in instruments (piano, pad, bass, lead) and the drum kit. The
  * current sound preset picks the instrument per track role; every track gets its own gain bus
  * into the master bus (mix → gentle compressor → master gain → limiter / soft clip / bypass →
- * volume). Graph construction lives in
- * `graph.ts` and works on an injected `SynthContext`.
+ * volume); piano voices also send into a shared room. Graph construction lives in `graph.ts`
+ * and `piano.ts` and works on an injected `SynthContext`. Instruments with a voice budget steal
+ * their oldest voice when it is full.
  */
 import type { TrackRole } from '@crokychords/core';
 import type { MasterState } from '../persist';
@@ -15,25 +16,30 @@ import type {
   MasterMode,
   SourceLike,
   SynthContext,
+  VoiceNodes,
 } from './graph';
 import {
   buildDrum,
   buildMasterBus,
+  buildRoom,
   buildVoice,
   noiseBuffer,
   setMasterMode,
   setMasterVolume,
 } from './graph';
-import type { Drum, Instrument, SoundPresetId } from './instruments';
+import type { Drum, Instrument, InstrumentId, SoundPresetId } from './instruments';
 import { DEFAULT_SOUND_PRESET, instrumentFor, leadFor } from './instruments';
 import type { SoundStorage } from './sound';
 import { SoundSettings } from './sound';
+import { buildPianoVoice } from './piano';
 
 export { midiToFrequency } from './instruments';
 export { MASTER_GAIN, MIX_GAIN } from './graph';
 
 /** Release time used by Stop (seconds). */
 const STOP_RELEASE = 0.03;
+/** Release time of a voice stolen to stay within an instrument's voice budget (seconds). */
+export const STEAL_RELEASE = 0.02;
 /** Bus id of the drum kit. */
 export const DRUM_BUS = 'drums';
 
@@ -61,6 +67,8 @@ interface Voice {
   end: number;
   release: number;
   track: string;
+  /** Instrument of an instrument voice (absent for drums). */
+  instrument?: InstrumentId;
 }
 
 export class Synth {
@@ -70,6 +78,7 @@ export class Synth {
   readonly #buses = new Map<string, GainLike>();
   #voices = new Set<Voice>();
   #noise: BufferLike | null = null;
+  #room: GainLike | null = null;
 
   /**
    * `preset` is read on every note, so a preset change applies to the next note; `master` is
@@ -175,20 +184,49 @@ export class Synth {
     }
   }
 
+  /** The shared room, built on first use. */
+  #roomBus(): GainLike {
+    this.#room ??= buildRoom(this.#ctx, this.#master.input);
+    return this.#room;
+  }
+
+  /** Keep `instrument` under its voice budget at `start`: release the oldest voices early. */
+  #steal(instrument: Instrument, start: number): void {
+    const budget = instrument.voices;
+    if (budget === undefined) return;
+    const sounding = [...this.#voices]
+      .filter((v) => v.instrument === instrument.id && v.end > start)
+      .sort((a, b) => a.start - b.start);
+    for (const voice of sounding.slice(0, Math.max(0, sounding.length - budget + 1))) {
+      this.#release(voice, start, STEAL_RELEASE);
+    }
+  }
+
+  #build(
+    instrument: Instrument,
+    note: number,
+    velocity: number,
+    start: number,
+    out: GainLike,
+  ): VoiceNodes {
+    const spec = instrument.piano;
+    if (spec === undefined) return buildVoice(this.#ctx, instrument, note, velocity, start, out);
+    this.#noise ??= noiseBuffer(this.#ctx);
+    const room = (instrument.room ?? 0) > 0 ? this.#roomBus() : null;
+    return buildPianoVoice(this.#ctx, instrument, spec, note, velocity, start, out, {
+      noise: this.#noise,
+      room,
+    });
+  }
+
   #voice(note: number, time: number, duration: number, opts: NoteOptions): Voice {
     this.#prune();
     const instrument = opts.instrument ?? this.instrumentFor(opts.role ?? 'chords');
     const track = opts.track ?? 'default';
     const start = Math.max(time, this.#ctx.currentTime);
-    const nodes = buildVoice(
-      this.#ctx,
-      instrument,
-      note,
-      opts.velocity ?? 96,
-      start,
-      this.#bus(track),
-    );
-    const voice: Voice = { ...nodes, start, end: Infinity, track };
+    this.#steal(instrument, start);
+    const nodes = this.#build(instrument, note, opts.velocity ?? 96, start, this.#bus(track));
+    const voice: Voice = { ...nodes, start, end: Infinity, track, instrument: instrument.id };
     this.#voices.add(voice);
     this.#release(voice, start + Math.max(duration, instrument.attack));
     return voice;

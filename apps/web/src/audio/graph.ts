@@ -63,6 +63,15 @@ export interface WaveShaperLike extends NodeLike {
   oversample: OverSampleType;
 }
 
+export interface StereoPannerLike extends NodeLike {
+  readonly pan: ParamLike;
+}
+
+export interface ConvolverLike extends NodeLike {
+  buffer: BufferLike | null;
+  normalize: boolean;
+}
+
 /** What the synth needs from an AudioContext; a real `AudioContext` satisfies it. */
 export interface SynthContext {
   readonly currentTime: number;
@@ -75,6 +84,8 @@ export interface SynthContext {
   createWaveShaper(): WaveShaperLike;
   createBuffer(channels: number, length: number, sampleRate: number): BufferLike;
   createBufferSource(): BufferSourceLike;
+  createStereoPanner(): StereoPannerLike;
+  createConvolver(): ConvolverLike;
 }
 
 /** Gain of the mix bus (all tracks and drums) into the compressor. */
@@ -228,6 +239,43 @@ export function setMasterVolume(bus: MasterBus, percent: number, time: number): 
   const g = bus.volume.gain;
   g.cancelScheduledValues(time);
   g.setTargetAtTime(volumeGain(percent), time, VOLUME_SMOOTHING);
+}
+
+/** Shared room of the piano: length of the generated impulse and the largest wet send. */
+export const ROOM = { seconds: 0.4, maxWet: 0.15 } as const;
+
+/**
+ * Stereo impulse of a short room: independent noise per channel decaying by 60 dB over
+ * `ROOM.seconds`, scaled to unit energy per channel (the convolver does not normalise).
+ */
+export function roomImpulse(ctx: SynthContext, random: () => number = Math.random): BufferLike {
+  const length = Math.max(1, Math.round(ctx.sampleRate * ROOM.seconds));
+  const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+  const k = Math.log(1000) / length;
+  for (let channel = 0; channel < 2; channel++) {
+    const data = buffer.getChannelData(channel);
+    let energy = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (random() * 2 - 1) * Math.exp(-k * i);
+      data[i] = v;
+      energy += v * v;
+    }
+    const scale = energy > 0 ? 1 / Math.sqrt(energy) : 0;
+    for (let i = 0; i < data.length; i++) data[i] = (data[i] ?? 0) * scale;
+  }
+  return buffer;
+}
+
+/** The shared room: input gain → convolver (generated impulse) → `out`; voices send to `input`. */
+export function buildRoom(ctx: SynthContext, out: NodeLike): GainLike {
+  const input = ctx.createGain();
+  input.gain.value = 1;
+  const convolver = ctx.createConvolver();
+  convolver.normalize = false;
+  convolver.buffer = roomImpulse(ctx);
+  input.connect(convolver);
+  convolver.connect(out);
+  return input;
 }
 
 /** A sounding voice: its envelope gain and the sources to stop. */

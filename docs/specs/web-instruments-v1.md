@@ -18,7 +18,7 @@ drum fills or swing, effects sends (reverb/delay), drums over Web MIDI or in the
 
 | id | Character | Recipe |
 |----|-----------|--------|
-| `piano` | Short attack, natural decay | Triangle fundamental plus sine partials one and two octaves up; lowpass whose cutoff starts bright and closes (hammer); attack ≈ 4 ms, sustain 0 so a held note fades on its own; the decay is longer for low notes (key tracking); short release |
+| `piano` | Short attack, natural decay | Replaced by [Piano v2](#7-piano-v2) (detuned unison, inharmonic partials, two-stage decay, hammer noise, pan and room) |
 | `pad` | Slow attack, lowpass | Two detuned saws plus a quiet triangle an octave up through a soft lowpass that opens slowly; attack ≈ 0.6 s, high sustain, long release |
 | `bass` | Pluck | Triangle plus a little saw through a resonant lowpass with a fast closing envelope (pluck), and a sub sine one octave below the played note; the bass track itself already sits two octaves under the chords (`bass` selector, octave 2) |
 
@@ -73,10 +73,12 @@ changed on its own. Not part of undo/redo.
 ## 4. Audio graph
 
 ```
-voice → (lowpass) → voice gain → track bus ┐
-drum voice → drum bus ─────────────────────┼→ mix (MIX_GAIN) → compressor → master (MASTER_GAIN) ┐
-                                                         ┌──────────────────────────────────┘
-                                                         └→ [bypass | limiter → ceiling | soft clip] → volume → destination
+voice → (lowpass) → voice gain → track bus ─────────┐
+piano voice → … → voice gain → panner → track bus ──┤
+                              └→ room send → room ──┤
+drum voice → drum bus ──────────────────────────────┼→ mix (MIX_GAIN) → compressor → master (MASTER_GAIN) ┐
+                                                                  ┌───────────────────────────────────────┘
+                                                                  └→ [bypass | limiter → ceiling | soft clip] → volume → destination
 ```
 
 The part after the master gain is the **master section** (§ "Master" below).
@@ -136,7 +138,7 @@ A protection stage and a volume control at the very end of the chain, so louder 
 - Band panel: a **Sound** row at the top of the panel body with a preset select (Piano, Band,
   Pad) and a drums select (None, Straight, Half-time, Ballad).
 
-## 6. Done
+## 6. Done (v1)
 
 `pnpm check` green; tests for: instrument and preset tables, voice graph construction per
 instrument and per drum against the fake context (node types, routing to the master bus,
@@ -146,3 +148,55 @@ sinks without `playDrum`), sound settings persistence and the Band panel Sound r
 master section (routing per mode, offline limiter and soft-clip models, volume taper, settings
 persistence, master row).
 `apps/web/README.md` describes the presets and drums.
+
+## 7. Piano v2
+
+The v1 piano (a triangle plus two octave partials) sounded thin. Piano v2 is still pure
+synthesis, without samples, and aims for an electric/acoustic hybrid that reads as a piano.
+Data lives in `INSTRUMENTS.piano` (`instruments.ts`), the voice in `piano.ts`, the room in
+`graph.ts`.
+
+| Part | Recipe |
+|------|--------|
+| Fundamental | Three sines at −3, 0 and +2 cents with levels 0.25 / 0.5 / 0.25 (the unequal detune keeps the unison from ever cancelling completely: it beats, it does not drop out) |
+| Partials | Sines at 2.0, 3.01, 4.03 and 5.08 × f with levels 0.5, 0.28, 0.16, 0.09 at middle C; partial n is scaled by `s ^ n` with `s = clamp((261.63 / f) ^ 0.35, 0.55, 1.4)`, so low notes are bright and high notes dull. Partials above 16 kHz (or 45 % of the sample rate) are left out |
+| Lowpass | Cutoff `(500 + 5 f) × brightness × (0.25 + 0.75 × velocity / 127)`, Q −3 dB (no resonance peak); it starts at 2.5 × the cutoff and settles with τ = 0.3 s (hammer brightness) |
+| Envelope | Attack 3 ms to the peak (`VOICE_PEAK × level × velocity / 127`, level 0.58); first stage falls towards 0.35 × the peak with τ = 0.1 s (≈ 0.3 s); then the tail falls to silence with τ = T / 3, `T = clamp(4 × (261.63 / f) ^ 0.6, 2, 6)` s |
+| Hammer | 8 ms of white noise through a bandpass (2.5 kHz + f, Q 0.9), level 0.18 × (0.5 + 0.5 × velocity / 127), into the envelope gain |
+| Release | Damper: 80 ms (`release`), sustain pedal not modelled |
+| Stereo | Equal-power pan by pitch: −0.3 at MIDI 36, +0.3 at MIDI 84, linear between, clamped |
+| Room | One shared room per context: a convolver with a generated 0.4 s stereo impulse (independent decaying noise per channel, −60 dB at the end, unit energy, `normalize = false`) into the mix bus. Each piano voice sends post-pan at `ROOM.maxWet (0.15) × room` |
+| Voices | At most 24 piano voices held at once (`voices`); a new note beyond that releases the oldest held piano voice in 20 ms |
+
+Instrument parameters a preset may tune (`SoundPreset.params`):
+
+| Parameter | Meaning | Piano default | Band preset |
+|-----------|---------|---------------|-------------|
+| `brightness` | Cutoff multiplier | 1 | 0.8 |
+| `room` | Room send, 0..1 of 0.15 | 0.8 (12 % wet) | 0.6 (9 % wet) |
+
+All other presets and instruments are unchanged. `instrumentFor` returns the tuned instrument
+(one object per preset and instrument).
+
+Headroom (§4) still holds: `noteAmplitude` of the piano is the peak times the fundamental, the
+pitch-tilted partials and the hammer, times the louder pan channel; the room adds its wet share.
+The piano level is chosen so the all-piano preset stays below full scale; its onset is
+peakier than v1's, so its body is a few dB quieter than the v1 piano at the same velocity.
+
+### Tests
+
+- Fake context: oscillator detunes and partial ratios, routing (oscillator → level → lowpass →
+  envelope → panner → track bus; hammer into the envelope; room send), the two-stage automation,
+  cutoff scaling by velocity and brightness, the room impulse and bus, the voice budget.
+- Offline (`test/pianoOffline.test.ts`, a real `OfflineAudioContext` from the
+  `node-web-audio-api` dev dependency, nothing is played): energy at the listed partials far
+  above the spectrum between them and on the stretched rather than the harmonic ratio, levels
+  falling with partial number, bright low versus dull high notes, a fast first stage versus a
+  slow tail, low notes ringing longer, velocity raising level and brightness, the band piano
+  darker, pan by pitch and the room tail, voice stealing. Assertions are energy ratios, not
+  exact samples. With `PIANO_WAV=<path>` the same file writes I–V–vi–IV to a WAV.
+
+### CPU
+
+Offline render of 8 bars of the Band preset (chords, bass, arp, pad, straight drums) at 120 BPM
+in headless Chromium: about 13 % of one core (v1: about 8 %); the room accounts for about 2 %.

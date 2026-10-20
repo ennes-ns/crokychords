@@ -6,11 +6,13 @@ import type {
   BufferLike,
   BufferSourceLike,
   CompressorLike,
+  ConvolverLike,
   FilterLike,
   GainLike,
   NodeLike,
   OscillatorLike,
   ParamLike,
+  StereoPannerLike,
   SynthContext,
   WaveShaperLike,
 } from '../src/audio/graph';
@@ -125,9 +127,25 @@ export class FakeWaveShaper extends FakeNode implements WaveShaperLike {
   }
 }
 
+export class FakePanner extends FakeNode implements StereoPannerLike {
+  readonly pan = new FakeParam();
+  constructor() {
+    super('panner');
+  }
+}
+
+export class FakeConvolver extends FakeNode implements ConvolverLike {
+  buffer: BufferLike | null = null;
+  normalize = true;
+  constructor() {
+    super('convolver');
+  }
+}
+
 export class FakeContext implements SynthContext {
   currentTime = 0;
-  readonly sampleRate = 100;
+  /** Low by default so generated buffers stay small; piano tests pass a real rate. */
+  constructor(readonly sampleRate = 100) {}
   readonly destination = new FakeNode('destination');
   readonly nodes: FakeNode[] = [];
   buffers = 0;
@@ -151,13 +169,25 @@ export class FakeContext implements SynthContext {
   createWaveShaper(): FakeWaveShaper {
     return this.#add(new FakeWaveShaper());
   }
-  createBuffer(_channels: number, length: number): BufferLike {
+  createBuffer(channels: number, length: number): BufferLike {
     this.buffers++;
-    const data = new Float32Array(length);
-    return { getChannelData: () => data };
+    const data = Array.from({ length: channels }, () => new Float32Array(length));
+    return {
+      getChannelData: (channel) => {
+        const d = data[channel];
+        if (d === undefined) throw new RangeError(`no channel ${channel}`);
+        return d;
+      },
+    };
   }
   createBufferSource(): FakeBufferSource {
     return this.#add(new FakeBufferSource());
+  }
+  createStereoPanner(): FakePanner {
+    return this.#add(new FakePanner());
+  }
+  createConvolver(): FakeConvolver {
+    return this.#add(new FakeConvolver());
   }
 
   of<T extends FakeNode>(type: new () => T): T[] {

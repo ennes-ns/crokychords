@@ -1,6 +1,7 @@
 /**
  * Built-in instruments, the drum kit, drum patterns and sound presets as plain data (no Web
- * Audio here; `graph.ts` turns this data into nodes). See docs/specs/web-instruments-v1.md.
+ * Audio here; `graph.ts` and `piano.ts` turn this data into nodes). See
+ * docs/specs/web-instruments-v1.md.
  */
 import type { TrackRole } from '@crokychords/core';
 
@@ -42,29 +43,112 @@ export interface Instrument {
   level: number;
   /** Decay scaled by (KEY_TRACK_REF / frequency) ^ keyTrack, clamped (low notes ring longer). */
   keyTrack: number;
+  /**
+   * Two-stage decay: the first stage falls towards `level` × the peak within `decay`, then a
+   * long tail falls to silence with time constant `tailTime(f) / 3` (see `noteTail`). Replaces
+   * the sustain level when present.
+   */
+  tail?: TailSpec;
+  /** Voice recipe of the piano (replaces `oscillators` → lowpass when present). */
+  piano?: PianoSpec;
+  /** At most this many voices of this instrument sound at once; the oldest is stolen. */
+  voices?: number;
+  /** Cutoff multiplier, 1 = as designed (presets tune it; read by the piano voice). */
+  brightness?: number;
+  /** Room send, 0..1 of `ROOM.maxWet` in graph.ts (presets tune it; read by the piano voice). */
+  room?: number;
+}
+
+export interface TailSpec {
+  /** Level (0..1 of the peak) the first stage falls towards. */
+  level: number;
+  /** Tail length at KEY_TRACK_REF, seconds; scaled by (KEY_TRACK_REF / f) ^ keyTrack. */
+  time: number;
+  keyTrack: number;
+  /** Clamp of the key-tracked tail length, seconds. */
+  min: number;
+  max: number;
+}
+
+export interface PartialSpec {
+  /** Frequency ratio to the fundamental (slightly stretched: inharmonic). */
+  ratio: number;
+  /** Level at KEY_TRACK_REF, relative to the summed fundamental. */
+  level: number;
+}
+
+/**
+ * The piano's own recipe. Its `Instrument.oscillators` are the unison on the fundamental (sines
+ * a few cents apart, unequal detune so they never cancel completely); the partials sit on top.
+ */
+export interface PianoSpec {
+  partials: readonly PartialSpec[];
+  /**
+   * Pitch tilt: partial n (1-based) is scaled by `s ^ n` with
+   * `s = clamp((KEY_TRACK_REF / f) ^ tilt, tiltMin, tiltMax)`: bright low notes, dull high ones.
+   */
+  tilt: number;
+  tiltMin: number;
+  tiltMax: number;
+  /** Lowpass cutoff scale at velocity 0; it rises linearly to 1 at velocity 127. */
+  velocityCutoff: number;
+  /** Hammer noise: band-passed burst at `level` (× note peak) lasting `duration` seconds. */
+  hammer: { frequency: number; q: number; level: number; duration: number };
+  /** Pan by pitch: −spread at PAN_LOW, +spread at PAN_HIGH (MIDI notes), linear between. */
+  spread: number;
+}
+
+/** Instrument parameters a sound preset may tune. */
+export interface InstrumentParams {
+  brightness?: number;
+  room?: number;
 }
 
 export const MAX_CUTOFF = 12000;
+/** MIDI notes panned fully to −spread / +spread by the piano. */
+export const PAN_LOW = 36;
+export const PAN_HIGH = 84;
 export const KEY_TRACK_REF = 261.63;
 /** Peak gain of a full-velocity note at level 1, before the mix bus. */
 export const VOICE_PEAK = 0.32;
 
 export const INSTRUMENTS: Readonly<Record<InstrumentId, Instrument>> = {
+  /** Piano v2: detuned unison plus inharmonic partials, two-stage decay, hammer noise. */
   piano: {
     id: 'piano',
     name: 'Piano',
+    // The unison on the fundamental (the partials are in `piano`).
     oscillators: [
-      { type: 'triangle', detune: 0, level: 0.8, octave: 0 },
-      { type: 'sine', detune: 2, level: 0.3, octave: 1 },
-      { type: 'sine', detune: -3, level: 0.08, octave: 2 },
+      { type: 'sine', detune: -3, level: 0.25, octave: 0 },
+      { type: 'sine', detune: 0, level: 0.5, octave: 0 },
+      { type: 'sine', detune: 2, level: 0.25, octave: 0 },
     ],
-    filter: { base: 700, track: 3, q: 0.6, env: { from: 3, time: 0.25 } },
-    attack: 0.004,
-    decay: 1.6,
+    // Q in dB: -3 is a lowpass without a resonance peak.
+    filter: { base: 500, track: 5, q: -3, env: { from: 2.5, time: 0.3 } },
+    attack: 0.003,
+    decay: 0.3,
     sustain: 0,
-    release: 0.25,
-    level: 0.9,
-    keyTrack: 0.5,
+    release: 0.08,
+    level: 0.58,
+    keyTrack: 0,
+    tail: { level: 0.35, time: 4, keyTrack: 0.6, min: 2, max: 6 },
+    piano: {
+      partials: [
+        { ratio: 2.0, level: 0.5 },
+        { ratio: 3.01, level: 0.28 },
+        { ratio: 4.03, level: 0.16 },
+        { ratio: 5.08, level: 0.09 },
+      ],
+      tilt: 0.35,
+      tiltMin: 0.55,
+      tiltMax: 1.4,
+      velocityCutoff: 0.25,
+      hammer: { frequency: 2500, q: 0.9, level: 0.18, duration: 0.008 },
+      spread: 0.3,
+    },
+    voices: 24,
+    brightness: 1,
+    room: 0.8,
   },
   pad: {
     id: 'pad',
@@ -127,9 +211,61 @@ export function notePeak(instrument: Instrument, velocity: number): number {
   return VOICE_PEAK * instrument.level * v;
 }
 
-/** Upper bound of a note's amplitude: its peak times the summed oscillator levels. */
-export function noteAmplitude(instrument: Instrument, velocity: number): number {
-  return notePeak(instrument, velocity) * instrument.oscillators.reduce((s, o) => s + o.level, 0);
+/**
+ * Upper bound of a note's amplitude (per output channel): its peak times the summed oscillator
+ * levels. For the piano: fundamental plus the pitch-tilted partials plus the hammer, times the
+ * louder channel of its pan; without `frequency` the brightest tilt and no pan are assumed.
+ */
+export function noteAmplitude(
+  instrument: Instrument,
+  velocity: number,
+  frequency?: number,
+): number {
+  const peak = notePeak(instrument, velocity);
+  const spec = instrument.piano;
+  if (spec === undefined) return peak * instrument.oscillators.reduce((s, o) => s + o.level, 0);
+  const partials = pianoPartials(spec, frequency ?? 0).reduce((s, p) => s + p.level, 0);
+  const pan = frequency === undefined ? 1 : panGain(notePan(spec, frequencyToMidi(frequency)));
+  const fundamental = instrument.oscillators.reduce((s, o) => s + o.level, 0);
+  return peak * (fundamental + partials + spec.hammer.level) * pan;
+}
+
+export function frequencyToMidi(frequency: number): number {
+  return 69 + 12 * Math.log2(frequency / 440);
+}
+
+/** Partials of a piano note at `frequency` with the pitch tilt applied (f <= 0: brightest). */
+export function pianoPartials(spec: PianoSpec, frequency: number): PartialSpec[] {
+  const raw = frequency > 0 ? (KEY_TRACK_REF / frequency) ** spec.tilt : Infinity;
+  const s = Math.min(spec.tiltMax, Math.max(spec.tiltMin, raw));
+  return spec.partials.map((p, i) => ({ ratio: p.ratio, level: p.level * s ** (i + 1) }));
+}
+
+/** Pan position of a piano note: −spread at PAN_LOW to +spread at PAN_HIGH. */
+export function notePan(spec: PianoSpec, note: number): number {
+  const x = (note - (PAN_LOW + PAN_HIGH) / 2) / ((PAN_HIGH - PAN_LOW) / 2);
+  return spec.spread * Math.min(1, Math.max(-1, x));
+}
+
+/** Gain of the louder channel of an equal-power stereo panner (mono input) at `pan`. */
+export function panGain(pan: number): number {
+  const x = ((Math.min(1, Math.max(-1, pan)) + 1) / 2) * (Math.PI / 2);
+  return Math.max(Math.cos(x), Math.sin(x));
+}
+
+/** Length (seconds) of the long tail of a two-stage decay, key-tracked and clamped. */
+export function noteTail(tail: TailSpec, frequency: number): number {
+  const scale = frequency > 0 ? (KEY_TRACK_REF / frequency) ** tail.keyTrack : 1;
+  return Math.min(tail.max, Math.max(tail.min, tail.time * scale));
+}
+
+/** Instrument with preset parameters applied (unknown or absent parameters keep the default). */
+export function withParams(
+  instrument: Instrument,
+  params: InstrumentParams | undefined,
+): Instrument {
+  if (params === undefined) return instrument;
+  return { ...instrument, ...params };
 }
 
 /** Decay time of a note after key tracking (0.5×–2× of the instrument's decay). */
@@ -244,6 +380,8 @@ export interface SoundPreset {
   /** The instrument of the melody lane. */
   lead: InstrumentId;
   drums: DrumPatternId;
+  /** Per-instrument parameter overrides (brightness, room). */
+  params?: Partial<Record<InstrumentId, InstrumentParams>>;
 }
 
 export const SOUND_PRESETS: readonly SoundPreset[] = [
@@ -260,6 +398,8 @@ export const SOUND_PRESETS: readonly SoundPreset[] = [
     instruments: { chords: 'piano', bass: 'bass', arp: 'piano', pad: 'pad', custom: 'piano' },
     lead: 'lead',
     drums: 'straight',
+    // A little darker and drier so the piano sits behind the drums and the pad.
+    params: { piano: { brightness: 0.8, room: 0.6 } },
   },
   {
     id: 'pad',
@@ -282,14 +422,27 @@ export function soundPreset(id: SoundPresetId): SoundPreset {
   return preset;
 }
 
+const tuned = new Map<string, Instrument>();
+
+/** `id` with the parameters of `preset` applied; the same object for the same pair. */
+export function presetInstrument(preset: SoundPresetId, id: InstrumentId): Instrument {
+  const key = `${preset}:${id}`;
+  let instrument = tuned.get(key);
+  if (instrument === undefined) {
+    instrument = withParams(INSTRUMENTS[id], soundPreset(preset).params?.[id]);
+    tuned.set(key, instrument);
+  }
+  return instrument;
+}
+
 /** The instrument that plays a track of `role` under `preset`. */
 export function instrumentFor(preset: SoundPresetId, role: TrackRole): Instrument {
-  return INSTRUMENTS[soundPreset(preset).instruments[role]];
+  return presetInstrument(preset, soundPreset(preset).instruments[role]);
 }
 
 /** The instrument that plays the melody lane under `preset`. */
 export function leadFor(preset: SoundPresetId): Instrument {
-  return INSTRUMENTS[soundPreset(preset).lead];
+  return presetInstrument(preset, soundPreset(preset).lead);
 }
 
 /**
@@ -302,12 +455,16 @@ export function envelopeAt(
   t: number,
   held: number,
 ): number {
+  const tail = instrument.tail;
   const level = (at: number): number => {
     if (at <= 0) return 0;
     if (at < instrument.attack) return at / instrument.attack;
-    const tau = noteDecay(instrument, frequency) / 3;
-    const s = instrument.sustain;
-    return s + (1 - s) * Math.exp(-(at - instrument.attack) / tau);
+    const decay = noteDecay(instrument, frequency);
+    const s = tail === undefined ? instrument.sustain : tail.level;
+    const first = (x: number): number => s + (1 - s) * Math.exp(-x / (decay / 3));
+    const since = at - instrument.attack;
+    if (tail === undefined || since < decay) return first(since);
+    return first(decay) * Math.exp(-(since - decay) / (noteTail(tail, frequency) / 3));
   };
   const end = Math.max(held, instrument.attack);
   if (t < end) return level(t);
