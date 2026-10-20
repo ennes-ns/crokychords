@@ -45,6 +45,7 @@ import type {
 import {
   DEFAULT_SOUND_PRESET,
   instrumentFor,
+  notePeak,
   presetChoice,
   presetInstrument,
   soundfont,
@@ -114,6 +115,9 @@ interface Voice {
   sample?: boolean;
   /** Level held after the attack (sample voices): the release fades from it. */
   hold?: number;
+  /** Attack ramp: from 0 at `start` to `peak` over `attack` seconds. */
+  attack: number;
+  peak: number;
 }
 
 export class Synth {
@@ -219,7 +223,14 @@ export class Synth {
     this.#noise ??= noiseBuffer(this.#ctx);
     const nodes = buildDrum(this.#ctx, drum, level, start, this.#noise, this.#bus(DRUM_BUS));
     // Drums stop on their own; `end` is when they are done, for pruning and Stop.
-    this.#voices.add({ ...nodes, start, end: start + nodes.release, track: DRUM_BUS });
+    this.#voices.add({
+      ...nodes,
+      start,
+      end: start + nodes.release,
+      track: DRUM_BUS,
+      attack: 0,
+      peak: level,
+    });
   }
 
   /** Silence one track now (muted or removed while playing). */
@@ -324,7 +335,15 @@ export class Synth {
   ): Voice {
     this.#steal(instrument, start);
     const nodes = this.#build(instrument, note, velocity, start, this.#bus(track));
-    const voice: Voice = { ...nodes, start, end: Infinity, track, instrument: instrument.id };
+    const voice: Voice = {
+      ...nodes,
+      start,
+      end: Infinity,
+      track,
+      instrument: instrument.id,
+      attack: instrument.attack,
+      peak: notePeak(instrument, velocity),
+    };
     this.#voices.add(voice);
     this.#release(voice, start + Math.max(duration, instrument.attack));
     return voice;
@@ -362,6 +381,8 @@ export class Synth {
       track,
       sample: true,
       hold,
+      attack: SAMPLE_ATTACK,
+      peak: hold,
     };
     this.#voices.add(voice);
     this.#release(voice, start + Math.max(duration, SAMPLE_ATTACK));
@@ -386,15 +407,25 @@ export class Synth {
     if (at >= voice.end) return;
     voice.end = at;
     const g = voice.gain.gain;
-    g.cancelScheduledValues(at);
+    // Hold the level reached so far: cancelling the attack ramp alone would drop the gain back
+    // to 0, and a note no longer than the attack would never sound (issue #89).
+    const held = g.cancelAndHoldAtTime !== undefined;
+    if (held) g.cancelAndHoldAtTime?.(at);
+    else g.cancelScheduledValues(at);
     let stopAt = at + release * RELEASE_TAIL;
     if (at <= voice.start) {
       // Released before it started (Stop during the lookahead window): never sound.
       g.setValueAtTime(0, at);
       stopAt = at;
     } else {
-      // Anchor the fade at the held level (some engines mis-handle a target after a ramp).
-      if (voice.hold !== undefined) g.setValueAtTime(voice.hold, at);
+      const ramp = at - voice.start;
+      if (ramp <= voice.attack) {
+        // Inside the attack: without cancelAndHoldAtTime, set the ramp's value at `at`.
+        if (!held) g.setValueAtTime((voice.peak * ramp) / voice.attack, at);
+      } else if (voice.hold !== undefined) {
+        // Anchor the fade at the held level (some engines mis-handle a target after a ramp).
+        g.setValueAtTime(voice.hold, at);
+      }
       g.setTargetAtTime(0, at, release / 4);
     }
     for (const source of voice.sources) {
