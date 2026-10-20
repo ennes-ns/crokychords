@@ -142,7 +142,7 @@ buffer source(s) → envelope gain → filter (Biquad) → panner → track bus 
 ## 6. Edit API (`Samplers`, `audio/sampler.ts`)
 
 The UI-independent surface the Sampler panel uses and the Akai Fire's SAMPLE mode (issue #93)
-will use. It wraps the sound settings (patches), the bank (decoded samples) and an audition hook.
+uses. It wraps the sound settings (patches), the bank (decoded samples) and an audition hook.
 
 | Call | Does |
 |------|------|
@@ -158,6 +158,7 @@ will use. It wraps the sound settings (patches), the bank (decoded samples) and 
 | `setFilter(id, { type?, cutoff?, resonance?, envAmount? })` | Filter |
 | `setLevels(id, { gain?, pan?, velocityToGain?, velocityToCutoff? })` | Levels |
 | `rename(id, name)`, `setProgram(id, program)` | Slot name, GM program |
+| `setPatch(id, patch)` | Replace every setting at once (clamped; the slot keeps its sample): the Fire's knob edits and their undo |
 | `audition(id, note, velocity?)` | Play one note through the slot now; returns a handle to release, or `null` while audio is not running. Never called by loading |
 | `subscribe(listener)` | Called with the slot id after every change |
 

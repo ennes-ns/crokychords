@@ -9,6 +9,7 @@
  * This is a second MIDIAccess next to `MidiOut` (the DAW output without SysEx); the two use
  * different ports and do not interfere.
  */
+import { songKey } from '@crokychords/core';
 import type { FireStatus, Store } from '../../state';
 import type { MidiOutputLike } from '../webmidi';
 import type { FireController } from './controller';
@@ -25,6 +26,7 @@ import {
   oledSysex,
   padsSysex,
 } from './protocol';
+import { renderSampleOled } from './sampleMode';
 import { renderPads } from './view';
 
 export interface FireMessageEvent {
@@ -106,6 +108,7 @@ export class FireConnection {
   #queued = false;
   #wanted = false;
   #unsubscribe: (() => void) | null = null;
+  #unsubscribeSample: (() => void) | null = null;
 
   readonly #onMessage = (event: FireMessageEvent): void => {
     if (event.data === null) return;
@@ -158,6 +161,8 @@ export class FireConnection {
       this.#access.addEventListener('statechange', this.#onStateChange);
     }
     this.#unsubscribe ??= this.#store.subscribe(() => this.#requestPaint());
+    this.#unsubscribeSample ??=
+      this.controller.sample?.subscribe(() => this.#requestPaint()) ?? null;
     this.#attach();
   }
 
@@ -167,6 +172,8 @@ export class FireConnection {
     this.#detach(true);
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#unsubscribeSample?.();
+    this.#unsubscribeSample = null;
     this.#setStatus('off');
   }
 
@@ -261,7 +268,11 @@ export class FireConnection {
     const follow = followScroll(this.#store.state);
     if (follow !== null) this.#store.set({ fire: { ...this.#store.state.fire, scroll: follow } });
     const state = this.#store.state;
-    const pads = renderPads(state, this.controller.suggestions(state));
+    const sample = this.controller.sample?.active === true ? this.controller.sample : null;
+    const pads =
+      sample === null
+        ? renderPads(state, this.controller.suggestions(state))
+        : sample.pads(songKey(state.song));
     const changed: { index: number; rgb: Rgb }[] = [];
     pads.forEach((rgb, index) => {
       const old = this.#pads?.[index];
@@ -277,11 +288,20 @@ export class FireConnection {
       this.#leds.set(cc, value);
       this.#send(ledCc(cc, value));
     }
-    const model = oledModel(state, this.controller.suggestions(state), this.controller.touched);
-    const key = JSON.stringify(model);
-    if (key !== this.#oledKey) {
-      this.#oledKey = key;
-      this.#oledNext = renderOled(model);
+    if (sample === null) {
+      const model = oledModel(state, this.controller.suggestions(state), this.controller.touched);
+      const key = JSON.stringify(model);
+      if (key !== this.#oledKey) {
+        this.#oledKey = key;
+        this.#oledNext = renderOled(model);
+      }
+    } else {
+      const model = sample.oled(state.playing);
+      const key = JSON.stringify(model);
+      if (key !== this.#oledKey) {
+        this.#oledKey = key;
+        this.#oledNext = renderSampleOled(model);
+      }
     }
     this.#flushOled();
   }

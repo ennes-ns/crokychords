@@ -18,6 +18,7 @@ import {
   BTN_ALT,
   BTN_BANK,
   BTN_BROWSER,
+  BTN_DRUM,
   BTN_GRID_LEFT,
   BTN_GRID_RIGHT,
   BTN_PATTERN,
@@ -51,6 +52,13 @@ import {
   padBeat,
   paletteToken,
 } from './view';
+import type { SampleMode } from './sampleMode';
+
+/**
+ * DRUM LED while SAMPLE mode is on: bright yellow, the Pixel theme's accent (the DRUM button's
+ * LED is yellow only; SEGGER's table: 1 dull, 2 bright). Off in STEP mode.
+ */
+export const LED_DRUM_ON = 2;
 
 /** Encoders whose touch notes end a coalesced edit. */
 const TOUCH_NOTES = new Set([ENC_VOLUME, ENC_PAN, ENC_FILTER, ENC_RESONANCE]);
@@ -166,11 +174,23 @@ export class FireController {
   #touched: number | null = null;
   /** An encoder edit in progress: previewed per detent, committed as one undo step. */
   #pending: { encoder: number; base: Song } | null = null;
+  /** SAMPLE mode (DRUM button), when the app has samplers. */
+  readonly #sample: SampleMode | null;
 
-  constructor(store: Store, actions: Actions, suggestions = new SuggestionCache()) {
+  constructor(
+    store: Store,
+    actions: Actions,
+    suggestions = new SuggestionCache(),
+    sample: SampleMode | null = null,
+  ) {
     this.#store = store;
     this.#actions = actions;
     this.#suggestions = suggestions;
+    this.#sample = sample;
+  }
+
+  get sample(): SampleMode | null {
+    return this.#sample;
   }
 
   get shift(): boolean {
@@ -196,9 +216,15 @@ export class FireController {
     this.#alt = false;
     this.#held = null;
     this.#touched = null;
+    this.#sample?.leave();
   }
 
   handle(event: FireEvent): void {
+    const sample = this.#sample;
+    if (sample?.active === true) {
+      this.#sampleEvent(sample, event);
+      return;
+    }
     switch (event.type) {
       case 'pad':
         this.#flush();
@@ -273,6 +299,56 @@ export class FireController {
     if (held.wasSelected && !held.resized) this.#actions.select(null);
   }
 
+  // --- SAMPLE mode --------------------------------------------------------------------------
+
+  /** Events while SAMPLE mode is on: the mode gets pads, knobs and its buttons. */
+  #sampleEvent(sample: SampleMode, event: FireEvent): void {
+    switch (event.type) {
+      case 'pad':
+        sample.pad(event.row, event.col, event.down, this.#shift, this.#store.state.selectedTrack);
+        return;
+      case 'turn':
+        sample.turn(event.encoder, event.delta, this.#shift);
+        return;
+      case 'button':
+        break;
+    }
+    const { note, down } = event;
+    if (note === BTN_SHIFT) this.#shift = down;
+    else if (note === BTN_ALT) this.#alt = down;
+    else if (TOUCH_NOTES.has(note)) sample.touch(note, down);
+    else if (!down) return;
+    else if (note === BTN_DRUM || note === BTN_STEP) sample.leave();
+    else if (!sample.button(note, this.#shift)) this.#shared(note);
+  }
+
+  /** Buttons that work the same in both modes: transport, loop, SOLO. True when handled. */
+  #shared(note: number): boolean {
+    const state = this.#store.state;
+    const solo = BTN_SOLO.findIndex((n) => n === note);
+    if (solo >= 0) {
+      const track = songTracks(state.song)[solo];
+      if (track === undefined) return true;
+      if (this.#shift) this.#actions.selectTrack(track.id);
+      else this.#actions.toggleMute(track.id);
+      return true;
+    }
+    switch (note) {
+      case BTN_PLAY:
+        this.#actions.togglePlay();
+        return true;
+      case BTN_STOP:
+        this.#actions.stop();
+        this.#setFire({ scroll: 0 });
+        return true;
+      case BTN_REC:
+        this.#actions.setLoop(!state.loop);
+        return true;
+      default:
+        return false;
+    }
+  }
+
   // --- buttons ------------------------------------------------------------------------------
 
   #button(note: number, down: boolean): void {
@@ -294,29 +370,19 @@ export class FireController {
     }
     if (!down) return;
     this.#flush();
+    if (this.#shared(note)) return;
     const state = this.#store.state;
     const { song, selected } = state;
-    const solo = BTN_SOLO.findIndex((n) => n === note);
-    if (solo >= 0) {
-      const track = songTracks(song)[solo];
-      if (track === undefined) return;
-      if (this.#shift) this.#actions.selectTrack(track.id);
-      else this.#actions.toggleMute(track.id);
-      return;
-    }
     switch (note) {
+      case BTN_DRUM:
+        if (this.#sample !== null) {
+          this.#held = null;
+          this.#touched = null;
+          this.#sample.enter();
+        }
+        break;
       case BTN_BANK:
         this.#setFire({ mode: state.fire.mode === 'replace' ? 'add' : 'replace', cursor: 0 });
-        break;
-      case BTN_PLAY:
-        this.#actions.togglePlay();
-        break;
-      case BTN_STOP:
-        this.#actions.stop();
-        this.#setFire({ scroll: 0 });
-        break;
-      case BTN_REC:
-        this.#actions.setLoop(!state.loop);
         break;
       case BTN_PATTERN:
         if (this.#shift) this.#actions.redo();
@@ -483,8 +549,13 @@ export function followScroll(state: Pick<AppState, 'playing' | 'cursor' | 'fire'
 /** Button and row LED values by CC number. */
 export function buttonLeds(
   state: Pick<AppState, 'song' | 'playing' | 'loop' | 'fire'>,
-  modifiers: { shift: boolean; alt: boolean },
+  modifiers: {
+    shift: boolean;
+    alt: boolean;
+    sample?: Pick<SampleMode, 'active' | 'page'> | null;
+  },
 ): Map<number, number> {
+  const sample = modifiers.sample ?? null;
   const leds = new Map<number, number>([
     [BTN_PLAY, state.playing ? 2 : 1],
     [BTN_STOP, 1],
@@ -501,6 +572,15 @@ export function buttonLeds(
     // BANK LEDs: LED 1 = Replace, LED 2 = Add.
     [CC_BANK_LEDS, 0x10 | (state.fire.mode === 'replace' ? 0b0001 : 0b0010)],
   ]);
+  if (sample !== null) leds.set(BTN_DRUM, sample.active ? LED_DRUM_ON : 0);
+  if (sample?.active === true) {
+    // SAMPLE mode: DRUM lit, STEP dull, BANK LEDs = the knob page, unused buttons dark.
+    leds.set(BTN_STEP, 1);
+    leds.set(CC_BANK_LEDS, 0x10 | (1 << sample.page));
+    for (const cc of [BTN_PAT_UP, BTN_PAT_DOWN, BTN_GRID_LEFT, BTN_GRID_RIGHT, BTN_BROWSER]) {
+      leds.set(cc, 0);
+    }
+  }
   const tracks = songTracks(state.song);
   LED_ROW.forEach((cc, i) => {
     const track = tracks[i];
