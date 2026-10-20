@@ -2071,3 +2071,4 @@
 {"mode":"phrygianDominant","tonic":"Db","token":"vii7","name":"Bm7","notes":[47,71,74,78,81]}
 {"mode":"phrygianDominant","tonic":"E","token":"vii°/II","name":"E°","notes":[40,64,67,70]}
 {"mode":"phrygianDominant","tonic":"Ab","token":"v°","name":"D#°","notes":[39,63,66,69]}
+{"mode":"phrygianDominant","tonic":"D","token":"vø11","name":"Aø11","notes":[45,69,72,75,79,83,86]}
