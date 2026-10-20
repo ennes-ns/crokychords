@@ -23,8 +23,7 @@ collaboration process in `docs/WORKFLOW.md`.
   linear history, no force pushes.
 - `claude/hookpad-magic-chords-tool-jlqq58` is the branch on which the first phases were built; it is
   kept as history and is no longer used.
-- Work is tracked in GitHub Issues (labels `ready`, `blocked`, `in-review`, `maintainer`, `size:*`,
-  `agent:*`); see `docs/WORKFLOW.md`.
+- Work is tracked in GitHub Issues (labels `ready`, `blocked`, `in-review`, `maintainer`, `size:*`); see `docs/WORKFLOW.md`.
 
 ## Design in one page
 
@@ -53,7 +52,7 @@ collaboration process in `docs/WORKFLOW.md`.
 - Built-in instruments and presets for playback (issue #4).
 - Online version on `chords.cr0ky.com`, entirely on Cloudflare's free tier (Pages, Workers, D1, R2,
   Access); self-hosting is the fallback (`docs/specs/online-v1.md`, issue #6).
-- Reviews on every PR: CI, automatic reviewers (CodeRabbit, Gemini Code Assist), then the maintainer.
+- Reviews on every PR: CI, the reviewer agent, then the maintainer. No third-party review apps.
 
 ## How to continue
 

@@ -28,23 +28,22 @@ who does what and how work moves.
 
 ## Who builds and who reviews
 
-Two labels per issue decide who builds it and how much effort it needs:
+One label per issue says how much effort it needs; builders are Claude Code sessions (cloud or local).
 
-| Labels                     | Builder                                 | Model and effort                                             |
-| -------------------------- | --------------------------------------- | ------------------------------------------------------------ |
-| `size:S` + `agent:gemini`  | Gemini (Jules or Code Assist), free     | small jobs: docs, renames, one-file fixes                    |
-| `size:M` + `agent:claude`  | Claude cloud session                    | Sonnet 5.5, normal effort: one package, spec exists          |
-| `size:L` + `agent:claude`  | Claude cloud session                    | Opus 5.5, high effort: several packages or design work       |
+| Label    | Builder              | Model and effort                                       |
+| -------- | -------------------- | ------------------------------------------------------ |
+| `size:S` | Claude cloud session | Haiku 5.5 or Sonnet 5.5, low effort: docs, renames, one-file fixes |
+| `size:M` | Claude cloud session | Sonnet 5.5, normal effort: one package, spec exists    |
+| `size:L` | Claude cloud session | Opus 5.5, high effort: several packages or design work |
 
 Review on every PR, in this order:
 
 1. **CI** (`pnpm check`, `data tests`): required.
-2. **CodeRabbit and Gemini Code Assist** comment automatically (both free for this public repo). The
-   builder addresses or rebuts every finding in the PR.
+2. **Reviewer agent** (`.claude/agents/reviewer.md`, via `/code-review`): ranked findings; the builder
+   addresses or rebuts each one in the PR.
 3. **Main session**: final review, runs the app in a worktree, merges.
 
-Reviewers from a different vendor than the builder are deliberate: the same model family misses the
-same things.
+No third-party review apps are installed on the repository.
 
 ## What the maintainer does
 
@@ -75,7 +74,7 @@ same things.
 
 | What               | Where                                                                                     |
 | ------------------ | ----------------------------------------------------------------------------------------- |
-| Backlog            | GitHub Issues (labels `ready`, `blocked`, `in-review`, `maintainer`, `size:*`, `agent:*`) |
+| Backlog            | GitHub Issues (labels `ready`, `blocked`, `in-review`, `maintainer`, `size:*`) |
 | Specs              | `docs/specs/`                                                                             |
 | Decisions          | `docs/adr/`                                                                               |
 | Progress           | `docs/ROADMAP.md`                                                                         |
