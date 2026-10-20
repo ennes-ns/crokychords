@@ -80,12 +80,15 @@ async function boot(app: HTMLElement): Promise<void> {
   const audio = new AudioEngine(storage, { base: `${import.meta.env.BASE_URL}soundfonts/` });
   const midi = new MidiOut(browserMidiAccess());
   store.set({ breakcore: { ...store.state.breakcore, ...loadBreakcorePrefs(storage) } });
+  // Own audio files: the own break and the sampler slots' samples (docs/specs/sampler-v1.md).
+  const sampleStore = await openSampleStore(browserIndexedDb());
+  void audio.samplers.attach(sampleStore);
   const breakcore = new BreakcoreController({
     store,
     startAudio: () => audio.start(),
     context: () => audio.context,
     synth: () => audio.synth,
-    samples: await openSampleStore(browserIndexedDb()),
+    samples: sampleStore,
     fetchBytes: async (url) => {
       const response = await fetch(url);
       if (!response.ok) throw new Error(`the break did not load (HTTP ${response.status})`);
@@ -126,6 +129,7 @@ async function boot(app: HTMLElement): Promise<void> {
   mountBand(band, store, actions, storage, audio.sound, audio.master, {
     defaultOpen: !compact(),
     samples: audio.samples,
+    samplers: audio.samplers,
   });
   mountSuggest(suggest, store, actions);
   mountSaves(saves, session, engine === null ? {} : { status: syncStatusView(engine) });

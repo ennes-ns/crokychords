@@ -133,7 +133,7 @@ progression. A new song starts with three: **Chords** (channel 1, sustained), **
 | Ch | MIDI channel 1–16 |
 | Velocity, Gate | Note velocity 1–127 and the sounding fraction of each step (10–100 %) |
 | Transp. | Transpose in semitones, -24..24 |
-| Instrument | The browser sound of this track: a SoundFont instrument or a synth (see below). `…` while its samples load, `!` when they could not be loaded |
+| Instrument | The browser sound of this track: a SoundFont instrument, a synth or a sampler slot (see below). `…` while its samples load, `!` when they could not be loaded, `∅` for a sampler slot without a sample; `∿` opens the Sampler panel of a track that plays a slot |
 | ✎ | Open the pattern editor under the row (below) |
 | ▲ ▼ ✕ | Reorder, remove (undo brings it back) |
 
@@ -230,6 +230,31 @@ SOUNDFONT_WAV=/tmp/presets pnpm --filter @crokychords/web exec vitest run test/s
 ```
 
 The second line writes an 8-bar example per preset (`/tmp/presets/<preset>.wav`).
+
+### Sampler: your own samples
+
+The instrument select also lists eight **sampler slots** (group *Sampler*). Pick one, or
+**Sampler… ✎**, and the **Sampler panel** opens under the track's row (one at a time; `∿` on the
+row, ✕ or `Esc` closes it). Drop an audio file on the panel or use *Load sample…* (wav, ogg,
+flac or mp3, at most 10 MB, 10 ms–30 s after decoding). The file is kept in this browser
+(IndexedDB) and never uploaded; *Remove* deletes it. Loading never plays anything.
+
+- **Waveform:** drag `S`/`E` to trim, and with the loop on the two `L` markers to set the loop.
+- **Pitch:** the root note is detected when the file loads (*Detect* runs it again on the trim;
+  type a note number to correct it), *Tune* ±50 cents, *Keytrack* 100 % follows the keys,
+  0 % plays every key at the same pitch (drums, textures), *Reverse*.
+- **Loop:** loops while the note is held and plays on to the sample end after the release.
+  *Forward* with a crossfade (no click at the loop point) or *Ping-pong*.
+- **Envelope** (attack, decay, sustain, release), **Filter** (lowpass, highpass or bandpass,
+  cutoff, resonance, *Env*: how far the cutoff follows the envelope), **Level** (gain, pan,
+  how much the velocity changes level and cutoff).
+- The keys under the controls audition the slot while held. *GM* is the General MIDI program the
+  `.mid` export writes for tracks that play this slot; the slot name shows in the selects.
+
+Slots are browser sound settings like the instruments (`crokychords.sound`), never part of the
+song or undo. A slot without a decoded sample plays the piano stand-in. Loud settings (high
+gain, strong resonance) can exceed full scale; the master protection below catches that. Spec:
+`docs/specs/sampler-v1.md`.
 
 ### Master volume and protection
 

@@ -1,21 +1,25 @@
 /**
- * Sound settings: the sound preset, the drum pattern, the instrument of every track and the
- * melody lane's listening settings (docs/specs/soundfonts-v1.md §8). A listening preference,
+ * Sound settings: the sound preset, the drum pattern, the instrument of every track, the
+ * melody lane's listening settings (docs/specs/soundfonts-v1.md §8) and the sampler slots'
+ * patches (docs/specs/sampler-v1.md §2). A listening preference,
  * kept outside the song (no undo, never in MIDI except the export's Program Changes) and saved in
  * localStorage.
  */
 import type { Song, Track, TrackRole } from '@crokychords/core';
 import { MELODY_TRACK_ID, MELODY_VELOCITY } from '@crokychords/core';
-import type { DrumPatternId, InstrumentId, SoundPresetId } from './instruments';
+import type { DrumPatternId, InstrumentId, SamplerId, SoundPresetId } from './instruments';
 import {
   DEFAULT_SOUND_PRESET,
   gmProgram,
   isDrumPatternId,
   isInstrumentId,
+  isSamplerId,
   isSoundPresetId,
   presetChoice,
   soundPreset,
 } from './instruments';
+import type { SamplerPatch, SamplerPatches } from './sampler';
+import { clampPatch, defaultSamplers, parseSamplers } from './sampler';
 
 export const SOUND_KEY = 'crokychords.sound';
 
@@ -39,6 +43,8 @@ export interface SoundState {
   /** Per-track instrument (track id, or 'melody'); absent = the preset's choice for the role. */
   instruments: Readonly<Record<string, InstrumentId>>;
   melody: MelodySound;
+  /** The patch of every sampler slot (the samples themselves are in IndexedDB). */
+  samplers: Readonly<Record<SamplerId, SamplerPatch>>;
 }
 
 /** What plays a track in the browser: its instrument and listening tweaks. */
@@ -60,6 +66,7 @@ export function defaultSound(): SoundState {
     drums: soundPreset(DEFAULT_SOUND_PRESET).drums,
     instruments: {},
     melody: defaultMelodySound(),
+    samplers: defaultSamplers(),
   };
 }
 
@@ -107,6 +114,7 @@ export function parseSound(json: string | null): SoundState {
     drums: isDrumPatternId(drums) ? drums : soundPreset(id).drums,
     instruments: parseInstruments(Reflect.get(raw, 'instruments')),
     melody: parseMelody(Reflect.get(raw, 'melody')),
+    samplers: parseSamplers(Reflect.get(raw, 'samplers')),
   };
 }
 
@@ -125,19 +133,24 @@ export function customTracks(state: SoundState, song: Song): string[] {
   return ids.filter((id) => state.instruments[id] !== undefined);
 }
 
+/** General MIDI program of `id` under `state` (a sampler slot's comes from its patch). */
+export function programOf(state: SoundState, id: InstrumentId): number {
+  return isSamplerId(id) ? state.samplers[id].program : gmProgram(id);
+}
+
 /** General MIDI program per track id (and 'melody') of `song`, for the .mid export. */
 export function trackPrograms(state: SoundState, song: Song): Record<string, number> {
   const programs: Record<string, number> = {};
   for (const track of song.tracks ?? []) {
-    programs[track.id] = gmProgram(instrumentOf(state, track.id, track.role));
+    programs[track.id] = programOf(state, instrumentOf(state, track.id, track.role));
   }
-  programs[MELODY_TRACK_ID] = gmProgram(instrumentOf(state, MELODY_TRACK_ID, null));
+  programs[MELODY_TRACK_ID] = programOf(state, instrumentOf(state, MELODY_TRACK_ID, null));
   return programs;
 }
 
 export type SoundListener = (state: SoundState) => void;
 
-export class SoundSettings {
+export class SoundSettings implements SamplerPatches {
   readonly #storage: SoundStorage | null;
   readonly #listeners = new Set<SoundListener>();
   #state: SoundState;
@@ -209,6 +222,19 @@ export class SoundSettings {
     if (!Number.isFinite(velocity)) return;
     const value = Math.min(127, Math.max(1, Math.round(velocity)));
     this.#set({ ...this.#state, melody: { ...this.#state.melody, velocity: value } });
+  }
+
+  /** The patch of a sampler slot. */
+  sampler(id: SamplerId): SamplerPatch {
+    return this.#state.samplers[id];
+  }
+
+  /** Replace a sampler slot's patch (clamped). */
+  setSampler(id: SamplerId, patch: SamplerPatch): void {
+    this.#set({
+      ...this.#state,
+      samplers: { ...this.#state.samplers, [id]: clampPatch(patch, id) },
+    });
   }
 
   /** What plays `track` in the browser (`role` null for the melody lane). */

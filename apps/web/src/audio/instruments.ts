@@ -27,8 +27,33 @@ export type SoundfontId =
   | 'clarinet'
   | 'flute';
 
-/** Anything a track can play: a SoundFont instrument or a synth recipe. */
-export type InstrumentId = SynthId | SoundfontId;
+/** The user's sampler slots (docs/specs/sampler-v1.md §1). */
+export const SAMPLER_IDS = [
+  'sampler-1',
+  'sampler-2',
+  'sampler-3',
+  'sampler-4',
+  'sampler-5',
+  'sampler-6',
+  'sampler-7',
+  'sampler-8',
+] as const;
+export type SamplerId = (typeof SAMPLER_IDS)[number];
+
+/** The synth recipe a sampler slot plays while it has no decoded sample. */
+export const SAMPLER_STAND_IN: SynthId = 'piano';
+
+export function isSamplerId(value: unknown): value is SamplerId {
+  return SAMPLER_IDS.some((id) => id === value);
+}
+
+/** Slot number 1–8 of a sampler id. */
+export function samplerSlot(id: SamplerId): number {
+  return SAMPLER_IDS.indexOf(id) + 1;
+}
+
+/** Anything a track can play: a SoundFont instrument, a synth recipe or a sampler slot. */
+export type InstrumentId = SynthId | SoundfontId | SamplerId;
 
 export interface SoundfontInstrument {
   id: SoundfontId;
@@ -187,6 +212,7 @@ export const SYNTH_PROGRAMS: Readonly<Record<SynthId, number>> = {
 export const INSTRUMENT_IDS: readonly InstrumentId[] = [
   ...SOUNDFONTS.map((s) => s.id),
   ...SYNTH_IDS,
+  ...SAMPLER_IDS,
 ];
 
 export function isSynthId(value: unknown): value is SynthId {
@@ -202,19 +228,28 @@ export function soundfont(id: InstrumentId): SoundfontInstrument | undefined {
   return SOUNDFONTS.find((s) => s.id === id);
 }
 
-/** The synth recipe that plays `id`: itself, or a SoundFont's stand-in. */
+/** The synth recipe that plays `id`: itself, or a SoundFont's or sampler slot's stand-in. */
 export function standInOf(id: InstrumentId): SynthId {
-  return isSynthId(id) ? id : (soundfont(id)?.standIn ?? 'piano');
+  if (isSynthId(id)) return id;
+  if (isSamplerId(id)) return SAMPLER_STAND_IN;
+  return soundfont(id)?.standIn ?? 'piano';
 }
 
-/** General MIDI program (0-based) of any instrument. */
+/**
+ * General MIDI program (0-based) of any instrument. A sampler slot's program is part of its patch
+ * (sound settings); without it this is 0.
+ */
 export function gmProgram(id: InstrumentId): number {
-  return isSynthId(id) ? SYNTH_PROGRAMS[id] : (soundfont(id)?.program ?? 0);
+  if (isSynthId(id)) return SYNTH_PROGRAMS[id];
+  if (isSamplerId(id)) return 0;
+  return soundfont(id)?.program ?? 0;
 }
 
-/** Display name of any instrument. */
+/** Display name of any instrument (a sampler slot's default name; its patch may rename it). */
 export function instrumentName(id: InstrumentId): string {
-  return isSynthId(id) ? INSTRUMENTS[id].name : (soundfont(id)?.name ?? id);
+  if (isSynthId(id)) return INSTRUMENTS[id].name;
+  if (isSamplerId(id)) return `Sampler ${samplerSlot(id)}`;
+  return soundfont(id)?.name ?? id;
 }
 
 export interface OscillatorSpec {

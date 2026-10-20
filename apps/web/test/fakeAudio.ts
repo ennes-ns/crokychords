@@ -104,6 +104,9 @@ export class FakeOscillator extends FakeSource implements OscillatorLike {
 export class FakeBufferSource extends FakeSource implements BufferSourceLike {
   buffer: BufferLike | null = null;
   readonly playbackRate = new FakeParam();
+  loop = false;
+  loopStart = 0;
+  loopEnd = 0;
   /** Arguments of every start(when, offset, duration) call. */
   startArgs: { when: number; offset: number | undefined; duration: number | undefined }[] = [];
   constructor() {

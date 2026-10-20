@@ -1,8 +1,8 @@
 /**
  * Web Audio poly synth for the built-in instruments (piano, pad, bass, lead), the SoundFont
- * instruments and the drum kit. The sound settings pick the instrument per track (the preset's
+ * instruments, the sampler slots (docs/specs/sampler-v1.md) and the drum kit. The sound settings pick the instrument per track (the preset's
  * choice for its role unless the track has its own); a SoundFont instrument plays its synth
- * stand-in until its samples are loaded. Every track gets its own gain bus into the master bus
+ * stand-in until its samples are loaded, a sampler slot until its sample is decoded. Every track gets its own gain bus into the master bus
  * (mix → gentle compressor → master gain → limiter / soft clip / bypass → volume); piano and
  * sample voices also send into a shared room. Graph construction lives in `graph.ts`,
  * `piano.ts` and `soundfont.ts` and works on an injected `SynthContext`. Instruments with a
@@ -45,11 +45,14 @@ import type {
 import {
   DEFAULT_SOUND_PRESET,
   instrumentFor,
+  isSamplerId,
   notePeak,
   presetChoice,
   presetInstrument,
   soundfont,
 } from './instruments';
+import type { PreparedSample, SamplerBuffer, SamplerPatch, SamplerSource } from './sampler';
+import { SAMPLER_RATE, SAMPLER_VOICES, SamplerBank, Samplers, buildSamplerVoice } from './sampler';
 import type { SoundStorage, TrackVoice } from './sound';
 import { SoundSettings } from './sound';
 import type { SampleCacheStorage, SampleFetch, SampleSet, SampleSource } from './soundfont';
@@ -88,6 +91,8 @@ export interface NoteOptions {
   role?: TrackRole;
   /** Play this synth instrument instead of the track's choice. */
   instrument?: Instrument;
+  /** Play this instrument (any kind) instead of the track's choice (auditions). */
+  instrumentId?: InstrumentId;
   /** MIDI velocity 1-127, default 96. */
   velocity?: number;
   /** Track id: the gain bus the note goes through (default 'default'); 'melody' is the lane. */
@@ -99,6 +104,8 @@ export interface SynthOptions {
   voice?: (track: string, role: TrackRole | null) => TrackVoice;
   /** Decoded SoundFont samples; without them SoundFont instruments play their stand-ins. */
   samples?: SampleSource | null;
+  /** The sampler slots; without them (or a decoded sample) a slot plays its stand-in. */
+  samplers?: SamplerSource | null;
 }
 
 interface Voice {
@@ -113,8 +120,14 @@ interface Voice {
   instrument?: SynthId;
   /** True for a SoundFont sample voice (they share one voice budget). */
   sample?: boolean;
+  /** True for a sampler voice (they share their own voice budget). */
+  sampler?: boolean;
   /** Level held after the attack (sample voices): the release fades from it. */
   hold?: number;
+  /** The envelope level at a time (sampler voices): the release fades from it. */
+  levelAt?: (time: number) => number;
+  /** Stops the sources itself at a release (sampler voices: loop hand-off, filter release). */
+  releaseAt?: (at: number, release: number, stopAt: number) => void;
   /** Attack ramp: from 0 at `start` to `peak` over `attack` seconds. */
   attack: number;
   peak: number;
@@ -126,6 +139,7 @@ export class Synth {
   readonly #preset: () => SoundPresetId;
   readonly #resolve: (track: string, role: TrackRole | null) => TrackVoice;
   readonly #samples: SampleSource | null;
+  readonly #samplers: SamplerSource | null;
   readonly #buses = new Map<string, GainLike>();
   #voices = new Set<Voice>();
   #noise: BufferLike | null = null;
@@ -152,6 +166,7 @@ export class Synth {
       options.voice ??
       ((_track, role) => ({ instrument: presetChoice(this.#preset(), role), transpose: 0 }));
     this.#samples = options.samples ?? null;
+    this.#samplers = options.samplers ?? null;
     this.#master = buildMasterBus(ctx, master.mode, master.volume);
     this.#userMode = master.mode;
   }
@@ -310,9 +325,18 @@ export class Synth {
       return this.#synthVoice(explicit, note, opts.velocity ?? 96, start, duration, track);
     }
     const role = track === MELODY_TRACK_ID ? null : (opts.role ?? 'chords');
-    const choice = this.#resolve(track, role);
+    const choice: TrackVoice =
+      opts.instrumentId === undefined
+        ? this.#resolve(track, role)
+        : { instrument: opts.instrumentId, transpose: 0 };
     const pitch = Math.min(127, Math.max(0, note + choice.transpose));
     const velocity = choice.velocity ?? opts.velocity ?? 96;
+    if (isSamplerId(choice.instrument)) {
+      const ready = this.#samplers?.playable(choice.instrument) ?? null;
+      if (ready !== null) {
+        return this.#samplerVoice(ready, pitch, velocity, start, duration, track);
+      }
+    }
     const font = soundfont(choice.instrument);
     if (font !== undefined) {
       const set = this.#samples?.samples(font.id) ?? null;
@@ -391,12 +415,55 @@ export class Synth {
     return voice;
   }
 
+  #samplerVoice(
+    ready: { patch: SamplerPatch; prepared: PreparedSample },
+    note: number,
+    velocity: number,
+    start: number,
+    duration: number,
+    track: string,
+  ): Voice {
+    this.#stealOldest((v) => v.sampler === true, SAMPLER_VOICES, start);
+    const nodes = buildSamplerVoice(
+      this.#ctx,
+      ready.prepared,
+      ready.patch,
+      note,
+      velocity,
+      start,
+      this.#bus(track),
+    );
+    const voice: Voice = {
+      gain: nodes.gain,
+      sources: nodes.sources,
+      release: nodes.release,
+      start,
+      end: Infinity,
+      track,
+      sampler: true,
+      levelAt: nodes.levelAt,
+      releaseAt: nodes.releaseAt,
+      attack: nodes.attack,
+      peak: nodes.peak,
+    };
+    this.#voices.add(voice);
+    this.#release(voice, start + Math.max(duration, nodes.attack));
+    // An unlooped sample shorter than the note ends on its own.
+    voice.end = Math.min(voice.end, start + nodes.length);
+    return voice;
+  }
+
   /** Keep the sample voices under SAMPLE_VOICES at `start`: release the oldest early. */
   #stealSamples(start: number): void {
+    this.#stealOldest((v) => v.sample === true, SAMPLE_VOICES, start);
+  }
+
+  /** Keep the voices matching `kind` under `budget` at `start`: release the oldest early. */
+  #stealOldest(kind: (voice: Voice) => boolean, budget: number, start: number): void {
     const sounding = [...this.#voices]
-      .filter((v) => v.sample === true && v.end > start)
+      .filter((v) => kind(v) && v.end > start)
       .sort((a, b) => a.start - b.start);
-    for (const voice of sounding.slice(0, Math.max(0, sounding.length - SAMPLE_VOICES + 1))) {
+    for (const voice of sounding.slice(0, Math.max(0, sounding.length - budget + 1))) {
       this.#release(voice, start, STEAL_RELEASE);
     }
   }
@@ -422,11 +489,15 @@ export class Synth {
       if (ramp <= voice.attack) {
         // Inside the attack: without cancelAndHoldAtTime, set the ramp's value at `at`.
         if (!held) g.setValueAtTime((voice.peak * ramp) / voice.attack, at);
-      } else if (voice.hold !== undefined) {
+      } else if (voice.levelAt !== undefined || voice.hold !== undefined) {
         // Anchor the fade at the held level (some engines mis-handle a target after a ramp).
-        g.setValueAtTime(voice.hold, at);
+        g.setValueAtTime(voice.levelAt?.(at) ?? voice.hold ?? 0, at);
       }
       g.setTargetAtTime(0, at, release / 4);
+    }
+    if (voice.releaseAt !== undefined) {
+      voice.releaseAt(at, release, stopAt);
+      return;
     }
     for (const source of voice.sources) {
       try {
@@ -441,6 +512,8 @@ export class Synth {
 export interface EngineOptions {
   /** How samples are fetched (default: the global `fetch`). */
   fetch?: SampleFetch;
+  /** Decodes a sampler file at SAMPLER_RATE (default: an OfflineAudioContext). */
+  decodeSampler?: (bytes: ArrayBuffer) => Promise<SamplerBuffer>;
   /** The Cache API (default: `window.caches` when it exists). */
   caches?: SampleCacheStorage | null;
   /** URL prefix of the sample folders (default 'soundfonts/'). */
@@ -461,9 +534,29 @@ function soundPresetInstruments(preset: SoundPresetId): InstrumentId[] {
   return [...TRACK_ROLES.map((r) => presetChoice(preset, r)), presetChoice(preset, null)];
 }
 
+/** Lead time of a sampler audition, so its attack is not clipped (seconds). */
+export const SAMPLER_AUDITION_DELAY = 0.02;
+/** Longest sampler audition when it is not released earlier (seconds). */
+export const SAMPLER_AUDITION_SECONDS = 10;
+/** Bus of sampler auditions that name no track. */
+export const SAMPLER_AUDITION_TRACK = 'sampler-audition';
+
+/** Decode with an OfflineAudioContext at SAMPLER_RATE: no user gesture needed, fixed frames. */
+function decodeOffline(bytes: ArrayBuffer): Promise<SamplerBuffer> {
+  if (typeof OfflineAudioContext === 'undefined') {
+    return Promise.reject(new Error('this browser cannot decode audio'));
+  }
+  const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: 1, sampleRate: SAMPLER_RATE });
+  return ctx.decodeAudioData(bytes);
+}
+
+function createAudioBuffer(channels: number, length: number, sampleRate: number): SamplerBuffer {
+  return new AudioBuffer({ numberOfChannels: channels, length, sampleRate });
+}
+
 /**
  * Owns the single AudioContext, created lazily on a user gesture (browsers keep a context
- * created without one suspended), and the SoundFont bank.
+ * created without one suspended), the SoundFont bank and the sampler slots.
  */
 export class AudioEngine {
   /** Sound preset, drums, per-track instruments; read live by the synth and the scheduler. */
@@ -472,6 +565,10 @@ export class AudioEngine {
   readonly master: MasterSettings;
   /** SoundFont samples, loaded on demand. */
   readonly samples: SoundfontBank;
+  /** The sampler slots' decoded samples. */
+  readonly samplerBank: SamplerBank;
+  /** The sampler edit API (docs/specs/sampler-v1.md §6). */
+  readonly samplers: Samplers;
   #ctx: AudioContext | null = null;
   #synth: Synth | null = null;
   #playing: () => boolean = () => false;
@@ -494,6 +591,13 @@ export class AudioEngine {
       caches: options.caches !== undefined ? options.caches : browserCaches(),
       ...(options.base === undefined ? {} : { base: options.base }),
     });
+    this.samplerBank = new SamplerBank({
+      decode: options.decodeSampler ?? decodeOffline,
+      create: createAudioBuffer,
+    });
+    this.samplers = new Samplers(this.sound, this.samplerBank, (id, note, velocity, track) =>
+      this.audition(id, note, velocity, track),
+    );
     // A newly chosen SoundFont instrument (a preset or one track) starts loading at once.
     let inUse = soundfontsInUse(this.sound);
     this.sound.subscribe(() => {
@@ -534,6 +638,7 @@ export class AudioEngine {
       this.#synth = new Synth(ctx, () => this.sound.preset, this.master.state, {
         voice: (track, role) => this.sound.voice(track, role),
         samples: this.samples,
+        samplers: this.samplers,
       });
       void this.samples.attach((bytes) => ctx.decodeAudioData(bytes));
       this.prefetch();
@@ -550,6 +655,30 @@ export class AudioEngine {
     if (ctx === null || ctx.state === 'closed') return false;
     void this.#idle.wake();
     return true;
+  }
+
+  /**
+   * Play one note of `instrument` now, for at most SAMPLER_AUDITION_SECONDS unless released
+   * earlier (the Sampler panel's keys, the Fire's pads). Starts audio when it is not running yet
+   * (call from a user gesture); null when there is no audio.
+   */
+  audition(
+    instrument: InstrumentId,
+    note: number,
+    velocity = 100,
+    track: string = SAMPLER_AUDITION_TRACK,
+  ): NoteHandle | null {
+    if (this.#ctx === null) void this.start();
+    const ctx = this.#ctx;
+    const synth = this.#synth;
+    if (ctx === null || synth === null || !this.wake()) return null;
+    const handle = synth.playNote(
+      note,
+      ctx.currentTime + SAMPLER_AUDITION_DELAY,
+      SAMPLER_AUDITION_SECONDS,
+      { instrumentId: instrument, velocity, track },
+    );
+    return handle;
   }
 
   /** Tell the engine whether the transport plays (it never suspends while it does). */
