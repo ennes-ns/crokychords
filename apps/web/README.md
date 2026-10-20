@@ -31,8 +31,7 @@ The **Theme** select at the end of the toolbar switches between **Default** and 
 README banner as a UI: pixel fonts, square corners, chunky borders, the brand palette). The
 choice is stored in `localStorage` as `crokychords.theme`. Themes are design tokens (CSS custom
 properties) in `src/themes/`, one file per theme; `styles.css` uses only the tokens. Pixel's
-fonts (Departure Mono, Pixelify Sans; SIL OFL 1.1) are bundled in `public/fonts/` with their
-licences. See [`docs/specs/themes-v1.md`](../../docs/specs/themes-v1.md), also for adding a theme.
+font (Departure Mono, SIL OFL 1.1) is bundled in `public/fonts/` with its licence. See [`docs/specs/themes-v1.md`](../../docs/specs/themes-v1.md), also for adding a theme.
 
 ## Keyboard shortcuts
 

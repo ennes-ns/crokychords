@@ -68,14 +68,13 @@ result as one `<style id="themes">` before the app mounts.
 
 Fonts are bundled, never loaded from a CDN: `apps/web/public/fonts/<file>` next to its licence
 file. A face is declared in the theme's `fonts` and only downloaded when the theme is active.
-Pixel uses two fonts, both under the SIL Open Font License 1.1:
-
-- **Departure Mono** (`--font-ui`, all UI text): a pixel monospace drawn on an 11 px grid, so it is
-  crisp at 11 and 22 px. Its digits and letters are unambiguous (`5` vs `S`, `2` vs `Z`), which
-  matters for chord tokens such as `b5` and `#5`. Bold is synthesised.
-- **Pixelify Sans** (`--font-display`: the wordmark and the panel headings): a chunky pixel sans
-  close to the banner's hand-drawn wordmark; subset to Latin, WOFF2, weights 400–700. Not used
-  for body text because its `5` reads as `S`.
+Pixel uses one font, **Departure Mono** (SIL Open Font License 1.1), for both `--font-ui` and
+`--font-display` (wordmark and panel headings): a pixel monospace drawn on an 11 px grid, so it is
+crisp at 11 and 22 px. Its letters and digits are unambiguous (`C` vs `O`, `5` vs `S`), which
+matters for the wordmark and for chord tokens such as `b5` and `#5`. Bold is synthesised. A pixel
+sans with a closer match to the banner wordmark (Pixelify Sans) was tried and dropped: at UI sizes
+its `C` reads as `O` and its `5` as `S`. `--font-display` stays a separate token so a later theme
+can use a display face.
 
 Glyphs a font lacks (▾ ▶ ▲ ▼ ♮) fall back to the next family in the stack.
 
@@ -102,7 +101,7 @@ Glyphs a font lacks (▾ ▶ ▲ ▼ ♮) fall back to the next family in the st
 | Grid           | bar and beat lines solid 1 px (no dashes), so the grid reads as pixels                                                      |
 | Effects        | no glow on the playhead or selection, hard offset shadow on the audio overlay, transitions in `steps()`                     |
 | Mark           | `croky-pixel.svg` (pixel-perfect vector of the 64 px original) at 32 px, square, `image-rendering: pixelated`                 |
-| Type           | Departure Mono 13 px for the UI (11 px for small labels), Pixelify Sans for the wordmark (18 px) and headings              |
+| Type           | Departure Mono: 13 px for the UI, 11 px for small labels and panel headings, 22 px for the wordmark                         |
 
 The mark swaps image through `content: var(--mark-image)` on the existing `<img>` (Default:
 `normal`, the `src` stays), so the DOM is the same in both themes.
