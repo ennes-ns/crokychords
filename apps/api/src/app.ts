@@ -6,6 +6,9 @@ import { ACCESS_JWT_HEADER, AuthError, verifyAccessJwt } from './auth';
 import type { JwksSource } from './auth';
 import type { AssistantEnv } from './assistant';
 import { registerAssistant } from './assistant';
+import type { CommunityEnv } from './community';
+import { isMaintainer, registerCommunity } from './community';
+import { displayHandle } from './communityStore';
 import { ApiError } from './errors';
 import { LIMITS, SCHEMA_VERSION, describeIssues, isSaveId, saveInputSchema } from './record';
 import type { SaveRecord } from './record';
@@ -13,7 +16,7 @@ import { Storage } from './storage';
 import type { User } from './storage';
 
 /** Bindings, vars and secrets of the Worker (see wrangler.toml and docs/specs/api-v1.md §2). */
-export interface Env extends AssistantEnv {
+export interface Env extends AssistantEnv, CommunityEnv {
   DB: D1Database;
   SAVES: R2Bucket;
   /** The built web app (wrangler.toml `[assets]`); not used by the API routes. */
@@ -111,6 +114,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       id: user.id,
       email: user.email,
       created_at: user.created_at,
+      handle: displayHandle(user.email, user.handle),
+      maintainer: isMaintainer(c.env.ADMIN_EMAILS, user.email),
       save_count: await c.get('storage').countSaves(user.id),
       limits: { max_save_bytes: LIMITS.maxSaveBytes, max_saves: LIMITS.maxSaves },
     });
@@ -213,6 +218,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     now,
     readBody: readBounded,
   });
+
+  registerCommunity(app, { now, readBody: readBounded });
 
   app.notFound((c) => c.json(new ApiError('not_found', 'no such route').toBody(), 404));
 

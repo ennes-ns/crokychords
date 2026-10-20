@@ -45,6 +45,10 @@ ASSISTANT_USER_DAILY_REQUESTS = "50"
 ASSISTANT_USER_MINUTE_REQUESTS = "6"
 ASSISTANT_OUTPUT = "schema"
 ASSISTANT_FALLBACKS = "default"
+# Maintainer e-mails for the community review queue (docs/specs/community-v1.md §3), comma
+# separated. Empty here on purpose: no address is committed. The deploy workflow passes the
+# repository secret ADMIN_EMAILS with `--var`, because `wrangler deploy` resets vars to this file.
+ADMIN_EMAILS = ""
 
 [[d1_databases]]
 binding = "DB"
