@@ -59,7 +59,7 @@ import {
 import type { Focus, MelodyKeyAction } from './melodyKeys';
 import { downloadMidi } from './midi/download';
 import type { MidiOut } from './midi/webmidi';
-import type { PlaceMode, Store } from './state';
+import type { Store } from './state';
 import { clampTrackSelection } from './state';
 import { melodyLaneBeats } from './views/melody';
 import { computeSuggestions } from './views/suggest';
@@ -68,21 +68,24 @@ import { computeSuggestions } from './views/suggest';
 const AUDITION_DELAY_S = 0.01;
 
 export interface Actions {
+  /** Select a chord, or the "+" slot after the last chord (`null`). */
   select(index: number | null): void;
-  insert(token: string): void;
   /**
-   * Replace the selected chord's token, keeping its length and beat position (undoable).
-   * With nothing selected it inserts (appends) instead.
+   * Pick a chord (docs/specs/web-v1.md §3): replace the selected chord's token, keeping its length
+   * and position; on the "+" slot append it (the "+" slot stays selected). `insert` inserts it
+   * after the selected chord instead and selects the new chord. One undo step.
    */
-  replaceSelected(token: string): void;
-  /** Insert or replace according to `placeMode` (`replace` forces replacing). */
-  place(token: string, replace?: boolean): void;
-  setPlaceMode(mode: PlaceMode): void;
-  /** Click on empty grid space: the top suggestion (or the tonic triad) at the end. */
+  place(token: string, insert?: boolean): void;
+  /** `place` the diatonic triad of `degree` and audition it. */
+  placeDegree(degree: Degree, insert?: boolean): void;
+  /**
+   * Explicit add: insert a copy of the selected chord after it (on the "+" slot: of the last
+   * chord, or the tonic triad in an empty song) and select the copy.
+   */
+  insertSlot(): void;
+  /** The top suggestion (or the tonic triad) appended at the end (Fire append slot). */
   appendDefault(): void;
-  addDegree(degree: Degree): void;
-  /** Replace the selected chord with the diatonic triad of `degree`. */
-  replaceDegree(degree: Degree): void;
+  /** Remove the selected chord; on the "+" slot the last chord. */
   removeSelected(): void;
   resizeSelected(delta: number): void;
   setSelectedToken(token: string): void;
@@ -240,54 +243,48 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       store.set({ selected: clampSelection(index, store.state.song.chords.length) });
     },
 
-    insert(token) {
-      const { song, selected } = store.state;
-      const result = insertAfter(song, selected, token);
-      commit(result.song, result.selected);
-    },
-
-    replaceSelected(token) {
+    place(token, insert = false) {
       const { song, selected } = store.state;
       if (selected === null || song.chords[selected] === undefined) {
-        actions.insert(token);
-        return;
+        commit(insertAfter(song, null, token).song, null);
+      } else if (insert) {
+        const result = insertAfter(song, selected, token);
+        commit(result.song, result.selected);
+      } else {
+        commit(setChordToken(song, selected, token), selected);
       }
-      commit(setChordToken(song, selected, token), selected);
     },
 
-    place(token, replace = false) {
-      if (replace || store.state.placeMode === 'replace') actions.replaceSelected(token);
-      else actions.insert(token);
+    placeDegree(degree, insert = false) {
+      const token = diatonicTriadToken(degree, store.state.song.key.mode);
+      actions.place(token, insert);
+      actions.audition(token);
     },
 
-    setPlaceMode(mode) {
-      store.set({ placeMode: mode });
+    insertSlot() {
+      const { song, selected } = store.state;
+      const at = selected === null || song.chords[selected] === undefined ? null : selected;
+      const source = at === null ? song.chords.at(-1) : song.chords[at];
+      const token = source?.token ?? diatonicTriadToken(1, song.key.mode);
+      const result = insertAfter(song, at, token);
+      commit(result.song, result.selected);
     },
 
     appendDefault() {
       const { song } = store.state;
-      const top = computeSuggestions({ ...store.state, selected: null, placeMode: 'insert' })
-        .items[0];
+      const top = computeSuggestions({ ...store.state, selected: null }).items[0];
       const token = top?.token ?? diatonicTriadToken(1, song.key.mode);
-      const result = insertAfter(song, null, token);
-      commit(result.song, result.selected);
-    },
-
-    addDegree(degree) {
-      const token = diatonicTriadToken(degree, store.state.song.key.mode);
-      actions.insert(token);
-      actions.audition(token);
-    },
-
-    replaceDegree(degree) {
-      const token = diatonicTriadToken(degree, store.state.song.key.mode);
-      actions.replaceSelected(token);
-      actions.audition(token);
+      commit(insertAfter(song, null, token).song, null);
     },
 
     removeSelected() {
       const { song, selected } = store.state;
-      if (selected === null) return;
+      if (selected === null) {
+        // The "+" slot: remove the chord before it, like Backspace at the end of a line.
+        if (song.chords.length === 0) return;
+        commit(removeChord(song, song.chords.length - 1).song, null);
+        return;
+      }
       const result = removeChord(song, selected);
       commit(result.song, result.selected);
     },
@@ -571,10 +568,10 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     key(action) {
       switch (action.type) {
         case 'degree':
-          actions.addDegree(action.degree);
+          actions.placeDegree(action.degree, action.insert ?? false);
           break;
-        case 'replaceDegree':
-          actions.replaceDegree(action.degree);
+        case 'insertSlot':
+          actions.insertSlot();
           break;
         case 'remove':
           actions.removeSelected();
@@ -610,7 +607,7 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
           );
           break;
         }
-        case 'deselect':
+        case 'endSlot':
           actions.select(null);
           break;
         case 'undo':

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { KeyAction } from '../src/keyboard';
-import { bindShortcuts } from '../src/shortcuts';
+import { TAB_SLOTS_ATTR, bindShortcuts } from '../src/shortcuts';
 
 function setup() {
   const run = vi.fn<(action: KeyAction) => void>();
@@ -127,5 +127,34 @@ describe('bindShortcuts: the melody lane hook', () => {
     press(document.body, ' ');
     press(control('input', 'text'), '3');
     expect(first).not.toHaveBeenCalled();
+  });
+
+  it('moves the chord selection with Tab inside the grid, and lets Tab leave at the ends', () => {
+    const run = vi.fn<(action: KeyAction) => void>();
+    let canMove = true;
+    unbinds.push(bindShortcuts(window, run, undefined, () => canMove));
+    const grid = document.createElement('section');
+    grid.setAttribute(TAB_SLOTS_ATTR, '');
+    document.body.append(grid);
+
+    expect(press(grid, 'Tab').defaultPrevented).toBe(true);
+    expect(run).toHaveBeenLastCalledWith({ type: 'move', delta: 1 });
+    expect(press(grid, 'Tab', { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(run).toHaveBeenLastCalledWith({ type: 'move', delta: -1 });
+
+    canMove = false; // on the "+" slot: Tab moves the focus on
+    expect(press(grid, 'Tab').defaultPrevented).toBe(false);
+    canMove = true;
+    expect(press(document.body, 'Tab').defaultPrevented).toBe(false); // outside the grid
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves Enter to a focused button but takes it on the page', () => {
+    const { run, unbind } = setup();
+    unbinds.push(unbind);
+    expect(press(control('button'), 'Enter').defaultPrevented).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+    expect(press(document.body, 'Enter').defaultPrevented).toBe(true);
+    expect(run).toHaveBeenLastCalledWith({ type: 'endSlot' });
   });
 });

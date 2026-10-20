@@ -55,18 +55,23 @@ describe('insertLength (bar clipping)', () => {
 });
 
 describe('insert / remove / resize', () => {
-  it('appends when nothing is selected and selects the new chord', () => {
+  it('appends on the "+" slot with the last chord\'s length and selects the new chord', () => {
     const { song: s, selected } = insertAfter(song([4, 2]), null, 'IV');
     expect(s.chords.map((c) => c.token)).toEqual(['I', 'V', 'IV']);
     expect(s.chords[2]?.beats).toBe(2);
     expect(selected).toBe(2);
   });
 
-  it('inserts after the selection, sized to its bar position', () => {
+  it("inserts after the selection with the selected chord's length", () => {
     const { song: s, selected } = insertAfter(song([3, 4]), 0, 'vi');
     expect(s.chords.map((c) => c.token)).toEqual(['I', 'vi', 'V']);
-    expect(s.chords[1]?.beats).toBe(1);
+    expect(s.chords[1]?.beats).toBe(3);
     expect(selected).toBe(1);
+  });
+
+  it('gives the first chord of a song the bar-clipped default length', () => {
+    const { song: s } = insertAfter(song([], { beats: 3, unit: 4 }), null, 'I');
+    expect(s.chords[0]?.beats).toBe(3);
   });
 
   it('inserts at an explicit index and length', () => {
@@ -104,11 +109,15 @@ describe('insert / remove / resize', () => {
 
 describe('selection helpers', () => {
   it('moves and clamps', () => {
-    expect(moveSelection(null, 1, 3)).toBe(0);
+    // Slots: the chords plus the "+" slot (null) after the last one.
+    expect(moveSelection(null, 1, 3)).toBeNull();
     expect(moveSelection(null, -1, 3)).toBe(2);
-    expect(moveSelection(2, 1, 3)).toBe(2);
+    expect(moveSelection(2, 1, 3)).toBeNull();
+    expect(moveSelection(1, 1, 3)).toBe(2);
     expect(moveSelection(0, -1, 3)).toBe(0);
+    expect(moveSelection(null, -9, 3)).toBe(0);
     expect(moveSelection(1, 1, 0)).toBeNull();
+    expect(moveSelection(null, -1, 0)).toBeNull();
     expect(clampSelection(5, 2)).toBe(1);
     expect(clampSelection(1, 0)).toBeNull();
     expect(clampSelection(null, 4)).toBeNull();

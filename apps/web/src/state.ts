@@ -13,8 +13,6 @@ export interface MidiPortInfo {
 export type TableStatus = 'loading' | 'seed-only' | 'loaded' | 'error';
 export type MidiStatus = 'off' | 'pending' | 'ready' | 'unsupported' | 'denied';
 export type SuggestMode = 'context' | 'popular';
-/** What a Next chord click does: insert after the selection or replace the selected chord. */
-export type PlaceMode = 'insert' | 'replace';
 /**
  * Akai Fire controller (docs/specs/akai-fire-v1.md): 'waiting' = SysEx access granted but no
  * Fire plugged in (it attaches when one appears).
@@ -32,7 +30,11 @@ export interface FireState {
 
 export interface AppState {
   song: Song;
-  /** Chord index. */
+  /**
+   * The selected slot (docs/specs/web-v1.md §3): a chord index, or null for the "+" slot after
+   * the last chord. There is always one selected slot; picking a chord replaces the selected
+   * chord, or appends one on the "+" slot.
+   */
   selected: number | null;
   /** Id of the track selected in the Band panel (target of `M` and of auditions). */
   selectedTrack: string | null;
@@ -55,7 +57,6 @@ export interface AppState {
   ngrams: NgramTable | null;
   suggestMode: SuggestMode;
   diatonicOnly: boolean;
-  placeMode: PlaceMode;
   /** The AudioContext exists and is running (it needs a user gesture). */
   audioReady: boolean;
   fire: FireState;
@@ -88,7 +89,6 @@ export function initialState(song: Song = createSong()): AppState {
     ngrams: null,
     suggestMode: 'context',
     diatonicOnly: false,
-    placeMode: 'insert',
     audioReady: false,
     fire: { status: 'off', scroll: 0, cursor: 0 },
     focus: 'chords',
@@ -175,8 +175,8 @@ export class Store {
   }
 
   /**
-   * Open another song (a saved progression): clears undo history, selection, playhead and loop
-   * range (the SaveSession binding restores the opened song's own loop, see loop.ts).
+   * Open another song (a saved progression): clears undo history, playhead and loop range, and
+   * selects the "+" slot (the SaveSession binding restores the opened song's own loop, see loop.ts).
    */
   load(song: Song): void {
     this.#past = [];

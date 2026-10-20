@@ -6,8 +6,10 @@ export function isSpaceKey(e: Pick<KeyLike, 'key' | 'code'>): boolean {
 }
 
 export type KeyAction =
-  | { type: 'degree'; degree: Degree }
-  | { type: 'replaceDegree'; degree: Degree }
+  /** Pick that degree's triad: replace the selected chord (`insert`: insert after it). */
+  | { type: 'degree'; degree: Degree; insert?: boolean }
+  /** Explicit add: a copy of the selected chord after it. */
+  | { type: 'insertSlot' }
   | { type: 'remove' }
   | { type: 'resize'; delta: number }
   | { type: 'move'; delta: number }
@@ -16,7 +18,8 @@ export type KeyAction =
   | { type: 'toggleLoop' }
   | { type: 'loopStart' }
   | { type: 'loopEnd' }
-  | { type: 'deselect' }
+  /** Select the "+" slot after the last chord. */
+  | { type: 'endSlot' }
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'toggleMute' };
@@ -47,6 +50,7 @@ export function keyAction(e: KeyLike): KeyAction | null {
   if (mod && !e.altKey) {
     if (key === 'z') return e.shiftKey ? { type: 'redo' } : { type: 'undo' };
     if (key === 'y' && !e.shiftKey) return { type: 'redo' };
+    if (e.key === 'Enter' && !e.shiftKey) return { type: 'insertSlot' };
     return null;
   }
   // Alt+[ / Alt+]: loop points at the selection ([ and ] alone resize the selected chord).
@@ -66,7 +70,7 @@ export function keyAction(e: KeyLike): KeyAction | null {
   // Shift+digit: `key` is layout-dependent ('!', '@', ...), so match the physical key.
   const digit = /^(?:Digit|Numpad)([1-7])$/.exec(e.code)?.[1];
   const shifted = e.shiftKey && digit !== undefined ? DEGREE_KEYS[digit] : undefined;
-  if (shifted !== undefined) return { type: 'replaceDegree', degree: shifted };
+  if (shifted !== undefined) return { type: 'degree', degree: shifted, insert: true };
 
   if (e.code === 'BracketLeft' || e.key === '[' || e.key === '{') {
     return { type: 'resize', delta: e.shiftKey ? -0.25 : -1 };
@@ -79,6 +83,10 @@ export function keyAction(e: KeyLike): KeyAction | null {
   if (key === 'l') return { type: 'toggleLoop' };
 
   switch (e.key) {
+    case 'Insert':
+      return { type: 'insertSlot' };
+    case 'Enter':
+      return e.shiftKey ? null : { type: 'endSlot' };
     case 'Backspace':
     case 'Delete':
       return { type: 'remove' };
@@ -87,7 +95,7 @@ export function keyAction(e: KeyLike): KeyAction | null {
     case 'ArrowRight':
       return { type: 'move', delta: 1 };
     case 'Escape':
-      return { type: 'deselect' };
+      return { type: 'endSlot' };
     default:
       return null;
   }

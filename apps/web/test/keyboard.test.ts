@@ -20,11 +20,12 @@ describe('keyAction', () => {
     expect(keyAction(press('4', { ctrlKey: true }))).toBeNull();
   });
 
-  it('maps Shift+1–7 to replacing with that degree (by physical key)', () => {
+  it('maps Shift+1–7 to inserting that degree (by physical key)', () => {
     const shift = (key: string, code: string) => press(key, { code, shiftKey: true });
-    expect(keyAction(shift('!', 'Digit1'))).toEqual({ type: 'replaceDegree', degree: 1 });
-    expect(keyAction(shift('&', 'Digit7'))).toEqual({ type: 'replaceDegree', degree: 7 });
-    expect(keyAction(shift('4', 'Numpad4'))).toEqual({ type: 'replaceDegree', degree: 4 });
+    const insert = (degree: number) => ({ type: 'degree', degree, insert: true });
+    expect(keyAction(shift('!', 'Digit1'))).toEqual(insert(1));
+    expect(keyAction(shift('&', 'Digit7'))).toEqual(insert(7));
+    expect(keyAction(shift('4', 'Numpad4'))).toEqual(insert(4));
     expect(keyAction(shift('*', 'Digit8'))).toBeNull();
     expect(keyAction(press('!', { code: 'Digit1', shiftKey: true, ctrlKey: true }))).toBeNull();
   });
@@ -45,7 +46,12 @@ describe('keyAction', () => {
     expect(keyAction(press('ArrowLeft'))).toEqual({ type: 'move', delta: -1 });
     expect(keyAction(press('ArrowRight'))).toEqual({ type: 'move', delta: 1 });
     expect(keyAction(press(' '))).toEqual({ type: 'togglePlay' });
-    expect(keyAction(press('Escape'))).toEqual({ type: 'deselect' });
+    expect(keyAction(press('Escape'))).toEqual({ type: 'endSlot' });
+    expect(keyAction(press('Enter'))).toEqual({ type: 'endSlot' });
+    expect(keyAction(press('Enter', { shiftKey: true }))).toBeNull();
+    expect(keyAction(press('Insert'))).toEqual({ type: 'insertSlot' });
+    expect(keyAction(press('Enter', { ctrlKey: true }))).toEqual({ type: 'insertSlot' });
+    expect(keyAction(press('Enter', { metaKey: true }))).toEqual({ type: 'insertSlot' });
     expect(keyAction(press('a'))).toBeNull();
   });
 

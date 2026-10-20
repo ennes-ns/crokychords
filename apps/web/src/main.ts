@@ -4,6 +4,7 @@ import { createActions } from './actions';
 import { AudioEngine } from './audio/synth';
 import { loadTables } from './data/tables';
 import { h } from './dom';
+import { moveSelection } from './edit';
 import { bindLoopPersistence } from './loop';
 import { FireController } from './midi/fire/controller';
 import { FireConnection, bindFirePageEvents, browserFireAccess } from './midi/fire/connect';
@@ -135,6 +136,10 @@ async function boot(app: HTMLElement): Promise<void> {
       if (melodyAction === null) return false;
       actions.melodyKey(melodyAction);
       return true;
+    },
+    (delta) => {
+      const { selected, song } = store.state;
+      return moveSelection(selected, delta, song.chords.length) !== selected;
     },
   );
 

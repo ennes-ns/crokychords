@@ -1,6 +1,7 @@
 import { createSong } from '@crokychords/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { Actions } from '../src/actions';
+import { TAB_SLOTS_ATTR } from '../src/shortcuts';
 import { Store, initialState } from '../src/state';
 import {
   beatToRowPosition,
@@ -9,6 +10,7 @@ import {
   gridLayout,
   loopSegments,
   mountGrid,
+  plusSlot,
   xToBeat,
 } from '../src/views/grid';
 
@@ -131,13 +133,10 @@ function fakeActions(): Actions {
   const noop = () => undefined;
   return {
     select: vi.fn(),
-    insert: noop,
-    replaceSelected: noop,
     place: noop,
-    setPlaceMode: noop,
+    placeDegree: noop,
+    insertSlot: noop,
     appendDefault: vi.fn(),
-    addDegree: noop,
-    replaceDegree: noop,
     removeSelected: noop,
     resizeSelected: noop,
     setSelectedToken: noop,
@@ -205,7 +204,7 @@ describe('mountGrid', () => {
     expect(root.querySelector('.chord.selected .token')?.textContent).toBe('I');
   });
 
-  it('selects on block click and appends on empty space', () => {
+  it('selects on block click and the "+" slot on empty space after the end', () => {
     const s = createSong({ chords: [{ token: 'I', beats: 4 }] });
     const store = new Store(initialState(s));
     const actions = fakeActions();
@@ -224,8 +223,42 @@ describe('mountGrid', () => {
     const tracks = root.querySelectorAll<HTMLElement>('.track');
     expect(tracks).toHaveLength(2);
     tracks[1]?.click();
-    expect(actions.appendDefault).toHaveBeenCalledTimes(1);
+    expect(actions.select).toHaveBeenLastCalledWith(null);
+    expect(actions.appendDefault).not.toHaveBeenCalled();
     root.remove();
+  });
+
+  it('renders the "+" slot after the last chord, selected when the selection is null', () => {
+    const s = createSong({
+      chords: [
+        { token: 'I', beats: 4 },
+        { token: 'V', beats: 2 },
+      ],
+    });
+    const store = new Store({ ...initialState(s), selected: 0 });
+    const actions = fakeActions();
+    const root = document.createElement('section');
+    mountGrid(root, store, actions);
+    const plus = () => root.querySelector<HTMLElement>('.plus-slot');
+    expect(plus()?.style.left).toBe('37.5%'); // beat 6 of 16
+    expect(plus()?.style.width).toBe('12.5%'); // the last chord's 2 beats
+    expect(plus()?.classList.contains('selected')).toBe(false);
+    plus()?.click();
+    expect(actions.select).toHaveBeenLastCalledWith(null);
+    store.set({ selected: null });
+    expect(plus()?.classList.contains('selected')).toBe(true);
+    expect(plus()?.getAttribute('aria-pressed')).toBe('true');
+    expect(root.hasAttribute(TAB_SLOTS_ATTR)).toBe(true);
+  });
+
+  it('cuts the "+" slot at the row end and puts it on the next row at a row boundary', () => {
+    const full = createSong({
+      chords: Array.from({ length: 4 }, () => ({ token: 'I', beats: 4 })),
+    });
+    const layout = gridLayout(full);
+    expect(plusSlot(full, layout)).toEqual({ row: 1, left: 0, width: 0.25 });
+    const long = createSong({ chords: [{ token: 'I', beats: 14 }] });
+    expect(plusSlot(long, gridLayout(long))).toEqual({ row: 0, left: 14 / 16, width: 2 / 16 });
   });
 
   it('shows the playhead only while playing', () => {

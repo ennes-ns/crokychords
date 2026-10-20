@@ -37,17 +37,20 @@ font (Departure Mono, SIL OFL 1.1) is bundled in `public/fonts/` with its licenc
 
 | Key | Action |
 |-----|--------|
-| `1` – `7` | Add the diatonic triad of that degree after the selection (`ii`, `vii°`, `III` in minor, ...) |
-| `Shift+1` – `Shift+7` | Replace the selected chord with that triad (keeps its length and position) |
-| `←` / `→` | Select the previous / next chord (and hear it) |
-| `Backspace` / `Delete` | Remove the selected chord |
+| `1` – `7` | Replace the selected chord with the diatonic triad of that degree (`ii`, `vii°`, `III` in minor, ...; keeps its length and position); on the "+" slot add it at the end |
+| `Shift+1` – `Shift+7` | Insert that triad after the selected chord instead |
+| `Insert`, `Ctrl/Cmd+Enter` | Insert a copy of the selected chord after it and select the copy (on the "+" slot: a copy of the last chord) |
+| `←` / `→` | Select the previous / next chord (and hear it); `→` past the last chord selects the "+" slot |
+| `Tab` / `Shift+Tab` | Same as `→` / `←` while the grid has focus (Tab leaves the grid at either end) |
+| `Enter` | Select the "+" slot |
+| `Backspace` / `Delete` | Remove the selected chord (on the "+" slot: the last chord) |
 | `[` / `]` | Shorten / lengthen the selected chord by one beat |
 | `Shift+[` / `Shift+]` | ... by a quarter beat |
 | `Space` | Play / stop, from the start (the loop start when looping); works in selects and on buttons too, not while typing in the title or BPM |
 | `Shift+Space` | Play from the selected chord |
 | `L` | Loop on / off |
 | `Alt+[` / `Alt+]` | Set the loop start / end at the selected chord |
-| `Esc` | Deselect (or leave a text field) |
+| `Esc` | Select the "+" slot (or leave a text field) |
 | `M` | Mute / unmute the selected track (Band panel) |
 | `Ctrl/Cmd+Z` | Undo (50 steps, song edits only, including track edits) |
 | `Ctrl/Cmd+Shift+Z`, `Ctrl+Y` | Redo |
@@ -57,13 +60,19 @@ Shift+click a bar number to extend the loop to it. The range is shaded in the gr
 shows it next to the Loop checkbox, with × to clear it (then Loop loops the whole song). The loop
 is kept per saved progression on this device. See `docs/specs/loop-v1.md`.
 
-Mouse: click a chord to select it; drag the right edge of the selected chord to resize it (snaps
-to beats, hold `Shift` for quarter beats); click empty space after the last chord to append the
-top suggestion. In the Next chord panel, hover a chord to hear it and click to insert it after
-the selection; Shift+click replaces the selected chord instead (same length and position). The
-**Insert | Replace** toggle sets what a plain click does, and the line under the list says which
-mode is active. While replacing, suggestions follow the chords before the selection. **In context** suggests from the chords up to the selection (or the whole song when
-nothing is selected); **Popular** shows the most common chords of the mode. The chord editor
+Editing is replace-first: there is always one selected slot, a chord or the dashed **"+" slot**
+after the last chord. Picking a chord (a Next chord click, `1`–`7`, a Fire palette pad) replaces
+the selected chord and keeps its length and position, so you can try variations in place; on the
+"+" slot it adds a chord at the end (as long as the previous one) and the "+" slot stays
+selected, so typing `1 5 6 4` on a new song builds four chords. Adding in the middle is explicit:
+`Insert` / `Ctrl+Enter`, or hold `Shift` while picking. Every edit is one undo step.
+
+Mouse: click a chord to select it; click the "+" slot (or empty space after the last chord) to
+select it; drag the right edge of the selected chord to resize it (snaps to beats, hold `Shift`
+for quarter beats). In the Next chord panel, hover a chord to hear it and click to pick it;
+Shift+click inserts it after the selected chord instead. The line under the list says what a
+click does. **In context** suggests from the chords before the selected slot (the whole song on the
+"+" slot); **Popular** shows the most common chords of the mode. The chord editor
 below the grid changes degree, accidental, quality, extension, sus, adds, alterations, inversion
 and applied (secondary) function; only combinations with a valid token are offered.
 
@@ -98,8 +107,8 @@ either one does too). In the melody lane:
 | `Home` | Cursor to the start |
 | `Esc` | Back to the chord grid |
 
-`Space`, undo/redo, `M`, `L`, `Alt+[`/`Alt+]` and `Shift+1`…`7` keep their chord-grid meaning in
-both lanes.
+`Space`, undo/redo, `M`, `L`, `Alt+[`/`Alt+]`, `Enter`, `Insert` and `Shift+1`…`7` keep their
+chord-grid meaning in both lanes.
 
 ## Band / tracks
 

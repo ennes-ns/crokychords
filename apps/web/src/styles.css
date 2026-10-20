@@ -343,6 +343,34 @@ h2 {
   touch-action: none;
 }
 
+.plus-slot {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius);
+  border: var(--chord-border-w) dashed var(--line-strong);
+  color: var(--muted);
+  font-size: var(--font-size-lg);
+  font-weight: var(--weight-bold);
+  transition: border-color var(--motion-fast) var(--motion-easing);
+}
+
+.plus-slot:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.plus-slot.selected {
+  color: var(--accent);
+  border-style: solid;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--chord-glow-w) color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
 .empty-hint {
   position: absolute;
   inset: 0;
