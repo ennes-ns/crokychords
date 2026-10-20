@@ -42,12 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: scripts/check-rust.sh
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -59,3 +53,9 @@ jobs:
           scripts/gen-rust-golden.sh
           git diff --exit-code -- crates/croky-core/tests/golden \
             || { echo "::error::Rust goldens are stale; run scripts/gen-rust-golden.sh and commit"; exit 1; }
+      - run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/check-rust.sh
