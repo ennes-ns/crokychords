@@ -15,12 +15,12 @@ import {
 } from '../src/theory';
 
 describe('MODES and SCALES', () => {
-  it('lists the nine Hooktheory modes', () => {
+  it('lists the nine supported modes', () => {
     expect(MODES).toHaveLength(9);
     expect(Object.keys(SCALES).sort()).toEqual([...MODES].sort());
   });
 
-  it('matches the sind.py semitone tables', () => {
+  it('has the expected semitone tables per mode', () => {
     expect(SCALES.major).toEqual([0, 2, 4, 5, 7, 9, 11]);
     expect(SCALES.minor).toEqual([0, 2, 3, 5, 7, 8, 10]);
     expect(SCALES.dorian).toEqual([0, 2, 3, 5, 7, 9, 10]);

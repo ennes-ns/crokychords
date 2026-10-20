@@ -1,2 +1,2 @@
-# Real suggestion tables are personal-use data: never commit them (see docs/DATA.md).
+# Built suggestion tables are never committed (see docs/DATA.md).
 public/data/*.json

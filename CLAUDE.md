@@ -1,6 +1,6 @@
 # Croky Chords — instructions for Claude Code
 
-Chord-progression editor with Hookpad-style "Magic Chords" suggestions; goal: a DAW MIDI plugin.
+Chord-progression editor with data-driven "Next chord" suggestions; goal: a DAW MIDI plugin.
 Read `docs/HANDOVER.md` for history and `docs/ARCHITECTURE.md` for how the pieces fit.
 
 ## Layout
@@ -8,8 +8,8 @@ Read `docs/HANDOVER.md` for history and `docs/ARCHITECTURE.md` for how the piece
 | Path | What | Toolchain |
 |------|------|-----------|
 | `packages/core` | Pure TS: theory, chord tokens, song model, n-gram suggestions, MIDI writer | pnpm, vitest |
-| `apps/web` | Vite + TS editor (grid, Magic Chords panel, playback, MIDI out) | pnpm, vitest/jsdom |
-| `packages/data` | Python builders for `ngrams.json` (Hooktheory API, Chordonomicon) | uv, pytest |
+| `apps/web` | Vite + TS editor (grid, Next chord panel, playback, MIDI out) | pnpm, vitest/jsdom |
+| `packages/data` | Python builder for `ngrams.json` (Chordonomicon) | uv, pytest |
 | `docs/specs` | One spec per deliverable; agents implement from these | |
 | `docs/adr` | Architecture decision records | |
 
@@ -31,8 +31,9 @@ Run `pnpm check` before every commit. Fix formatting with `pnpm format`.
 - One chord-token format everywhere (`roman-numeral-v1`, see `packages/data/README.md`). Never
   invent a second representation; extend the grammar and the fixture instead.
 - Data files (`packages/data/out`, `downloads`, `cache`, `apps/web/public/data/*.json`) are
-  git-ignored and must never be committed. Hooktheory data is personal-use only; Chordonomicon is
-  CC-BY-NC-4.0. See `docs/DATA.md`.
+  git-ignored and must never be committed. See `docs/DATA.md`.
+- Croky Chords stands on its own: no references to other chord tools or their data in code, UI
+  text, tests or docs.
 - Conventional commits (`feat(core): …`, `fix(web): …`, `docs: …`, `chore: …`).
 - Dutch is fine in chat with the user; code, comments, commits and docs are English.
 
@@ -45,7 +46,7 @@ Run `pnpm check` before every commit. Fix formatting with `pnpm format`.
   work from one spec, stay inside their package, run the package checks, and report deviations.
 - **Reviewer agent:** `.claude/agents/reviewer.md`, used on every PR before it leaves draft.
 - Skills: `/pr-workflow` (branch → check → commit → PR), `agent-task-spec` (how to write a task
-  for an agent), `music-theory` (token grammar cheatsheet), `hooktheory-data` (data pipeline).
+  for an agent), `music-theory` (token grammar cheatsheet), `chordonomicon-data` (data pipeline).
 
 ## Definition of done for a PR
 

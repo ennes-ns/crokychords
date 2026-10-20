@@ -240,7 +240,11 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
 
     if (song.chords.length === 0) {
       tracks[0]?.append(
-        h('div', { class: 'empty-hint' }, 'Click here, press 1–7, or pick a Magic Chord to start.'),
+        h(
+          'div',
+          { class: 'empty-hint' },
+          'Click here, press 1–7, or pick a suggested chord to start.',
+        ),
       );
     }
     replaceChildren(root, ...rows);

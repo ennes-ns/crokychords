@@ -164,7 +164,7 @@ def test_cli_end_to_end(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     assert data["tokenFormat"] == "roman-numeral-v1"
     assert data["maxContext"] == 3
     assert data["source"]["name"] == "chordonomicon"
-    assert "CC-BY-NC-4.0" in data["source"]["license"]
+    assert "CC BY-NC 4.0" in data["source"]["license"]
     assert set(data["modes"]) == {"major", "minor"}
     for mode in data["modes"].values():
         assert set(mode) == {"sections", "chords", "ngrams"}

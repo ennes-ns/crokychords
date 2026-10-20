@@ -1,4 +1,4 @@
-/** Magic Chords panel: next-chord suggestions from the active n-gram table. */
+/** Next chord panel: suggestions for the next chord from the active n-gram table. */
 import type { Mode, Song, Suggestion } from '@crokychords/core';
 import {
   diatonicTriadToken,
@@ -96,9 +96,9 @@ function percent(p: number): string {
 export function mountSuggest(root: HTMLElement, store: Store, actions: Actions): void {
   root.classList.add('panel', 'suggest');
 
-  const magicButton = h('button', { class: 'seg', props: { type: 'button' } }, 'Magic');
+  const contextButton = h('button', { class: 'seg', props: { type: 'button' } }, 'In context');
   const popularButton = h('button', { class: 'seg', props: { type: 'button' } }, 'Popular');
-  magicButton.onclick = () => store.set({ suggestMode: 'magic' });
+  contextButton.onclick = () => store.set({ suggestMode: 'context' });
   popularButton.onclick = () => store.set({ suggestMode: 'popular' });
   const diatonic = h('input', { props: { type: 'checkbox' } });
   diatonic.onchange = () => store.set({ diatonicOnly: diatonic.checked });
@@ -109,8 +109,8 @@ export function mountSuggest(root: HTMLElement, store: Store, actions: Actions):
     h(
       'header',
       { class: 'panel-head' },
-      h('h2', {}, 'Magic Chords'),
-      h('div', { class: 'segmented', attrs: { role: 'group' } }, magicButton, popularButton),
+      h('h2', {}, 'Next chord'),
+      h('div', { class: 'segmented', attrs: { role: 'group' } }, contextButton, popularButton),
     ),
     h('label', { class: 'check' }, diatonic, ' Diatonic only'),
     context,
@@ -132,9 +132,9 @@ export function mountSuggest(root: HTMLElement, store: Store, actions: Actions):
     if (inputs.every((value, i) => value === last[i])) return;
     last = inputs;
 
-    magicButton.classList.toggle('active', state.suggestMode === 'magic');
+    contextButton.classList.toggle('active', state.suggestMode === 'context');
     popularButton.classList.toggle('active', state.suggestMode === 'popular');
-    magicButton.setAttribute('aria-pressed', String(state.suggestMode === 'magic'));
+    contextButton.setAttribute('aria-pressed', String(state.suggestMode === 'context'));
     popularButton.setAttribute('aria-pressed', String(state.suggestMode === 'popular'));
     diatonic.checked = state.diatonicOnly;
 

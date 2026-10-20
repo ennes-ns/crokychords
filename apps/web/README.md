@@ -1,7 +1,7 @@
 # @crokychords/web
 
 The Croky Chords editor: pick a key and tempo, build a chord progression in a grid, get
-Magic-Chords-style suggestions for the next chord, play it back, export a MIDI file, or send it
+data-driven suggestions for the next chord, play it back, export a MIDI file, or send it
 live to a DAW over Web MIDI. Vite + TypeScript, plain DOM (no UI or CSS framework); all music
 logic comes from [`@crokychords/core`](../../packages/core/README.md).
 
@@ -37,8 +37,8 @@ Firefox after its site-permission prompt; Safari has no Web MIDI.
 
 Mouse: click a chord to select it; drag the right edge of the selected chord to resize it (snaps
 to beats, hold `Shift` for quarter beats); click empty space after the last chord to append the
-top suggestion. In the Magic Chords panel, hover a chord to hear it and click to insert it after
-the selection. **Magic** suggests from the chords up to the selection (or the whole song when
+top suggestion. In the Next chord panel, hover a chord to hear it and click to insert it after
+the selection. **In context** suggests from the chords up to the selection (or the whole song when
 nothing is selected); **Popular** shows the most common chords of the mode. The chord editor
 below the grid changes degree, accidental, quality, extension, sus, adds, alterations, inversion
 and applied (secondary) function; only combinations with a valid token are offered.
@@ -63,7 +63,7 @@ progression. A new song starts with three: **Chords** (channel 1, sustained), **
 | ▲ ▼ ✕ | Reorder, remove (undo brings it back) |
 
 **+ Add track** adds a track of the chosen role with that role's defaults on the next free
-channel. Click a row to select it: `M` mutes it and Magic Chords auditions (hover a
+channel. Click a row to select it: `M` mutes it and Next chord auditions (hover a
 suggestion, arrow keys, the chord editor) play through it, with its pattern, octave and
 channel; without a selection they use the first unmuted track. The toolbar shows the channel
 map next to the MIDI-out control (`Chords ch1 · Bass ch2 · Arp ch3`, muted tracks struck
@@ -121,12 +121,11 @@ Out of the box the panel uses the small hand-written seed table from `@crokychor
 build a table with `packages/data` (see its README) and drop it in:
 
 ```bash
-cp packages/data/out/ngrams-hooktheory.json apps/web/public/data/ngrams.json
+cp packages/data/out/ngrams-chordonomicon.json apps/web/public/data/ngrams.json
 ```
 
 Reload the app: the toolbar badge switches from *seed only* to *loaded* and shows the table's
 name and the section count for the current mode; a selector lets you switch back to the seed.
 If the file is invalid the badge says *error* (hover it for the reason) and the seed stays
 active. `apps/web/public/data/*.json` is git-ignored and `vite build` does not copy `public/`,
-so a table never ends up in a commit or a build. Hooktheory data is for personal use only (see
-`docs/DATA.md`).
+so a table never ends up in a commit or a build (see `docs/DATA.md`).

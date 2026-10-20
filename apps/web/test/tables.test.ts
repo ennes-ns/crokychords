@@ -14,7 +14,7 @@ const json = (body: unknown, status = 200, type = 'application/json'): FetchLike
     ),
   );
 
-const table = { ...seedTable, source: { name: 'hooktheory', license: 'personal use' } };
+const table = { ...seedTable, source: { name: 'chordonomicon', license: 'CC BY-NC 4.0' } };
 
 describe('loadNgramTable', () => {
   it('fetches /data/ngrams.json and validates it', async () => {
@@ -23,7 +23,7 @@ describe('loadNgramTable', () => {
     expect(NGRAMS_URL).toBe('/data/ngrams.json');
     expect(fetchFn).toHaveBeenCalledWith('/data/ngrams.json', expect.anything());
     expect(result.status).toBe('loaded');
-    if (result.status === 'loaded') expect(result.table.source.name).toBe('hooktheory');
+    if (result.status === 'loaded') expect(result.table.source.name).toBe('chordonomicon');
   });
 
   it('treats a missing file as seed-only', async () => {
@@ -57,7 +57,7 @@ describe('loadTables', () => {
     await loadTables(store, json(table));
     expect(statuses).toEqual(['loading', 'loaded']);
     expect(store.state.table).toBe('ngrams');
-    expect(store.state.ngrams?.source.name).toBe('hooktheory');
+    expect(store.state.ngrams?.source.name).toBe('chordonomicon');
   });
 
   it('stays on the seed otherwise', async () => {

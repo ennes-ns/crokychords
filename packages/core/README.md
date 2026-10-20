@@ -41,12 +41,11 @@ suggestNext(seedTable, 'major', ['IV', 'I']); // [{ token: 'V', probability: 0.4
 ## Tokens
 
 Grammar and examples are in `packages/data/README.md` and `docs/specs/core-v1.md`. Every token
-of the Hooktheory fixture (`test/fixtures/tokens-hooktheory.json`, 1138 tokens in nine modes)
+of the token fixture (`test/fixtures/tokens-roman-v1.json`, 1138 tokens in nine modes)
 round-trips byte-for-byte through `formatToken(parseToken(t))`. The parser only accepts
 canonical spellings (sus, adds and alterations in ascending order, no repeats), so every accepted
-token round-trips. `rest` is not a chord: check `isRestToken` first. The raw markers the data
-builder can emit for undecoded bits (`V7alt1`, `IVx4`, `?…`) are rejected; use `tryParseToken`
-to skip them.
+token round-trips. `rest` is not a chord: check `isRestToken` first. Non-canonical strings such
+as `V7alt1`, `IVx4` or `?…` are rejected; use `tryParseToken` to skip them.
 
 ## Suggestion data: seed versus a real `ngrams.json`
 

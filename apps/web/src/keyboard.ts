@@ -30,7 +30,7 @@ const DEGREE_KEYS: Record<string, Degree> = {
   '7': 7,
 };
 
-/** Map a key press to an editor action (Hookpad-style shortcuts), or null. */
+/** Map a key press to an editor action (editor shortcuts), or null. */
 export function keyAction(e: KeyLike): KeyAction | null {
   const mod = e.ctrlKey || e.metaKey;
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;

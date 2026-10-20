@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Chord-progression editor with data-driven chord suggestions (Hookpad-style), on the road to a DAW MIDI plugin.",
+  "description": "Chord-progression editor with data-driven next-chord suggestions, on the road to a DAW MIDI plugin.",
+  "license": "MIT",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22"

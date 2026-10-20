@@ -9,7 +9,7 @@ export interface MidiPortInfo {
 
 export type TableStatus = 'loading' | 'seed-only' | 'loaded' | 'error';
 export type MidiStatus = 'off' | 'pending' | 'ready' | 'unsupported' | 'denied';
-export type SuggestMode = 'magic' | 'popular';
+export type SuggestMode = 'context' | 'popular';
 
 export interface AppState {
   song: Song;
@@ -52,7 +52,7 @@ export function initialState(song: Song = createSong()): AppState {
     tableStatus: 'loading',
     tableError: null,
     ngrams: null,
-    suggestMode: 'magic',
+    suggestMode: 'context',
     diatonicOnly: false,
     audioReady: false,
   };

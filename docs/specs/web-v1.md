@@ -4,8 +4,8 @@ Status: draft (2026-09-07), to be implemented after `@crokychords/core` v1 is me
 Owner: main session. Implementer: Opus agent. Deliverable: one PR on branch `feat/web-v1`.
 
 `apps/web` is a Vite + TypeScript single-page app, **no UI framework** (plain DOM with small
-helper functions), no CSS framework. It is the Hookpad-style editor: pick a key and tempo,
-build a chord progression in a grid, get Magic-Chords-style suggestions for the next chord,
+helper functions), no CSS framework. It is the Croky Chords editor: pick a key and tempo,
+build a chord progression in a grid, get data-driven suggestions for the next chord,
 play it back, export MIDI, send live MIDI to a DAW.
 
 Depends on: `@crokychords/core` (workspace). Read `docs/specs/core-v1.md` for its API and
@@ -26,7 +26,7 @@ apps/web/
 │   ├── views/
 │   │   ├── toolbar.ts   key/mode/tempo/meter, play/stop, export, MIDI out, table status
 │   │   ├── grid.ts      chord grid (bars × beats), selection, add/remove/resize
-│   │   ├── suggest.ts   Magic Chords panel
+│   │   ├── suggest.ts   Next chord panel
 │   │   └── chordEditor.ts  properties of the selected chord (quality, extension, sus/add, inversion, applied)
 │   ├── audio/
 │   │   ├── synth.ts     Web Audio poly synth (2 detuned saw/tri oscillators + lowpass + ADSR)
@@ -61,14 +61,14 @@ change (debounced 250 ms), load on boot, "New" resets. Undo/redo on `song` only.
 - Rows of bars; bar width scales with meter; chords rendered as blocks spanning `beats`.
 - Click empty space at a beat → adds the selected suggestion or `I` with 4 beats (or the
   remaining space in the bar, whichever is smaller). Keyboard `1`–`7` adds the diatonic
-  triad of that degree after the selection (Hookpad convention). `Backspace` removes the
+  triad of that degree after the selection. `Backspace` removes the
   selected chord. `[` / `]` shorten/lengthen by one beat, `Shift+[`/`]` by a quarter beat.
   `←`/`→` move selection, `Space` play/stop, `Esc` deselect.
 - Each block shows the token (e.g. `IV`) and the lead-sheet name (e.g. `F`) from `chordName`.
 - Color per degree (7 fixed hues, same for all qualities), lighter when selected.
 - Playhead line during playback; `chordAtBeat` drives highlighting.
 
-## 4. Magic Chords panel
+## 4. Next chord panel
 
 - Context = tokens before the selection (or all tokens when nothing is selected),
   `suggestNext(table, mode, context, { limit: 16 })`.
@@ -76,7 +76,7 @@ change (debounced 250 ms), load on boot, "New" resets. Undo/redo on `song` only.
   used ("after IV, I" / "any position" for the unigram row).
 - Click → insert after the selection (4 beats or remaining bar). Hover → audition the chord
   for 600 ms through the synth (and MIDI out if enabled).
-- Toggle "Popular" (unigram) vs "Magic" (context) like Hookpad; toggle "diatonic only" filter.
+- Toggle "Popular" (unigram) vs "In context" (context); toggle "diatonic only" filter.
 
 ## 5. Chord editor
 
@@ -103,7 +103,7 @@ valid token. Invalid combinations are simply not offered (e.g. sus + quality).
 - `seedTable` from core always loads first (status `seed-only`).
 - Then `fetch('/data/ngrams.json')`; if 200 and `parseNgramTable` succeeds, switch to it
   (status `loaded`), else stay on seed. The file is git-ignored under `apps/web/public/data/`
-  and the README tells the user to copy `packages/data/out/ngrams-hooktheory.json` there.
+  and the README tells the user to copy `packages/data/out/ngrams-chordonomicon.json` there.
   Never bundle real data into the build.
 - The toolbar shows the table name and section count from `source`/`modes[mode].sections`.
 

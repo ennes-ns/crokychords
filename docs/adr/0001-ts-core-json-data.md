@@ -1,6 +1,6 @@
 # ADR 0001: TypeScript core with JSON data, UI-framework-free web app
 
-Status: accepted (2026-09-07). Context: `docs/HANDOVER.md`, `docs/RECON.md`.
+Status: accepted (2026-09-07). Context: `docs/HANDOVER.md`.
 
 ## Decision
 
@@ -10,7 +10,7 @@ Status: accepted (2026-09-07). Context: `docs/HANDOVER.md`, `docs/RECON.md`.
 
 ## Why
 
-- Hookpad's recon shows the whole feature is a local trie lookup; a JSON n-gram table is the
+- Next-chord suggestion is a local lookup in a table of counts; a JSON n-gram table is the
   simplest faithful equivalent and is trivially portable to Rust for the plugin.
 - A DOM-free core is fully unit-testable and keeps the plugin port to "translate `suggest.ts`
   and `chords.ts`", which are a few hundred lines.
@@ -21,7 +21,7 @@ Status: accepted (2026-09-07). Context: `docs/HANDOVER.md`, `docs/RECON.md`.
 
 - Rust core compiled to WASM from day one: more build complexity before any UI exists; the
   port is cheap later.
-- Binary trie format like Hookpad's `.htb`: premature; JSON tables are ~1–5 MB gzipped.
+- A binary trie format: premature; JSON tables are ~1–5 MB gzipped.
 - React: more code for the agents to get wrong in a one-screen tool.
 
 ## Consequences

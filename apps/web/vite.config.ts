@@ -9,7 +9,7 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     // public/ only holds the git-ignored data/ngrams.json, which the dev server serves but
-    // must never end up in a build (Hooktheory data is personal-use only, see docs/DATA.md).
+    // must never end up in a build (built tables stay out of git, see docs/DATA.md).
     copyPublicDir: false,
   },
 });

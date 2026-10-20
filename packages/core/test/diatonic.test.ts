@@ -25,7 +25,7 @@ describe('diatonicQuality', () => {
 });
 
 describe('diatonicTriadToken', () => {
-  it('follows the Hookpad numeral conventions per mode', () => {
+  it('follows the numeral conventions per mode', () => {
     expect(tokens('major')).toEqual(['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']);
     expect(tokens('minor')).toEqual(['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII']);
     expect(tokens('harmonicMinor')).toEqual(['i', 'ii°', 'III+', 'iv', 'V', 'VI', 'vii°']);

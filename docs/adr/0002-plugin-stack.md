@@ -11,7 +11,7 @@ Status: proposed (2026-10-11). Context: `docs/ROADMAP.md` phases 3–4.
    [`nih-plug`](https://github.com/robbert-vdh/nih-plug): CLAP + VST3, GUI with `nih_plug_egui`
    or `nih_plug_vizia`. The crate `crates/croky-core` ports `packages/core` (tokens, chords,
    suggest) and loads the same `ngrams.json`. The plugin emits note events for the chord
-   under the playhead and shows the Magic Chords panel.
+   under the playhead and shows the Next chord panel.
 
 ## Why nih-plug
 
@@ -34,4 +34,3 @@ Status: proposed (2026-10-11). Context: `docs/ROADMAP.md` phases 3–4.
 
 - `packages/core` stays small and explicit so the Rust port is mechanical.
 - Add `crates/` to the workspace when Phase 4 starts; CI gains a `cargo test` job.
-- Data licensing (`DATA.md`) decides what table a distributed plugin may bundle.

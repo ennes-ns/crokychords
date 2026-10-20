@@ -37,8 +37,6 @@
       "Write",
       "Glob",
       "Grep",
-      "WebFetch(domain:www.hooktheory.com)",
-      "WebFetch(domain:api.hooktheory.com)",
       "WebFetch(domain:huggingface.co)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:nih-plug.robbertvanderhelm.nl)"

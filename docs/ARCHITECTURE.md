@@ -1,14 +1,14 @@
 # Architecture
 
-Croky Chords is a small, data-driven chord assistant. Everything hangs off one idea that the
-Hookpad recon confirmed (`RECON.md` §2): "Magic Chords" is a **local lookup in a table of
-chord n-grams over key-relative tokens**. No server, no model inference at runtime.
+Croky Chords is a small, data-driven chord assistant. Everything hangs off one idea: the
+"Next chord" suggestion is a **local lookup in a table of chord n-grams over key-relative
+tokens**. No server, no model inference at runtime.
 
 ```
                  ┌──────────────────────────────┐
-  Hooktheory API │ packages/data (Python)       │  ngrams.json (schema v1)
-  Chordonomicon ─▶ fetch / parse / key-estimate ├───────────────┐
-  trends dump    │ romanize / count n-grams      │               │
+                 │ packages/data (Python)       │  ngrams.json (schema v1)
+  Chordonomicon ─▶ parse / key-estimate         ├───────────────┐
+                 │ romanize / count n-grams      │               │
                  └──────────────────────────────┘               ▼
                                                    ┌──────────────────────────┐
                                                    │ packages/core (TS, pure) │
@@ -19,7 +19,7 @@ chord n-grams over key-relative tokens**. No server, no model inference at runti
                                                            │          │
                                         ┌──────────────────▼──┐   ┌───▼────────────────────┐
                                         │ apps/web (Vite, DOM)│   │ plugin (later, Rust)   │
-                                        │ grid · magic panel  │   │ nih-plug CLAP/VST3     │
+                                        │ grid · next chord   │   │ nih-plug CLAP/VST3     │
                                         │ Web Audio · Web MIDI│   │ same tokens, same JSON │
                                         └─────────────────────┘   └────────────────────────┘
 ```
@@ -36,8 +36,8 @@ chord n-grams over key-relative tokens**. No server, no model inference at runti
 ## Key contracts
 
 1. **Token format** (`packages/data/README.md`, skill `music-theory`): the single chord
-   representation shared by data, core, UI and the future plugin. The Hooktheory fixture
-   (`packages/core/test/fixtures/tokens-hooktheory.json`, 1138 tokens over nine modes) is the
+   representation shared by data, core, UI and the future plugin. The token fixture
+   (`packages/core/test/fixtures/tokens-roman-v1.json`, 1138 tokens over nine modes) is the
    conformance test.
 2. **`ngrams.json` schema v1**: `modes[mode].ngrams[context][next] = count`. Counts, not
    probabilities, so core can normalise per row and back off.
@@ -50,11 +50,11 @@ chord n-grams over key-relative tokens**. No server, no model inference at runti
 back to shorter ones when the matched row has fewer than `minContextCount` observations,
 normalise the chosen row, sort by count. Deterministic and sub-millisecond; it runs on every
 cursor move. Phase 2 adds a reverse table so suggestions also consider the chord *after* the
-cursor, as Hookpad does.
+cursor.
 
 ## Why this shape
 
 - The engine is tiny and the data is JSON, so the same thing runs in a browser today and in
   a Rust plugin tomorrow (ADR 0001, ADR 0002).
 - Keeping `core` DOM-free keeps it portable and fully unit-testable.
-- Data sources are swappable and licence-tagged (`DATA.md`); the app never bundles real data.
+- Data sources are swappable and source-tagged (`DATA.md`); the app never bundles real data.

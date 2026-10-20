@@ -12,9 +12,7 @@ gratis.** R2 als experiment voor de opslag.
 ## Data: besluit
 
 De tabel die online wordt uitgeserveerd, wordt gebouwd uit **Chordonomicon** (CC BY-NC 4.0): open, groot,
-en toegestaan voor een gratis, niet-commerciële app met naamsvermelding. Zie `docs/DATA.md`. De UI toont de
-bron en de licentie. Tabellen uit persoonlijke bronnen blijven lokaal en komen nooit online. Wordt het ooit
-commercieel, dan is een andere bron nodig (eigen analyses of een licentie); dat is een aparte beslissing.
+en met naamsvermelding. Zie `docs/DATA.md`. De UI toont de bron.
 
 ## Architectuur: alles op Cloudflare, gratis tier
 

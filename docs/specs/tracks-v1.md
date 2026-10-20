@@ -6,7 +6,7 @@ Depends on `core-v1` and `web-v1` being merged.
 
 ## Goal
 
-Hookpad's *Band* / instruments menu lets a progression be played by several layers (chords,
+A *Band* of instruments lets a progression be played by several layers (chords,
 bass, arpeggio, pad, …), each with its own rhythm pattern and octave. Croky Chords does the
 same, with one difference that is the whole point: **every layer is a track with its own MIDI
 channel**, so in a DAW (Bitwig, Ableton, Reaper, …) each channel is routed to the user's own
@@ -203,7 +203,7 @@ channel). Reorder with ▲▼ buttons. Keyboard: `M` toggles mute on the selecte
   lowpass, bass = triangle + sub sine, arp = square with short decay, pad = saw with slow
   attack/release, custom = chords timbre. Per-track gain; master 0.2.
 - Web MIDI: each event is sent on `track.channel`; all-notes-off (CC 123) on **every**
-  channel in use on stop. Hover-audition of a Magic Chord suggestion plays it through the
+  channel in use on stop. Hover-audition of a Next chord suggestion plays it through the
   *selected* track (fallback: first unmuted track).
 
 ### B4. Export and DAW notes
