@@ -1,0 +1,585 @@
+{
+  "schema_version": 1,
+  "description": "The command contract (docs/specs/assistant-v1.md). Every op, and scenarios both the web engine (apps/web/test/commandsFixture.test.ts) and the terminal app (crates/croky-tui/src/commands.rs) must pass. A song is createSong() with the given fields (3 default tracks: Chords ch0, Bass ch1, Arp ch2 muted); chords are [token, beats], notes [beat, length, degree, octave, accidental]. Each step runs `commands` (with `undo`: 'each' or 'batch') on the state the previous step left and checks only the fields listed in `expect`.",
+  "ops": [
+    "appendChord",
+    "insertChord",
+    "replaceChord",
+    "deleteChord",
+    "setChordBeats",
+    "setChords",
+    "pick",
+    "setKey",
+    "setTempo",
+    "setMeter",
+    "setTitle",
+    "addNote",
+    "deleteNote",
+    "setNotes",
+    "setMelody",
+    "addTrack",
+    "removeTrack",
+    "setTrack",
+    "setTrackPattern",
+    "newSong",
+    "undo",
+    "redo",
+    "select",
+    "setLoop",
+    "setInstrument",
+    "play",
+    "stop",
+    "audition",
+    "exportMidi",
+    "save"
+  ],
+  "assistant_ops": [
+    "appendChord",
+    "insertChord",
+    "replaceChord",
+    "deleteChord",
+    "setChordBeats",
+    "setChords",
+    "setKey",
+    "setTempo",
+    "setMeter",
+    "setTitle",
+    "addNote",
+    "deleteNote",
+    "setNotes",
+    "setMelody",
+    "addTrack",
+    "removeTrack",
+    "setTrack",
+    "setTrackPattern"
+  ],
+  "scenarios": [
+    {
+      "name": "build I-V-vi-IV on an empty song",
+      "song": {},
+      "steps": [
+        {
+          "commands": [
+            { "op": "appendChord", "token": "I" },
+            { "op": "appendChord", "token": "V" },
+            { "op": "appendChord", "token": "vi", "beats": 2 },
+            { "op": "appendChord", "token": "IV" }
+          ],
+          "expect": {
+            "ok": true,
+            "applied": 4,
+            "chords": [
+              ["I", 4],
+              ["V", 4],
+              ["vi", 2],
+              ["IV", 2]
+            ],
+            "selected": null,
+            "results": [
+              { "op": "appendChord", "changed": true, "index": 0 },
+              { "op": "appendChord", "changed": true, "index": 1 },
+              { "op": "appendChord", "changed": true, "index": 2 },
+              { "op": "appendChord", "changed": true, "index": 3 }
+            ]
+          }
+        },
+        {
+          "commands": [{ "op": "undo" }, { "op": "undo" }],
+          "expect": {
+            "ok": true,
+            "chords": [
+              ["I", 4],
+              ["V", 4]
+            ]
+          }
+        },
+        {
+          "commands": [{ "op": "redo" }],
+          "expect": {
+            "ok": true,
+            "chords": [
+              ["I", 4],
+              ["V", 4],
+              ["vi", 2]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "the first chord fills the rest of the bar",
+      "song": { "meter": [3, 4] },
+      "steps": [
+        {
+          "commands": [{ "op": "appendChord", "token": "i" }],
+          "expect": { "ok": true, "chords": [["i", 3]] }
+        }
+      ]
+    },
+    {
+      "name": "insert, replace, resize and delete",
+      "song": {
+        "chords": [
+          ["I", 4],
+          ["V", 4],
+          ["vi", 4],
+          ["IV", 4]
+        ]
+      },
+      "steps": [
+        {
+          "commands": [
+            { "op": "insertChord", "at": 0, "token": "IV" },
+            { "op": "insertChord", "at": 2, "token": "ii7", "beats": 2 },
+            { "op": "replaceChord", "index": 4, "token": "bVII" },
+            { "op": "replaceChord", "index": 5, "token": "V/vi", "beats": 1.5 },
+            { "op": "setChordBeats", "index": 0, "beats": 0.75 },
+            { "op": "deleteChord", "index": 3 }
+          ],
+          "expect": {
+            "ok": true,
+            "applied": 6,
+            "chords": [
+              ["IV", 0.75],
+              ["I", 4],
+              ["ii7", 2],
+              ["bVII", 4],
+              ["V/vi", 1.5]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "setChords replaces the progression; a no-op edit changes nothing",
+      "song": { "chords": [["I", 4]] },
+      "steps": [
+        {
+          "commands": [
+            {
+              "op": "setChords",
+              "chords": [
+                { "token": "i", "beats": 4 },
+                { "token": "rest", "beats": 2 },
+                { "token": "bVI", "beats": 2 }
+              ]
+            },
+            { "op": "replaceChord", "index": 0, "token": "i" }
+          ],
+          "expect": {
+            "ok": true,
+            "chords": [
+              ["i", 4],
+              ["rest", 2],
+              ["bVI", 2]
+            ],
+            "results": [
+              { "op": "setChords", "changed": true },
+              { "op": "replaceChord", "changed": false }
+            ]
+          }
+        },
+        {
+          "commands": [{ "op": "undo" }],
+          "expect": { "ok": true, "chords": [["I", 4]] }
+        }
+      ]
+    },
+    {
+      "name": "pick follows the selection like a click",
+      "song": {
+        "chords": [
+          ["I", 4],
+          ["V", 2],
+          ["vi", 4]
+        ]
+      },
+      "steps": [
+        {
+          "commands": [
+            { "op": "select", "index": 1 },
+            { "op": "pick", "token": "iii" }
+          ],
+          "expect": {
+            "ok": true,
+            "chords": [
+              ["I", 4],
+              ["iii", 2],
+              ["vi", 4]
+            ],
+            "selected": 1
+          }
+        },
+        {
+          "commands": [{ "op": "pick", "token": "IV", "insert": true }],
+          "expect": {
+            "ok": true,
+            "chords": [
+              ["I", 4],
+              ["iii", 2],
+              ["IV", 2],
+              ["vi", 4]
+            ],
+            "selected": 2
+          }
+        },
+        {
+          "commands": [
+            { "op": "select", "index": null },
+            { "op": "pick", "token": "V" }
+          ],
+          "expect": {
+            "ok": true,
+            "chords": [
+              ["I", 4],
+              ["iii", 2],
+              ["IV", 2],
+              ["vi", 4],
+              ["V", 4]
+            ],
+            "selected": null
+          }
+        },
+        {
+          "commands": [{ "op": "select", "index": 9 }],
+          "expect": {
+            "ok": false,
+            "applied": 0,
+            "error": { "code": "not_found", "index": 0, "path": "index" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "key, tempo, meter and title",
+      "song": { "chords": [["I", 4]] },
+      "steps": [
+        {
+          "commands": [
+            { "op": "setKey", "tonic": "Eb" },
+            { "op": "setKey", "mode": "dorian" },
+            { "op": "setTempo", "bpm": 84 },
+            { "op": "setMeter", "beats": 6, "unit": 8 },
+            { "op": "setTitle", "title": "Late" }
+          ],
+          "expect": {
+            "ok": true,
+            "applied": 5,
+            "key": { "tonic": "Eb", "mode": "dorian" },
+            "tempo": 84,
+            "meter": [6, 8],
+            "title": "Late"
+          }
+        },
+        {
+          "commands": [{ "op": "undo" }, { "op": "undo" }, { "op": "undo" }],
+          "expect": {
+            "ok": true,
+            "key": { "tonic": "Eb", "mode": "dorian" },
+            "tempo": 120,
+            "meter": [4, 4],
+            "title": "Untitled"
+          }
+        }
+      ]
+    },
+    {
+      "name": "melody notes stay monophonic",
+      "song": {
+        "chords": [
+          ["I", 4],
+          ["V", 4]
+        ]
+      },
+      "steps": [
+        {
+          "commands": [
+            { "op": "addNote", "beat": 0, "length": 2, "degree": 1 },
+            { "op": "addNote", "beat": 2, "length": 2, "degree": 3, "octave": 1, "accidental": -1 },
+            { "op": "addNote", "beat": 1, "length": 0.5, "degree": 5, "octave": -1 }
+          ],
+          "expect": {
+            "ok": true,
+            "notes": [
+              [0, 1, 1, 0, 0],
+              [1, 0.5, 5, -1, 0],
+              [2, 2, 3, 1, -1]
+            ],
+            "results": [
+              { "op": "addNote", "changed": true, "index": 0 },
+              { "op": "addNote", "changed": true, "index": 1 },
+              { "op": "addNote", "changed": true, "index": 1 }
+            ]
+          }
+        },
+        {
+          "commands": [
+            { "op": "deleteNote", "index": 0 },
+            { "op": "setMelody", "channel": 5, "muted": true }
+          ],
+          "expect": {
+            "ok": true,
+            "notes": [
+              [1, 0.5, 5, -1, 0],
+              [2, 2, 3, 1, -1]
+            ],
+            "melody": { "channel": 5, "muted": true }
+          }
+        },
+        {
+          "commands": [
+            {
+              "op": "setNotes",
+              "notes": [
+                { "beat": 4, "length": 1, "degree": 2 },
+                { "beat": 0, "length": 4, "degree": 7, "octave": -1 }
+              ]
+            }
+          ],
+          "expect": {
+            "ok": true,
+            "notes": [
+              [0, 4, 7, -1, 0],
+              [4, 1, 2, 0, 0]
+            ]
+          }
+        },
+        {
+          "commands": [
+            {
+              "op": "setNotes",
+              "notes": [
+                { "beat": 0, "length": 2, "degree": 1 },
+                { "beat": 1, "length": 1, "degree": 2 }
+              ]
+            }
+          ],
+          "expect": {
+            "ok": false,
+            "applied": 0,
+            "error": { "code": "invalid", "index": 0, "path": "notes" },
+            "notes": [
+              [0, 4, 7, -1, 0],
+              [4, 1, 2, 0, 0]
+            ]
+          }
+        },
+        {
+          "commands": [{ "op": "deleteNote", "index": 2 }],
+          "expect": { "ok": false, "error": { "code": "not_found", "index": 0, "path": "index" } }
+        }
+      ]
+    },
+    {
+      "name": "the band: add, change, pattern, remove",
+      "song": { "chords": [["I", 4]] },
+      "steps": [
+        {
+          "commands": [
+            { "op": "addTrack", "role": "pad" },
+            {
+              "op": "setTrack",
+              "track": 1,
+              "octave": 1,
+              "velocity": 110,
+              "gate": 0.5,
+              "transpose": -12
+            },
+            { "op": "setTrack", "track": 2, "muted": false, "name": "Arp up" },
+            { "op": "setTrackPattern", "track": 1, "preset": "bass-root-fifth" }
+          ],
+          "expect": {
+            "ok": true,
+            "tracks": [
+              { "name": "Chords", "role": "chords", "channel": 0 },
+              {
+                "name": "Bass",
+                "octave": 1,
+                "velocity": 110,
+                "gate": 0.5,
+                "transpose": -12,
+                "pattern": "bass-root-fifth"
+              },
+              { "name": "Arp up", "muted": false },
+              { "name": "Pad", "role": "pad", "channel": 3 }
+            ]
+          }
+        },
+        {
+          "commands": [{ "op": "removeTrack", "track": 0 }],
+          "expect": {
+            "ok": true,
+            "tracks": [{ "name": "Bass" }, { "name": "Arp up" }, { "name": "Pad" }]
+          }
+        },
+        {
+          "commands": [{ "op": "setTrackPattern", "track": 0, "preset": "no-such-pattern" }],
+          "expect": { "ok": false, "error": { "code": "not_found", "index": 0, "path": "preset" } }
+        },
+        {
+          "commands": [{ "op": "setTrack", "track": 7, "muted": true }],
+          "expect": { "ok": false, "error": { "code": "not_found", "index": 0, "path": "track" } }
+        },
+        {
+          "commands": [{ "op": "setTrack", "track": "no-such-id", "muted": true }],
+          "expect": { "ok": false, "error": { "code": "not_found", "index": 0, "path": "track" } }
+        }
+      ]
+    },
+    {
+      "name": "newSong keeps key, tempo and band",
+      "song": {
+        "key": { "tonic": "A", "mode": "minor" },
+        "tempo": 90,
+        "chords": [["i", 4]],
+        "notes": [[0, 1, 1, 0, 0]]
+      },
+      "steps": [
+        {
+          "commands": [{ "op": "newSong" }],
+          "expect": {
+            "ok": true,
+            "chords": [],
+            "notes": [],
+            "key": { "tonic": "A", "mode": "minor" },
+            "tempo": 90,
+            "title": "Untitled",
+            "tracks": [{ "name": "Chords" }, { "name": "Bass" }, { "name": "Arp" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "loop points",
+      "song": {
+        "chords": [
+          ["I", 4],
+          ["V", 4]
+        ]
+      },
+      "steps": [
+        {
+          "commands": [
+            { "op": "setLoop", "enabled": false },
+            { "op": "setLoop", "range": { "start": 0, "end": 4 } }
+          ],
+          "expect": { "ok": true, "loop": { "enabled": true, "range": { "start": 0, "end": 4 } } }
+        },
+        {
+          "commands": [{ "op": "setLoop", "range": null, "enabled": false }],
+          "expect": { "ok": true, "loop": { "enabled": false, "range": null } }
+        }
+      ]
+    },
+    {
+      "name": "a batch is checked in full before anything changes",
+      "song": {
+        "chords": [
+          ["I", 4],
+          ["V", 4]
+        ]
+      },
+      "steps": [
+        {
+          "commands": [
+            { "op": "appendChord", "token": "vi" },
+            { "op": "replaceChord", "index": 5, "token": "IV" }
+          ],
+          "expect": {
+            "ok": false,
+            "applied": 0,
+            "error": { "code": "not_found", "index": 1, "path": "index" },
+            "chords": [
+              ["I", 4],
+              ["V", 4]
+            ]
+          }
+        },
+        {
+          "commands": [
+            { "op": "appendChord", "token": "vi" },
+            { "op": "appendChord", "token": "IV", "beats": 0.3 }
+          ],
+          "expect": {
+            "ok": false,
+            "applied": 0,
+            "error": { "code": "invalid", "index": 1, "path": "beats" },
+            "chords": [
+              ["I", 4],
+              ["V", 4]
+            ]
+          }
+        },
+        {
+          "commands": [{ "op": "appendChord", "token": "H7" }],
+          "expect": { "ok": false, "error": { "code": "invalid", "index": 0, "path": "token" } }
+        },
+        {
+          "commands": [{ "op": "appendChord", "token": "I", "colour": "red" }],
+          "expect": { "ok": false, "error": { "code": "invalid", "index": 0, "path": "colour" } }
+        },
+        {
+          "commands": [{ "op": "transpose", "by": 2 }],
+          "expect": { "ok": false, "error": { "code": "invalid", "index": 0, "path": "op" } }
+        },
+        {
+          "commands": [{ "op": "setTempo", "bpm": 400 }],
+          "expect": { "ok": false, "error": { "code": "invalid", "index": 0, "path": "bpm" } }
+        },
+        {
+          "commands": [{ "op": "setKey" }],
+          "expect": { "ok": false, "error": { "code": "invalid", "index": 0, "path": "" } }
+        },
+        {
+          "commands": [{ "op": "insertChord", "at": 3, "token": "I" }],
+          "expect": { "ok": false, "error": { "code": "not_found", "index": 0, "path": "at" } }
+        }
+      ]
+    },
+    {
+      "name": "one undo step for a batch",
+      "song": { "chords": [["I", 4]] },
+      "steps": [
+        {
+          "undo": "batch",
+          "commands": [
+            { "op": "appendChord", "token": "V" },
+            { "op": "appendChord", "token": "vi" },
+            { "op": "setTempo", "bpm": 100 }
+          ],
+          "expect": {
+            "ok": true,
+            "applied": 3,
+            "chords": [
+              ["I", 4],
+              ["V", 4],
+              ["vi", 4]
+            ],
+            "tempo": 100
+          }
+        },
+        {
+          "commands": [{ "op": "undo" }],
+          "expect": { "ok": true, "chords": [["I", 4]], "tempo": 120 }
+        },
+        {
+          "undo": "batch",
+          "commands": [{ "op": "appendChord", "token": "V" }, { "op": "undo" }],
+          "expect": {
+            "ok": false,
+            "applied": 0,
+            "error": { "code": "invalid", "index": 1, "path": "op" }
+          }
+        },
+        {
+          "commands": [{ "op": "undo" }],
+          "expect": {
+            "ok": true,
+            "chords": [["I", 4]],
+            "results": [{ "op": "undo", "changed": false }]
+          }
+        }
+      ]
+    }
+  ]
+}

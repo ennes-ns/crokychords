@@ -66,6 +66,8 @@ export interface ToolbarOptions {
   fire?: FireControls;
   /** Shows the Breakcore controls when given (docs/specs/breakcore-v1.md). */
   breakcore?: BreakcoreController;
+  /** The assistant's toggle button, placed before More (docs/specs/assistant-v1.md §B1). */
+  assistant?: HTMLElement;
 }
 
 /** The lamp: 8×10 pixels, `#` glass (lit in the state colour), `=` the socket. */
@@ -548,6 +550,7 @@ export function mountToolbar(
       redo,
     ),
     tableBox,
+    ...(options.assistant === undefined ? [] : [options.assistant]),
     more.element,
   );
 

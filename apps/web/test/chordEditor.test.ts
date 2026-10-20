@@ -138,6 +138,7 @@ function noopActions(): Actions {
     undo: noop,
     redo: noop,
     togglePlay: noop,
+    playFrom: () => Promise.resolve(false),
     stop: noop,
     setLoop: noop,
     toggleLoop: noop,

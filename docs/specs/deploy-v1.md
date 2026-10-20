@@ -222,7 +222,12 @@ public; combine with disabling the custom domain).
 cd apps/api
 pnpm exec wrangler secret put ACCESS_TEAM_DOMAIN   # paste: <team>.cloudflareaccess.com
 pnpm exec wrangler secret put ACCESS_AUD           # paste: the AUD tag from step 6
+# optional, for the in-app assistant (docs/specs/assistant-v1.md §B2):
+pnpm exec wrangler secret put ANTHROPIC_API_KEY    # paste: the API key
 ```
+
+Without `ANTHROPIC_API_KEY` the assistant panel says the assistant is unavailable; nothing else
+changes. Its model, daily cost cap and per-user limits are `[vars]` in `wrangler.toml`.
 
 Wrangler creates a draft Worker `crokychords` on the first `secret put` if it does not exist yet;
 that is expected. Secrets survive every later `wrangler deploy`. Check:

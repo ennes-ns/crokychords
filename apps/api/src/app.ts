@@ -4,6 +4,8 @@ import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 import { ACCESS_JWT_HEADER, AuthError, verifyAccessJwt } from './auth';
 import type { JwksSource } from './auth';
+import type { AssistantEnv } from './assistant';
+import { registerAssistant } from './assistant';
 import { ApiError } from './errors';
 import { LIMITS, SCHEMA_VERSION, describeIssues, isSaveId, saveInputSchema } from './record';
 import type { SaveRecord } from './record';
@@ -11,7 +13,7 @@ import { Storage } from './storage';
 import type { User } from './storage';
 
 /** Bindings, vars and secrets of the Worker (see wrangler.toml and docs/specs/api-v1.md §2). */
-export interface Env {
+export interface Env extends AssistantEnv {
   DB: D1Database;
   SAVES: R2Bucket;
   /** The built web app (wrangler.toml `[assets]`); not used by the API routes. */
@@ -28,9 +30,11 @@ export interface AppDeps {
   jwks: (teamDomain: string) => JwksSource;
   /** Clock, for tests. */
   now?: () => Date;
+  /** `fetch` for the model API (docs/specs/assistant-v1.md §B2), for tests. */
+  fetch?: (input: string, init: RequestInit) => Promise<Response>;
 }
 
-type AppEnv = { Bindings: Env; Variables: { user: User; storage: Storage } };
+export type AppEnv = { Bindings: Env; Variables: { user: User; storage: Storage } };
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {
   const now = deps.now ?? (() => new Date());
@@ -67,7 +71,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     '*',
     cors({
       origin: (origin, c: Context<AppEnv>) => (isAllowedOrigin(origin, c) ? origin : null),
-      allowMethods: ['GET', 'PUT', 'DELETE'],
+      allowMethods: ['GET', 'PUT', 'POST', 'DELETE'],
       allowHeaders: ['Content-Type', 'If-Match'],
       exposeHeaders: ['ETag'],
       credentials: true,
@@ -202,6 +206,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     const current = await storage.getMeta(user.id, id);
     if (current === null) throw new ApiError('not_found', 'save not found');
     throw new ApiError('conflict', 'the save has changed since this version', current);
+  });
+
+  registerAssistant(app, {
+    fetch: deps.fetch ?? ((input, init) => fetch(input, init)),
+    now,
+    readBody: readBounded,
   });
 
   app.notFound((c) => c.json(new ApiError('not_found', 'no such route').toBody(), 404));

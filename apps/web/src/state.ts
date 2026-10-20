@@ -163,6 +163,11 @@ export class Store {
     return this.#future.length > 0;
   }
 
+  /** The undo and redo stacks, oldest first (read-only copies, for dry runs). */
+  get history(): { past: readonly Song[]; future: readonly Song[] } {
+    return { past: [...this.#past], future: [...this.#future] };
+  }
+
   subscribe(listener: Listener): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);

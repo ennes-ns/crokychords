@@ -4,6 +4,8 @@
 # Secrets (never in this file; `wrangler secret put <NAME>`, locally in .dev.vars):
 #   ACCESS_TEAM_DOMAIN  <team>.cloudflareaccess.com of the Access organisation
 #   ACCESS_AUD          Audience (AUD) tag of the Access application
+#   ANTHROPIC_API_KEY   key for the in-app assistant (docs/specs/assistant-v1.md §B2); without it
+#                       the assistant says it is unavailable and nothing else changes
 name = "crokychords"
 main = "src/index.ts"
 compatibility_date = "2026-03-01"
@@ -31,6 +33,15 @@ run_worker_first = ["/api/*"]
 # The only browser origin the API accepts (the production hostname of the app this Worker
 # serves); requests with any other Origin get 403. Placeholder; local dev overrides it in .dev.vars.
 ALLOWED_ORIGIN = "https://chords.cr0ky.com"
+# The assistant (docs/specs/assistant-v1.md §B2): model, the daily cost cap for everyone together
+# (USD, estimated from the reported tokens), per-user request limits, structured output and
+# server-side fallback on a refusal.
+ASSISTANT_MODEL = "claude-sonnet-5-5"
+ASSISTANT_DAILY_BUDGET_USD = "1"
+ASSISTANT_USER_DAILY_REQUESTS = "50"
+ASSISTANT_USER_MINUTE_REQUESTS = "6"
+ASSISTANT_OUTPUT = "schema"
+ASSISTANT_FALLBACKS = "default"
 
 [[d1_databases]]
 binding = "DB"

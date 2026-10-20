@@ -1,7 +1,12 @@
 import './styles.css';
-import { createSong } from '@crokychords/core';
+import { createSong, songToMidi } from '@crokychords/core';
 import { createActions } from './actions';
+import { HttpAssistantClient, unavailableClient } from './assistant/client';
+import { createCroky } from './assistant/croky';
+import { bindAssistantKey, mountAssistant } from './assistant/panel';
 import { BreakcoreController, loadBreakcorePrefs } from './breakcore';
+import { isInstrumentId } from './audio/instruments';
+import { trackPrograms } from './audio/sound';
 import { AudioEngine } from './audio/synth';
 import { loadTables } from './data/tables';
 import { h } from './dom';
@@ -10,6 +15,7 @@ import { bindLoopPersistence } from './loop';
 import { FireController } from './midi/fire/controller';
 import { FireConnection, bindFirePageEvents, browserFireAccess } from './midi/fire/connect';
 import { isChordTonesKey, melodyKeyAction } from './melodyKeys';
+import { midiFileName } from './midi/download';
 import { MidiOut, browserMidiAccess } from './midi/webmidi';
 import { browserStorage } from './persist';
 import { bindShortcuts } from './shortcuts';
@@ -34,6 +40,9 @@ import { mountSaves } from './views/saves';
 import { browserCompactMedia, mountShell } from './views/shell';
 import { mountSuggest } from './views/suggest';
 import { mountToolbar } from './views/toolbar';
+
+/** How long `play` waits for the browser to let audio start (ms). */
+const AUDIO_WAIT_MS = 1500;
 
 /** The sync engine when the build enables sync (docs/specs/sync-v1.md), else null. */
 async function startSync(local: SaveStore): Promise<SyncEngine | null> {
@@ -102,6 +111,30 @@ async function boot(app: HTMLElement): Promise<void> {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) audio.hidden();
   });
+  // The command API for agents and the assistant (docs/specs/assistant-v1.md §A4).
+  const commandEnv = { isInstrument: isInstrumentId };
+  const croky = createCroky(store, {
+    env: commandEnv,
+    async play(from) {
+      // Without a user gesture (and without an autoplay exemption) audio cannot start.
+      const started = await Promise.race([
+        actions.startAudio(),
+        new Promise<false>((resolve) => window.setTimeout(() => resolve(false), AUDIO_WAIT_MS)),
+      ]);
+      return started && actions.playFrom(from);
+    },
+    stop: () => actions.stop(),
+    audition: (token) => actions.audition(token),
+    setInstrument(track, role, id) {
+      if (isInstrumentId(id)) audio.sound.setInstrument(track, role, id);
+    },
+    midi: (song) => ({
+      bytes: songToMidi(song, { programs: trackPrograms(audio.sound.state, song) }),
+      fileName: midiFileName(song.title),
+    }),
+    save: () => session.flush(),
+  });
+
   const fire = new FireConnection(store, browserFireAccess(), new FireController(store, actions));
   bindFirePageEvents(fire, window);
 
@@ -115,8 +148,24 @@ async function boot(app: HTMLElement): Promise<void> {
     'Click anywhere to enable audio',
   );
   app.append(overlay);
+  const assistant = mountAssistant({
+    store,
+    croky,
+    env: commandEnv,
+    client: syncConfig(import.meta.env).enabled
+      ? new HttpAssistantClient({
+          baseUrl: syncConfig(import.meta.env).baseUrl,
+          fetch: (url, init) => fetch(url, init),
+          online: () => navigator.onLine,
+        })
+      : unavailableClient(),
+  });
+  // Over the side column; the stage keeps its size (docs/specs/assistant-v1.md §B1).
+  grid.closest('.workspace')?.append(assistant.element);
+  bindAssistantKey(window, assistant);
   mountToolbar(toolbar, store, actions, {
     storage,
+    assistant: assistant.button,
     fire: { connect: () => void fire.connect(), disconnect: () => fire.disconnect() },
     breakcore,
   });
@@ -168,6 +217,9 @@ async function boot(app: HTMLElement): Promise<void> {
       return moveSelection(selected, delta, song.chords.length) !== selected;
     },
   );
+
+  window.croky = croky;
+  document.dispatchEvent(new Event('croky:ready'));
 
   void loadTables(store, (url, init) => fetch(url, init));
   // The default preset's chords instrument, so real samples are ready by the first Play.
