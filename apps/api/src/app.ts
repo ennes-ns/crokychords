@@ -6,6 +6,8 @@ import { ACCESS_JWT_HEADER, AuthError, verifyAccessJwt } from './auth';
 import type { JwksSource } from './auth';
 import type { AssistantEnv } from './assistant';
 import { registerAssistant } from './assistant';
+import type { BackupEnv } from './backup';
+import { registerBackupRoutes } from './backupRoutes';
 import type { CommunityEnv } from './community';
 import { isMaintainer, registerCommunity } from './community';
 import { displayHandle } from './communityStore';
@@ -16,7 +18,7 @@ import { Storage } from './storage';
 import type { User } from './storage';
 
 /** Bindings, vars and secrets of the Worker (see wrangler.toml and docs/specs/api-v1.md §2). */
-export interface Env extends AssistantEnv, CommunityEnv {
+export interface Env extends AssistantEnv, CommunityEnv, BackupEnv {
   DB: D1Database;
   SAVES: R2Bucket;
   /** The built web app (wrangler.toml `[assets]`); not used by the API routes. */
@@ -220,6 +222,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   });
 
   registerCommunity(app, { now, readBody: readBounded });
+
+  registerBackupRoutes(app, { now });
 
   app.notFound((c) => c.json(new ApiError('not_found', 'no such route').toBody(), 404));
 
