@@ -1,0 +1,58 @@
+{"mutation":["",null],"message":"expected an object"}
+{"mutation":["",[]],"message":"expected an object"}
+{"mutation":["",3],"message":"expected an object"}
+{"mutation":["schema"],"message":"schema: expected 1"}
+{"mutation":["schema",2],"message":"schema: expected 1"}
+{"mutation":["schema","1"],"message":"schema: expected 1"}
+{"mutation":["tokenFormat"],"message":"tokenFormat: expected \"roman-numeral-v1\""}
+{"mutation":["tokenFormat","roman"],"message":"tokenFormat: expected \"roman-numeral-v1\""}
+{"mutation":["tokenFormat",1],"message":"tokenFormat: expected \"roman-numeral-v1\""}
+{"mutation":["maxContext"],"message":"maxContext: expected a non-negative number"}
+{"mutation":["maxContext",-1],"message":"maxContext: expected a non-negative number"}
+{"mutation":["maxContext",1.5],"message":"maxContext: expected an integer"}
+{"mutation":["maxContext","2"],"message":"maxContext: expected a non-negative number"}
+{"mutation":["maxContext",0],"ok":true}
+{"mutation":["maxContext",2],"ok":true}
+{"mutation":["modes"],"message":"modes: expected an object"}
+{"mutation":["modes",[]],"message":"modes: expected an object"}
+{"mutation":["modes",{}],"ok":true}
+{"mutation":["modes.aeolian",{}],"message":"modes.aeolian: unknown mode"}
+{"mutation":["modes.major",null],"message":"modes.major: expected an object"}
+{"mutation":["modes.major",1],"message":"modes.major: expected an object"}
+{"mutation":["modes.major.sections"],"message":"modes.major.sections: expected a non-negative number"}
+{"mutation":["modes.major.sections",-1],"message":"modes.major.sections: expected a non-negative number"}
+{"mutation":["modes.major.sections","1"],"message":"modes.major.sections: expected a non-negative number"}
+{"mutation":["modes.major.sections",0],"ok":true}
+{"mutation":["modes.major.chords"],"message":"modes.major.chords: expected an object"}
+{"mutation":["modes.major.chords",[]],"message":"modes.major.chords: expected an object"}
+{"mutation":["modes.major.chords.V",null],"message":"modes.major.chords.V: expected an object"}
+{"mutation":["modes.major.chords.V",2],"message":"modes.major.chords.V: expected an object"}
+{"mutation":["modes.major.chords.V",{}],"message":"modes.major.chords.V.count: expected a non-negative number"}
+{"mutation":["modes.major.chords.V.count"],"message":"modes.major.chords.V.count: expected a non-negative number"}
+{"mutation":["modes.major.chords.V.count",-1],"message":"modes.major.chords.V.count: expected a non-negative number"}
+{"mutation":["modes.major.chords.V.count",null],"message":"modes.major.chords.V.count: expected a non-negative number"}
+{"mutation":["modes.major.chords.V.count","3"],"message":"modes.major.chords.V.count: expected a non-negative number"}
+{"mutation":["modes.major.chords.V.count",0],"ok":true}
+{"mutation":["modes.major.chords.V.songCount",null],"message":"modes.major.chords.V.songCount: expected a non-negative number"}
+{"mutation":["modes.major.chords.V.songCount",-2],"message":"modes.major.chords.V.songCount: expected a non-negative number"}
+{"mutation":["modes.major.chords.V.songCount","x"],"message":"modes.major.chords.V.songCount: expected a non-negative number"}
+{"mutation":["modes.major.chords.V.songCount",7],"ok":true}
+{"mutation":["modes.major.ngrams"],"message":"modes.major.ngrams: expected an object"}
+{"mutation":["modes.major.ngrams",null],"message":"modes.major.ngrams: expected an object"}
+{"mutation":["modes.major.ngrams.",null],"message":"modes.major.ngrams.\"\": expected an object"}
+{"mutation":["modes.major.ngrams.",{"I":-1}],"message":"modes.major.ngrams.\"\".I: expected a non-negative number"}
+{"mutation":["modes.major.ngrams.",{"I":"1"}],"message":"modes.major.ngrams.\"\".I: expected a non-negative number"}
+{"mutation":["modes.major.ngrams.I",[]],"message":"modes.major.ngrams.I: expected an object"}
+{"mutation":["modes.major.ngrams.I",{"V":null}],"message":"modes.major.ngrams.I.V: expected a non-negative number"}
+{"mutation":["modes.major.ngrams.I",{"V,IV":1}],"ok":true}
+{"mutation":["modes.minor.sections",-3],"message":"modes.minor.sections: expected a non-negative number"}
+{"mutation":["source"],"message":"source: expected an object"}
+{"mutation":["source","seed"],"message":"source: expected an object"}
+{"mutation":["source.name"],"message":"source.name: expected a string"}
+{"mutation":["source.name",5],"message":"source.name: expected a string"}
+{"mutation":["source.description",3],"message":"source.description: expected a string"}
+{"mutation":["source.description",null],"message":"source.description: expected a string"}
+{"mutation":["source.license",false],"message":"source.license: expected a string"}
+{"mutation":["source.exportedAt",1],"message":"source.exportedAt: expected a string"}
+{"mutation":["generatedAt"],"message":"generatedAt: expected a string"}
+{"mutation":["generatedAt",0],"message":"generatedAt: expected a string"}

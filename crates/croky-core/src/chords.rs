@@ -155,6 +155,91 @@ pub fn voice_chord(chord: &Chord, key: Key, bass_octave: i32, octave: i32) -> Ve
     notes
 }
 
+/// Role of a core chord tone; `Third` is the chord's third or the sus tone that replaces it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChordToneRole {
+    Root,
+    Third,
+    Fifth,
+    Seventh,
+}
+
+impl ChordToneRole {
+    pub fn name(self) -> &'static str {
+        match self {
+            ChordToneRole::Root => "root",
+            ChordToneRole::Third => "third",
+            ChordToneRole::Fifth => "fifth",
+            ChordToneRole::Seventh => "seventh",
+        }
+    }
+}
+
+/// One core tone of a chord, spelled as a scale degree of the key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChordTone {
+    pub role: ChordToneRole,
+    /// Semitones above the root.
+    pub interval: i32,
+    pub pitch_class: PitchClass,
+    /// The degree (1-7) of the key the tone is spelled on (the third of V is degree 7, ...).
+    pub degree: u8,
+    /// Semitones from that degree as the mode has it: 0 in the mode, -1 flat, +1 sharp.
+    pub accidental: i32,
+}
+
+/// Scale steps above the root on which a core tone is spelled.
+fn tone_steps(role: ChordToneRole, interval: i32) -> u8 {
+    match role {
+        ChordToneRole::Root => 0,
+        ChordToneRole::Third => match interval {
+            2 => 1,
+            5 => 3,
+            _ => 2,
+        },
+        ChordToneRole::Fifth => 4,
+        ChordToneRole::Seventh => 6,
+    }
+}
+
+/// The degree `steps` scale steps above `degree`, wrapping round the octave.
+fn step_degree(degree: u8, steps: u8) -> u8 {
+    (degree - 1 + steps) % 7 + 1
+}
+
+/// `chordTones`: the core tones of a chord (root, third or sus tones, fifth(s), seventh), root
+/// first, each spelled on a degree of the key: in C major V7 is 5 7 2 4, bVII is b7 2 4 and
+/// V/vi is 3 #5 7. Extensions and added tones are left out; the inversion does not matter.
+pub fn chord_tones(chord: &Chord, key: Key) -> Vec<ChordTone> {
+    let s = structure(chord);
+    let root_pc = i32::from(chord_root_pitch_class(chord, key));
+    let root_degree = match chord.applied {
+        None => chord.degree,
+        Some(a) => step_degree(a.target, chord.degree - 1),
+    };
+    let mut slots = vec![(ChordToneRole::Root, 0)];
+    slots.extend(s.thirds.iter().map(|&i| (ChordToneRole::Third, i)));
+    slots.extend(s.fifths.iter().map(|&i| (ChordToneRole::Fifth, i)));
+    slots.extend(s.seventh.map(|i| (ChordToneRole::Seventh, i)));
+    slots
+        .into_iter()
+        .map(|(role, interval)| {
+            let pitch_class = to_pitch_class(root_pc + interval);
+            let degree = step_degree(root_degree, tone_steps(role, interval));
+            let accidental = i32::from(to_pitch_class(
+                i32::from(pitch_class) - i32::from(pitch_class_of(key, degree, 0)) + 6,
+            )) - 6;
+            ChordTone {
+                role,
+                interval,
+                pitch_class,
+                degree,
+                accidental,
+            }
+        })
+        .collect()
+}
+
 const MAJOR_DEGREE_FIFTHS: [i32; 7] = [0, 2, 4, -1, 1, 3, 5];
 
 fn interval_fifths(interval: i32) -> i32 {

@@ -230,7 +230,11 @@ impl<'a> Scanner<'a> {
     fn fail<T>(&self, reason: &str) -> Result<T, TokenError> {
         Err(TokenError {
             token: self.input.to_string(),
-            reason: format!("{reason} at position {}", self.pos),
+            // Positions count UTF-16 code units, as in TS (`°` and `ø` are one unit there).
+            reason: format!(
+                "{reason} at position {}",
+                self.input[..self.pos].encode_utf16().count()
+            ),
         })
     }
 

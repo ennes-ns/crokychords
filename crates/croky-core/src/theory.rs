@@ -109,7 +109,8 @@ pub fn to_pitch_class(n: i32) -> PitchClass {
     n.rem_euclid(12) as PitchClass
 }
 
-/// Semitones from the tonic of `degree` (1-7) in `mode`.
+/// Semitones from the tonic of `degree` (1-7) in `mode`. Panics on another degree (TS throws a
+/// `RangeError`).
 pub fn degree_pitch(mode: Mode, degree: u8) -> i32 {
     mode.scale()[usize::from(degree - 1)]
 }
