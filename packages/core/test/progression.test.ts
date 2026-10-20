@@ -356,7 +356,8 @@ describe('serializeSong / deserializeSong', () => {
   });
 
   it('writes a default melody for a song object with tracks but no melody', () => {
-    const { melody: _melody, ...noMelody } = song;
+    const noMelody: Song = { ...song };
+    delete noMelody.melody;
     expect(JSON.parse(serializeSong({ ...noMelody, schema: 2 }))).toMatchObject({
       schema: 3,
       melody: defaultMelody(),

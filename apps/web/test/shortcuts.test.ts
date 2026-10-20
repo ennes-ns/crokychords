@@ -112,3 +112,20 @@ describe('bindShortcuts', () => {
     expect(run).not.toHaveBeenCalled();
   });
 });
+
+describe('bindShortcuts: the melody lane hook', () => {
+  it('asks `first` before the editor shortcuts, after Space and outside form controls', () => {
+    const run = vi.fn<(action: KeyAction) => void>();
+    const first = vi.fn((e: KeyboardEvent) => e.key === '3');
+    unbinds.push(bindShortcuts(window, run, first));
+    const taken = press(document.body, '3');
+    expect(taken.defaultPrevented).toBe(true);
+    expect(run).not.toHaveBeenCalled();
+    press(document.body, '4');
+    expect(run).toHaveBeenCalledWith({ type: 'degree', degree: 4 });
+    first.mockClear();
+    press(document.body, ' ');
+    press(control('input', 'text'), '3');
+    expect(first).not.toHaveBeenCalled();
+  });
+});

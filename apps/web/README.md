@@ -67,6 +67,40 @@ nothing is selected); **Popular** shows the most common chords of the mode. The 
 below the grid changes degree, accidental, quality, extension, sus, adds, alterations, inversion
 and applied (secondary) function; only combinations with a valid token are offered.
 
+## Melody lane
+
+Under the chord grid sits a single-voice melody, written as scale degrees of the song's key
+(so it follows a key or mode change). Each grid row is a small piano roll from degree 5 an
+octave down to degree 5 an octave up; the tonic rows are shaded. Notes are coloured by how they
+sit on the chord under them: **chord tone**, **scale tone** (in the key, not in the chord) or
+**outside** (an altered note that is not a chord tone). The header switches the grid between
+1/8 and 1/16 notes, mutes the melody and picks its MIDI channel (default 4). The melody plays
+through the Lead instrument, goes out over Web MIDI on its channel and is exported as a
+`Melody` track. See [`docs/specs/melody-v1.md`](../../docs/specs/melody-v1.md).
+
+Mouse: click empty space to add a note of that row's degree (drag right for its length), drag a
+note to move it, drag its right edge to resize it, double-click it to delete it.
+
+Keyboard: `N` switches the editing keys between the chord grid and the melody lane (clicking
+either one does too). In the melody lane:
+
+| Key | Action |
+|-----|--------|
+| `1` – `7` | Place that degree at the cursor and move the cursor past it |
+| `←` / `→` | Move the cursor one grid step |
+| `Shift+←` / `Shift+→` | Move the note under the cursor one grid step |
+| `↑` / `↓` | Note one scale step up / down |
+| `+` / `-` | Octave up / down (the note under the cursor and new notes) |
+| `[` / `]` | Note one grid step shorter / longer (without a note: the length of new notes) |
+| `B` / `S` | Toggle flat / sharp |
+| `Backspace` / `Delete` | Delete the note under the cursor |
+| `G` | Grid 1/8 ↔ 1/16 |
+| `Home` | Cursor to the start |
+| `Esc` | Back to the chord grid |
+
+`Space`, undo/redo, `M`, `L`, `Alt+[`/`Alt+]` and `Shift+1`…`7` keep their chord-grid meaning in
+both lanes.
+
 ## Band / tracks
 
 The **Band** panel under the chord editor (click its title to collapse it; the app remembers

@@ -160,7 +160,7 @@ describe('saves: happy path', () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as { song: Record<string, unknown> };
     expect(body.song['extra']).toBeUndefined();
-    expect(body.song['schema']).toBe(2);
+    expect(body.song['schema']).toBe(3);
   });
 });
 

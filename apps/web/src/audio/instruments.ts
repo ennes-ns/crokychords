@@ -4,8 +4,8 @@
  */
 import type { TrackRole } from '@crokychords/core';
 
-export type InstrumentId = 'piano' | 'pad' | 'bass';
-export const INSTRUMENT_IDS: readonly InstrumentId[] = ['piano', 'pad', 'bass'];
+export type InstrumentId = 'piano' | 'pad' | 'bass' | 'lead';
+export const INSTRUMENT_IDS: readonly InstrumentId[] = ['piano', 'pad', 'bass', 'lead'];
 
 export interface OscillatorSpec {
   type: OscillatorType;
@@ -96,6 +96,23 @@ export const INSTRUMENTS: Readonly<Record<InstrumentId, Instrument>> = {
     sustain: 0.45,
     release: 0.1,
     level: 1,
+    keyTrack: 0,
+  },
+  /** The melody lane's voice: soft square plus a little saw, quick to speak, held. */
+  lead: {
+    id: 'lead',
+    name: 'Lead',
+    oscillators: [
+      { type: 'square', detune: 0, level: 0.4, octave: 0 },
+      { type: 'sawtooth', detune: 6, level: 0.25, octave: 0 },
+      { type: 'sine', detune: 0, level: 0.2, octave: -1 },
+    ],
+    filter: { base: 900, track: 2.5, q: 1.2, env: { from: 2.5, time: 0.12 } },
+    attack: 0.01,
+    decay: 0.5,
+    sustain: 0.7,
+    release: 0.12,
+    level: 0.8,
     keyTrack: 0,
   },
 };
@@ -224,6 +241,8 @@ export interface SoundPreset {
   id: SoundPresetId;
   name: string;
   instruments: Readonly<Record<TrackRole, InstrumentId>>;
+  /** The instrument of the melody lane. */
+  lead: InstrumentId;
   drums: DrumPatternId;
 }
 
@@ -232,18 +251,21 @@ export const SOUND_PRESETS: readonly SoundPreset[] = [
     id: 'piano',
     name: 'Piano',
     instruments: { chords: 'piano', bass: 'piano', arp: 'piano', pad: 'piano', custom: 'piano' },
+    lead: 'lead',
     drums: 'none',
   },
   {
     id: 'band',
     name: 'Band',
     instruments: { chords: 'piano', bass: 'bass', arp: 'piano', pad: 'pad', custom: 'piano' },
+    lead: 'lead',
     drums: 'straight',
   },
   {
     id: 'pad',
     name: 'Pad',
     instruments: { chords: 'pad', bass: 'bass', arp: 'piano', pad: 'pad', custom: 'pad' },
+    lead: 'lead',
     drums: 'none',
   },
 ];
@@ -263,6 +285,11 @@ export function soundPreset(id: SoundPresetId): SoundPreset {
 /** The instrument that plays a track of `role` under `preset`. */
 export function instrumentFor(preset: SoundPresetId, role: TrackRole): Instrument {
   return INSTRUMENTS[soundPreset(preset).instruments[role]];
+}
+
+/** The instrument that plays the melody lane under `preset`. */
+export function leadFor(preset: SoundPresetId): Instrument {
+  return INSTRUMENTS[soundPreset(preset).lead];
 }
 
 /**

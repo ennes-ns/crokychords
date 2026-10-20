@@ -120,7 +120,7 @@ A panel directly under the chord grid (above the chord editor). The head holds t
 grid toggle (`1/8 | 1/16`), a Mute checkbox and the channel select (1–16). The body mirrors the
 grid's rows (same bars per row, same beat → x mapping as `views/grid.ts`), each row a small
 piano roll of 15 degree rows, from degree 5 one octave down to degree 5 one octave up; notes
-outside that range sit on the top or bottom row with an arrow. Rows on degree 1 are shaded so the
+outside that range sit on the top or bottom row with a dotted edge. Rows on degree 1 are shaded so the
 tonic is easy to find. Each note shows its degree with accidental (`♭3`, `5`, `♯4`).
 
 Mouse:
@@ -134,7 +134,8 @@ Mouse:
 ### B3. Keyboard
 
 Only active while `focus === 'melody'`, except `N`. Everything the chord grid uses that is not in
-this table keeps working in both lanes: `Space`, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl+Y`, `M`,
+this table keeps working in both lanes: `Space`/`Shift+Space`, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`,
+`Ctrl+Y`, `M`, `L` and `Alt+[`/`Alt+]` (loop),
 and `Shift+1`…`Shift+7` / Shift+click (replace the selected chord, issue #44).
 
 | Key | Melody lane |
@@ -143,7 +144,7 @@ and `Shift+1`…`Shift+7` / Shift+click (replace the selected chord, issue #44).
 | `1` – `7` | Place that degree at the cursor (octave `melodyOctave`, length `melodyLength`), hear it, move the cursor past it |
 | `←` / `→` | Cursor one grid step |
 | `Shift+←` / `Shift+→` | Move the note under the cursor one grid step (the cursor follows) |
-| `↑` / `↓` | Note under the cursor one scale step up / down (crosses octaves) |
+| `↑` / `↓` | Note under the cursor one scale step up / down (crosses octaves, drops the accidental) |
 | `+` (`=`) / `-` | Octave up / down: the note under the cursor and the octave for new notes |
 | `[` / `]` | Note under the cursor one grid step shorter / longer; without a note, the length for new notes |
 | `B` / `S` | Toggle flat / sharp on the note under the cursor |
@@ -154,21 +155,21 @@ and `Shift+1`…`Shift+7` / Shift+click (replace the selected chord, issue #44).
 
 The note under the cursor is the note whose span contains the cursor beat. Shift+digit is left
 alone on purpose (issue #44), so sharps use `S` rather than `#` (Shift+3 on most layouts).
-The handler lives in `src/melodyKeys.ts`; `keyboard.ts` is unchanged and `main.ts` asks the melody
-handler first.
+The handler lives in `src/melodyKeys.ts`; `keyboard.ts` is unchanged and `bindShortcuts`
+(`src/shortcuts.ts`) asks the melody handler first, after Space and outside form controls.
 
 ### B4. Harmony colouring
 
 Each note gets a class from `melodyNoteHarmony`: `chord-tone`, `scale-tone` or `outside`. The
-colours are lane tokens defined in `styles.css` from the theme tokens (`--melody-chord-tone`
-from `--ok`, `--melody-scale-tone` from `--accent`, `--melody-outside` from `--danger`), so every
-theme gets them without new theme tokens.
+colours come straight from the theme tokens (`--ok` chord tone, `--accent` scale tone,
+`--danger` outside), so every theme gets them without new theme tokens; `styles.css` only
+adds the lane's rules.
 
 ### B5. Playback, MIDI out, export
 
 - Lead instrument: `INSTRUMENTS.lead` (`src/audio/instruments.ts`), a bright square/saw voice
   with a short attack, some sustain and a fast filter envelope. Each sound preset names its lead
-  (`piano` → piano, `band` and `pad` → lead); the synth plays notes of track `melody` with it.
+  (all three use `lead` in v1); the synth plays notes of track `melody` with it.
 - The scheduler plays `renderSong` plus `renderMelody`, merged by start time; the melody follows
   edits while playing like the tracks do. Web MIDI sends melody notes on the melody channel, and
   Stop sends all-notes-off there too. Muting the melody releases its sounding notes.

@@ -41,7 +41,7 @@ describe('persistence', () => {
     expect(loadSong(memoryStorage({ [STORAGE_KEY]: '{"schema":2}' }))).toBeNull();
   });
 
-  it('migrates a schema-1 song from localStorage to schema 2 with the default band', () => {
+  it('migrates a schema-1 song from localStorage to schema 3 with the default band', () => {
     const legacy = JSON.stringify({
       schema: 1,
       title: 'Old',
@@ -52,7 +52,7 @@ describe('persistence', () => {
     });
     const first = loadSong(memoryStorage({ [STORAGE_KEY]: legacy }));
     const second = loadSong(memoryStorage({ [STORAGE_KEY]: legacy }));
-    expect(first).toMatchObject({ schema: 2, title: 'Old', chords: [{ token: 'i', beats: 4 }] });
+    expect(first).toMatchObject({ schema: 3, title: 'Old', chords: [{ token: 'i', beats: 4 }] });
     const tracks = first?.tracks ?? [];
     expect(tracks.map((t) => [t.name, t.channel, t.muted])).toEqual([
       ['Chords', 0, false],

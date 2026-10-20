@@ -10,7 +10,7 @@
  * get `loopWrap` at every jump back so they can release what is still held.
  */
 import type { NoteEvent, Song } from '@crokychords/core';
-import { renderSong, totalBeats } from '@crokychords/core';
+import { renderMelody, renderSong, totalBeats } from '@crokychords/core';
 import type { DrumHit, DrumPatternId } from './instruments';
 import type { LoopRange } from '../loop';
 import { loopBounds } from '../loop';
@@ -41,9 +41,14 @@ export interface Timer {
   clearInterval(id: number): void;
 }
 
-/** The song as note events in beats (unmuted tracks, sorted by start) and its length. */
+/**
+ * The song as note events in beats (unmuted tracks and the melody, sorted by start; ties keep
+ * the band first) and its length.
+ */
 export function planSong(song: Song): { events: NoteEvent[]; total: number } {
-  return { events: renderSong(song, song.tracks ?? []), total: totalBeats(song) };
+  const events = [...renderSong(song, song.tracks ?? []), ...renderMelody(song)];
+  events.sort((a, b) => a.start - b.start);
+  return { events, total: totalBeats(song) };
 }
 
 /** Index of the first event starting at or after `beat` (events sorted by start). */

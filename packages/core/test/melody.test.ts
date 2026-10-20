@@ -146,7 +146,8 @@ describe('renderMelody', () => {
     const song = melodySong([n(0, 1)], {}, { muted: true });
     expect(renderMelody(song)).toEqual([]);
     expect(renderMelody(song, { includeMuted: true })).toHaveLength(1);
-    const { melody: _m, ...bare } = song;
+    const bare: Song = { ...song };
+    delete bare.melody;
     expect(renderMelody(bare)).toEqual([]);
   });
 });
