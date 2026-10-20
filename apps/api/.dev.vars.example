@@ -2,4 +2,6 @@
 # Cloudflare Access does not run locally, so /api/* answers 401 without a valid Access JWT.
 ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 ACCESS_AUD=replace-with-access-application-aud
-ALLOWED_ORIGIN=http://localhost:5173
+# `wrangler dev` rewrites Host and Origin to the route in wrangler.toml (over http), so this is
+# the origin the Worker sees for the app on http://localhost:8787.
+ALLOWED_ORIGIN=http://chords.example.com

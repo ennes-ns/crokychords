@@ -115,10 +115,11 @@ Changes versus today, and why:
 - **Build order:** `pnpm -r build` must build `@crokychords/web` before `@crokychords/api`
   (`wrangler deploy --dry-run` needs `../web/dist`). Add `"@crokychords/web": "workspace:*"` to the
   api `devDependencies` so pnpm orders the builds, or have the api build script build web first.
-- **Origin check for previews (later):** `apps/api/src/app.ts` compares `Origin` with
-  `ALLOWED_ORIGIN` only. Browsers send `Origin` on same-origin `PUT`/`DELETE`, so a Preview on another
-  hostname gets `403 forbidden_origin` on writes. Accept an `Origin` equal to the request's own
-  origin as well (one line, with a test) before enabling Previews.
+- **Origin check and previews:** `apps/api/src/app.ts` accepts only `Origin` = `ALLOWED_ORIGIN`
+  (#29). `preview_urls = false` in `wrangler.toml` keeps Preview URLs off (the default is on, and
+  `workers_dev = false` does not cover them), so there is no second hostname. Browsers send `Origin`
+  on same-origin `PUT`/`DELETE`, so a Preview on another hostname gets `403 forbidden_origin` on
+  writes; enabling Previews later needs `[previews.vars] ALLOWED_ORIGIN` (section 7, phase 2).
 - **Data table:** `docs/DATA.md` says built tables never enter a build; that rule was written for
   the personal-use data. Chordonomicon output may be redistributed with attribution (the UI shows
   the source). See decision 3 for how `ngrams.json` reaches production.
@@ -322,8 +323,8 @@ Rollback: an empty e-mail list closes the door.
 | 5   | **Always Use HTTPS** and **minimum TLS 1.2**                                                          | yes   | SSL/TLS → Edge Certificates                                                                 |
 | 6   | **HSTS**: max-age 12 months, includeSubDomains off (other `cr0ky.com` subdomains may not be HTTPS), preload off, No-Sniff on. Only after HTTPS works everywhere | yes | SSL/TLS → Edge Certificates → HSTS                                                |
 | 7   | Worker route **fail closed** (section 4, step 8)                                                      | yes   | Workers & Pages → crokychords → Settings → Domains & Routes                                 |
-| 8   | `workers.dev` off, Version URLs off (config: `workers_dev = false`)                                   | yes   | same                                                                                        |
-| 9   | Security headers on the static pages: add a `_headers` file to the asset directory (CSP `default-src 'self'`, `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy`) — the Hono headers only cover `/api/*`. `apps/web` has `copyPublicDir: false`, so the build must emit it explicitly | yes | follow-up issue in `apps/web` |
+| 8   | `workers.dev` off, Preview/Version URLs off (config: `workers_dev = false`, `preview_urls = false`, #29) | yes   | same                                                                                        |
+| 9   | **Done (#29).** Security headers on the static pages: `apps/web/public/_headers` (shipped via `SHIPPED_PUBLIC_FILES` in `vite.config.ts`) sets CSP `default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`, HSTS `max-age=31536000`, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`. The Hono headers cover `/api/*`. No inline scripts or styles: the theme CSS is a constructed stylesheet. Check: `curl -sI https://<host>/` shows the CSP | yes | `apps/web/public/_headers` |
 | 10  | **Turnstile**: free (20 widgets) but there is no public form in v1 (invites are a dashboard action); not installed | yes | decision 6                                                                   |
 | 11  | Not free, not needed: Cloudflare Managed Ruleset / OWASP (Pro), Super Bot Fight Mode (Pro), more rate-limit rules and Managed Challenge action (Pro), Access beyond 50 users | no | — |
 
@@ -408,7 +409,7 @@ stops the job before the deploy. Secrets (`ACCESS_*`) are not touched by CI.
 
 Worker Previews give every PR its own URL on the same Worker, with its own config and logs.
 Requirements: Wrangler ≥ 4.135.0 in `apps/api` (currently 4.72.0), a `previews = {}` block in
-`wrangler.toml` with `[previews.vars] ALLOWED_ORIGIN` or the Origin-check change from section 3,
+`wrangler.toml` with `[previews.vars] ALLOWED_ORIGIN` (the API trusts no other origin, section 3),
 `preview_urls = true` (Preview URLs on `workers.dev`; production stays on the custom domain only), and
 Access on the Previews ("Protect this Worker behind Access → Previews only", a second Access
 application whose AUD goes in with `wrangler preview base-config secret put ACCESS_AUD`).
@@ -538,7 +539,7 @@ rclone sync r2:crokychords-saves "backups/r2" --dry-run   # then without --dry-r
    under `dist/data/` (issue #3 makes it < 500 KB, far below the 25 MiB per-file limit; static
    requests are free and cached). `docs/DATA.md` gets the wording change from section 3.
 4. **Previews** — decided: per-PR Previews come after go-live. They need the Wrangler bump, the
-   Origin-check change, a second Access application and preview D1/R2 (section 7, phase 2).
+   Preview origin in `ALLOWED_ORIGIN`, a second Access application and preview D1/R2 (section 7, phase 2).
 5. **Bot Fight Mode** — decided: on, knowing it cannot be exempted on Free; turn off if a friend's
    `fetch` gets challenged.
 6. **Turnstile** — decided: not in v1. Invites are a dashboard action, there is no public form.

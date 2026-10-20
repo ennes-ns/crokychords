@@ -40,7 +40,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     '*',
     secureHeaders({
       contentSecurityPolicy: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
-      strictTransportSecurity: 'max-age=31536000; includeSubDomains',
+      strictTransportSecurity: 'max-age=31536000',
       xFrameOptions: 'DENY',
       referrerPolicy: 'no-referrer',
       crossOriginResourcePolicy: 'same-site',
@@ -53,7 +53,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   });
 
   // Refuse foreign origins before anything else. Requests without Origin (same-origin GETs,
-  // non-browser clients) and same-origin writes (the web app is served by this Worker) pass,
+  // non-browser clients) and requests from ALLOWED_ORIGIN (the app this Worker serves) pass,
   // but still need a valid Access JWT below.
   app.use('*', async (c, next) => {
     const origin = c.req.header('Origin');
@@ -132,8 +132,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     }
     const declared = Number(c.req.header('Content-Length') ?? '0');
     if (declared > LIMITS.maxSaveBytes) throw tooLarge();
-    const raw = await c.req.arrayBuffer();
-    if (raw.byteLength > LIMITS.maxSaveBytes) throw tooLarge();
+    const raw = await readBounded(c.req.raw, LIMITS.maxSaveBytes);
 
     let json: unknown;
     try {
@@ -158,9 +157,6 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     if ((current?.version ?? 0) !== base) {
       throw new ApiError('conflict', 'the save has changed since this version', current);
     }
-    if (current === null && (await storage.countSaves(user.id)) >= LIMITS.maxSaves) {
-      throw new ApiError('save_limit_reached', `at most ${LIMITS.maxSaves} saves per user`);
-    }
 
     const record: SaveRecord = {
       schema_version: SCHEMA_VERSION,
@@ -170,7 +166,17 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       title: input.title,
       song: input.song,
     };
-    if (!(await storage.claimVersion(user.id, record, base, raw.byteLength))) {
+    const claim = await storage.claimVersion(
+      user.id,
+      record,
+      base,
+      raw.byteLength,
+      LIMITS.maxSaves,
+    );
+    if (claim === 'limit') {
+      throw new ApiError('save_limit_reached', `at most ${LIMITS.maxSaves} saves per user`);
+    }
+    if (claim === 'conflict') {
       throw new ApiError(
         'conflict',
         'the save has changed since this version',
@@ -209,9 +215,41 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   return app;
 }
 
-/** `ALLOWED_ORIGIN`, or the origin the request was sent to (the app on the same Worker). */
+/**
+ * Only the configured `ALLOWED_ORIGIN` (the production hostname of the app this Worker serves).
+ * The request's own origin is deliberately not trusted: with `workers.dev` and Preview URLs off
+ * there is no second hostname that would need it.
+ */
 function isAllowedOrigin(origin: string, c: Context<AppEnv>): boolean {
-  return origin === c.env.ALLOWED_ORIGIN || origin === new URL(c.req.url).origin;
+  return origin === c.env.ALLOWED_ORIGIN;
+}
+
+/**
+ * The request body, read chunk by chunk and abandoned as soon as it exceeds `max` bytes, so a
+ * chunked upload without `Content-Length` is never buffered beyond the limit.
+ */
+export async function readBounded(req: Request, max: number): Promise<Uint8Array> {
+  if (req.body === null) return new Uint8Array(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
 }
 
 function unauthorized(): ApiError {

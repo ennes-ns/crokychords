@@ -39,7 +39,7 @@ placeholders only.
 | `ASSETS`             | assets        | the built web app (`../web/dist`); served before the Worker except `/api/*` |
 | `ACCESS_TEAM_DOMAIN` | secret        | `<team>.cloudflareaccess.com` (scheme optional); issuer and JWKS host      |
 | `ACCESS_AUD`         | secret        | the Access application's audience tag                                      |
-| `ALLOWED_ORIGIN`     | var           | a browser origin allowed by CORS besides the Worker's own origin           |
+| `ALLOWED_ORIGIN`     | var           | the only browser origin accepted (the hostname that serves the app)        |
 
 `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are account-specific and never live in `wrangler.toml`: set them
 with `wrangler secret put` (deploy-v1 runbook step 7), locally in `apps/api/.dev.vars`.
@@ -56,7 +56,7 @@ Every `/api/*` request (except CORS preflight) must carry `Cf-Access-Jwt-Asserti
 2. looks up the key by `kid` in the JWKS (cached in memory for 10 minutes; an unknown `kid` forces one
    refresh, at most once per 30 seconds, so key rotation works without a redeploy);
 3. verifies the signature, `iss` = `https://<team domain>`, `aud` contains `ACCESS_AUD`, `exp` is
-   present and in the future (`nbf`/`iat` are honoured when present, no clock tolerance);
+   present and in the future (`nbf`/`iat` are honoured when present; 60 s clock tolerance);
 4. requires a non-empty `email` claim. The e-mail, lower-cased, is the user's identity.
 
 Anything missing or invalid → `401 unauthorized`. The reason is not disclosed to the client.
@@ -120,7 +120,7 @@ Body: `{ "error": { "code": string, "message": string, "current"?: SaveMeta | nu
 | ------ | ------------------------ | --------------------------------------------------------------- |
 | 400    | `invalid_request`        | bad JSON, schema or song invalid, id mismatch, bad `If-Match`    |
 | 401    | `unauthorized`           | JWT missing, malformed, wrong signature/issuer/audience, expired |
-| 403    | `forbidden_origin`       | `Origin` present, neither `ALLOWED_ORIGIN` nor the request's own |
+| 403    | `forbidden_origin`       | `Origin` present and not `ALLOWED_ORIGIN`                        |
 | 403    | `save_limit_reached`     | creating a save beyond `max_saves`                               |
 | 404    | `not_found`              | unknown route or save                                            |
 | 409    | `conflict`               | version check failed                                            |
@@ -132,8 +132,12 @@ Body: `{ "error": { "code": string, "message": string, "current"?: SaveMeta | nu
 ## 7. Limits
 
 - `max_save_bytes` = 262 144 (256 KiB): the size of the raw `PUT` body. Checked against
-  `Content-Length` first and again against the bytes actually read.
-- `max_saves` = 200 per user. Updating an existing save is always allowed.
+  `Content-Length` first; the body is then read chunk by chunk and the request is refused as soon
+  as it passes the limit, so a chunked body without `Content-Length` is never buffered beyond it.
+- `max_saves` = 200 per user. Updating an existing save is always allowed. The count and the insert
+  are one D1 statement (`INSERT … SELECT … WHERE (SELECT COUNT(*) …) < 200`), so concurrent creates
+  cannot overshoot the limit.
+- Songs: `tempo` in (0, 1000] BPM and `meter.beats` 1–32 (`validateSong` in `packages/core`).
 - Save ids: 1–64 characters of `[A-Za-z0-9_-]`; titles ≤ 200 characters.
 
 ## 8. HTTP hardening
@@ -141,13 +145,13 @@ Body: `{ "error": { "code": string, "message": string, "current"?: SaveMeta | nu
 - CORS: only `ALLOWED_ORIGIN`, with credentials (the Access cookie); methods `GET, PUT, DELETE`;
   request headers `Content-Type, If-Match`; exposed header `ETag`; preflight cached 10 minutes.
   A request with any other `Origin` is refused with `403` before authentication.
-- Same origin: requests without `Origin` and requests whose `Origin` equals the request's own origin
-  (scheme, host and port of the URL the Worker received) are accepted, because browsers send
-  `Origin` on same-origin `PUT`/`DELETE` from the app this Worker serves. This also lets a Worker
-  Preview on another hostname write without changing `ALLOWED_ORIGIN`. Every `/api/*` request still
-  needs a valid Access JWT.
+- Requests without `Origin` are accepted (same-origin `GET`s, non-browser clients). Browsers send
+  `Origin` on same-origin `PUT`/`DELETE`, so `ALLOWED_ORIGIN` must be the hostname the Worker serves
+  the app on. The request's own origin is not trusted on its own: `workers.dev` and Preview URLs
+  are off (`wrangler.toml`), so there is no second hostname. Every `/api/*` request still needs a
+  valid Access JWT.
 - Security headers on every response: `Content-Security-Policy: default-src 'none';
-  frame-ancestors 'none'`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`,
+  frame-ancestors 'none'`, `Strict-Transport-Security: max-age=31536000` (no `includeSubDomains`), `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
 - Logs never contain save bodies or JWTs.
 - Free-tier friendly: no cron triggers, no Durable Objects, no KV.

@@ -8,6 +8,9 @@ name = "crokychords"
 main = "src/index.ts"
 compatibility_date = "2026-03-01"
 workers_dev = false
+# No Preview URLs either (on by default; workers_dev = false does not cover them). The API only
+# trusts ALLOWED_ORIGIN, so a second hostname would not work anyway.
+preview_urls = false
 minify = true
 upload_source_maps = true
 
@@ -25,8 +28,8 @@ binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
 [vars]
-# A browser origin allowed by CORS besides the Worker's own origin (same-origin requests are
-# always accepted). Placeholder; local dev overrides it in .dev.vars.
+# The only browser origin the API accepts (the production hostname of the app this Worker
+# serves); requests with any other Origin get 403. Placeholder; local dev overrides it in .dev.vars.
 ALLOWED_ORIGIN = "https://chords.example.com"
 
 [[d1_databases]]

@@ -27,7 +27,7 @@ function copyBrand(): Plugin {
 }
 
 /** Files from public/ that do go into a build (see docs/specs/data-default-table.md). */
-const SHIPPED_PUBLIC_FILES = ['data/default.json'];
+const SHIPPED_PUBLIC_FILES = ['data/default.json', '_headers'];
 
 /** Emit only the allow-listed public files, so a local full ngrams.json never ships. */
 function shipPublicFiles(files: readonly string[]): Plugin {
