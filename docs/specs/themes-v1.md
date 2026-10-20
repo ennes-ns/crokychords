@@ -24,7 +24,7 @@ font sizes, effects and the main spacing; it defines none of them itself.
 
 | Group      | Tokens                                                                                                                                                                                                                                                                  |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Surface    | `--color-scheme`, `--bg`, `--panel`, `--panel-2`, `--row-selected`, `--line`, `--line-strong`, `--rest-a`, `--rest-b`                                                                                                                                                    |
+| Surface    | `--color-scheme`, `--bg`, `--panel`, `--panel-2`, `--row-selected`, `--line`, `--line-strong`, `--rest-a`, `--rest-b`, `--melody-chord-tone`, `--melody-chord-root`                                                                                                                                                    |
 | Text       | `--text`, `--muted`, `--accent`, `--on-accent`, `--brand-accent`, `--danger`, `--ok`                                                                                                                                                                                     |
 | Degree hue | `--chord-fill`, `--chord-hover`, `--chord-edge`, `--chord-selected`, `--chord-ring`, `--chord-ink`, `--suggestion-edge`, `--suggestion-hover`, `--suggestion-bar`                                                                                                        |
 | Type       | `--font-ui`, `--font-display`, `--font-size`, `--font-size-xs`, `--font-size-sm`, `--font-size-h`, `--font-size-lg`, `--font-size-xl`, `--line-height`, `--weight-bold`, `--weight-semibold`, `--heading-tracking`, `--brand-tracking`, `--brand-size`                                                    |
@@ -36,7 +36,9 @@ font sizes, effects and the main spacing; it defines none of them itself.
 Degree-hue tokens are a saturation/lightness pair (`45% 26%`), used as
 `hsl(var(--hue) var(--chord-fill))`: every chord block keeps its degree hue (`DEGREE_HUES` in
 `music.ts`), the theme sets how saturated and how light it is. Colour tokens are hex colours, so a
-test can check their contrast.
+test can check their contrast. The melody lane's chord-tone tints (`--melody-chord-tone`,
+`--melody-chord-root`, `melody-v1.md` §B4) are hex too, but may carry alpha (`#rrggbbaa`), so
+they are not in the contrast list.
 
 Spacing: the layout spacing (workspace gap and padding, panel padding, toolbar padding, control
 padding and height) is tokenised; the 1–6 px offsets inside single components (label gaps, a
