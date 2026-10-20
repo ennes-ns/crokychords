@@ -122,11 +122,12 @@ progression. A new song starts with three: **Chords** (channel 1, sustained), **
 | Mute | Silences the track in playback, auditions fall back to another track, export skips it |
 | Name | Track name (also the track name in the exported MIDI file) |
 | Role | chords, bass, arp, pad or custom: picks the browser timbre. Changing it does **not** touch the other fields; click **apply defaults** to take the role's octave, pattern and velocity |
-| Pattern | Rhythm preset, grouped by role (sustain, half notes, pop ballad, bass root–fifth, arp up 1/16, ...). A pattern that is not a preset shows as a read-only *Custom* label |
+| Pattern | Rhythm preset, grouped by role, each with a one-line description (sustain, pop ballad, house piano, waltz 3/4, walking bass, alberti, ...), then the song's own presets. A pattern that is not a preset shows as a read-only *Custom* label |
 | Oct | Octave of the lowest voiced note (C4 = 4), -1..9 |
 | Ch | MIDI channel 1–16 |
 | Velocity, Gate | Note velocity 1–127 and the sounding fraction of each step (10–100 %) |
 | Transp. | Transpose in semitones, -24..24 |
+| ✎ | Open the pattern editor under the row (below) |
 | ▲ ▼ ✕ | Reorder, remove (undo brings it back) |
 
 **+ Add track** adds a track of the chosen role with that role's defaults on the next free
@@ -136,6 +137,27 @@ channel; without a selection they use the first unmuted track. The toolbar shows
 map next to the MIDI-out control (`Chords ch1 · Bass ch2 · Arp ch3`, muted tracks struck
 through). Track edits are part of the song, so undo/redo and the saved song include them;
 songs saved by older versions get the default band when they are loaded.
+
+### Pattern editor
+
+✎ on a track row opens a step grid for its pattern under the row (one at a time; ✎ again, ✕ or
+`Esc` closes it). Columns are 1/16 notes, 1–4 beats long (**Length**); rows are what a step
+plays: **Chord** (all tones), **Top**, **Tone 1…8** (chord tones counted from the bottom of the
+voicing; on a triad: root, 3rd, 5th, then the same an octave up), **Octave** (the bass note an
+octave up), **Fifth**, **Root** and **Bass**.
+
+- Click an empty cell to add a step, drag right to make it longer; drag from a step to change its
+  end; click a step to remove it.
+- Shift+click toggles a step's accent: accented steps play at the track velocity, normal ones at
+  75 % of it (solid vs. light cells).
+- **Strum** fills a rolled chord on every beat, **Down–up** the chord on every eighth (accented on
+  the beat), **Clear** empties the grid. **Hold last note** holds the last step to the chord end.
+- Any edit makes the track's pattern *Custom*. **Save as preset** stores it in the song under the
+  name you type (or its current name), so every track can pick it from **Song presets** in the
+  pattern select; **Delete preset** removes it again (tracks keep the pattern as *Custom*).
+
+Every gesture is one undo step. Song presets are saved and synced with the song (song schema 4,
+`docs/specs/pattern-editor-v1.md`).
 
 ### Browser sound: presets and drums
 

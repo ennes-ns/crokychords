@@ -64,7 +64,7 @@ describe('save record', () => {
       ...valid(),
       song: { ...(valid()['song'] as object), schema: 1, tracks: undefined },
     };
-    expect(parseSaveRecord(JSON.parse(JSON.stringify(legacy))).song.schema).toBe(3);
+    expect(parseSaveRecord(JSON.parse(JSON.stringify(legacy))).song.schema).toBe(4);
   });
 
   it.each([

@@ -302,6 +302,33 @@ describe('songToMidi with tracks (format 1)', () => {
     ]);
   });
 
+  it('exports a custom (edited) pattern with the octave selector as rendered', () => {
+    const bass = createTrack('bass', {
+      id: 'b',
+      channel: 4,
+      gate: 0.5,
+      pattern: {
+        id: 'custom',
+        name: 'Edited',
+        length: 2,
+        steps: [
+          { at: 0, length: 0.5, notes: 'bass' },
+          { at: 0.75, length: 0.25, notes: 'octave', accent: 0.75 },
+        ],
+      },
+    });
+    const edited = createSong({ chords: [{ token: 'I', beats: 4 }], tracks: [bass] });
+    const ons = (readSmf(songToMidi(edited)).tracks[1]?.events ?? []).filter(
+      (e) => e.status === 0x94,
+    );
+    expect(ons.map((e) => [e.tick, e.data[0], e.data[1]])).toEqual([
+      [0, 36, 100],
+      [360, 48, 75],
+      [960, 36, 100],
+      [1320, 48, 75],
+    ]);
+  });
+
   it('writes a conductor-only file for an empty band', () => {
     const empty = readSmf(
       songToMidi(createSong({ chords: [{ token: 'I', beats: 4 }], tracks: [] })),

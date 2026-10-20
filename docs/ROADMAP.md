@@ -32,6 +32,7 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 | Tone Sets / Bass Sets tabs (chords containing a note / with a bass note) | idea | idea |
 | Progressions tab: whole-progression suggestions from the table's most common paths | idea | idea |
 | Melody lane (scale degrees) and harmonize-by-scale-degree | idea | idea |
+| Pattern editor: step grid per track, better presets, song presets (schema 4) | [pattern-editor-v1](specs/pattern-editor-v1.md) | in review (#56) |
 | MusicXML export; import of MIDI/MusicXML files | idea | idea |
 
 ## Phase 3 — Online version (chords.cr0ky.com, Cloudflare free tier)

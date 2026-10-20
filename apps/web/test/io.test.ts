@@ -41,7 +41,7 @@ describe('persistence', () => {
     expect(loadSong(memoryStorage({ [STORAGE_KEY]: '{"schema":2}' }))).toBeNull();
   });
 
-  it('migrates a schema-1 song from localStorage to schema 3 with the default band', () => {
+  it('migrates a schema-1 song from localStorage to schema 4 with the default band', () => {
     const legacy = JSON.stringify({
       schema: 1,
       title: 'Old',
@@ -52,7 +52,7 @@ describe('persistence', () => {
     });
     const first = loadSong(memoryStorage({ [STORAGE_KEY]: legacy }));
     const second = loadSong(memoryStorage({ [STORAGE_KEY]: legacy }));
-    expect(first).toMatchObject({ schema: 3, title: 'Old', chords: [{ token: 'i', beats: 4 }] });
+    expect(first).toMatchObject({ schema: 4, title: 'Old', chords: [{ token: 'i', beats: 4 }] });
     const tracks = first?.tracks ?? [];
     expect(tracks.map((t) => [t.name, t.channel, t.muted])).toEqual([
       ['Chords', 0, false],
@@ -62,7 +62,7 @@ describe('persistence', () => {
     expect(tracks.every((t) => /^trk-[0-9a-z]{8}$/.test(t.id))).toBe(true);
     // Fresh random ids on every migration.
     expect(second?.tracks?.[0]?.id).not.toBe(tracks[0]?.id);
-    // Saved back as schema 2 with the same tracks.
+    // Saved back as schema 4 with the same tracks.
     const storage = memoryStorage();
     if (first !== null) saveSong(storage, first);
     expect(loadSong(storage)).toEqual(first);

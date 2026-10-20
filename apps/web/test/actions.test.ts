@@ -1,4 +1,4 @@
-import { createSong } from '@crokychords/core';
+import { createSong, patternPreset } from '@crokychords/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createActions } from '../src/actions';
 import { AudioEngine } from '../src/audio/synth';
@@ -269,13 +269,55 @@ describe('actions', () => {
     expect(store.state.song.tracks?.[0]?.pattern.id).toBe('bass-quarters');
   });
 
+  it('opens one pattern editor, edits with undo, and closes it when its track is gone', () => {
+    const { store, actions } = setup(['I']);
+    const tracks = () => store.state.song.tracks ?? [];
+    const bass = tracks()[1]?.id ?? '';
+    actions.openPatternEditor(bass);
+    expect(store.state).toMatchObject({ patternEditor: bass, selectedTrack: bass });
+    actions.openPatternEditor('no-such-track');
+    expect(store.state.patternEditor).toBeNull();
+    actions.openPatternEditor(bass);
+
+    const before = store.state.song;
+    const edited = { ...patternPreset('bass-walk-4'), id: 'custom' };
+    actions.previewPattern(bass, edited);
+    expect(store.canUndo).toBe(false);
+    actions.editPattern(bass, edited, before);
+    expect(tracks()[1]?.pattern).toEqual(edited);
+    actions.undo();
+    expect(store.state.song).toBe(before);
+    actions.redo();
+
+    expect(actions.savePatternPreset(bass, 'Walk')).toBe(true);
+    expect(actions.savePatternPreset(bass, ' ')).toBe(false);
+    const presetId = store.state.song.patterns?.[0]?.id ?? '';
+    expect(tracks()[1]?.pattern.id).toBe(presetId);
+    actions.setTrackPattern(tracks()[0]?.id ?? '', presetId);
+    expect(tracks()[0]?.pattern.name).toBe('Walk');
+    actions.deletePatternPreset(presetId);
+    expect(store.state.song.patterns).toEqual([]);
+    expect(tracks()[0]?.pattern.id).toBe('custom');
+
+    actions.removeTrack(bass);
+    expect(store.state.patternEditor).toBeNull();
+    actions.undo();
+    actions.openPatternEditor(bass);
+    actions.redo(); // the removal again: the editor's track is gone
+    expect(store.state.patternEditor).toBeNull();
+    actions.openPatternEditor(null);
+    expect(store.state.patternEditor).toBeNull();
+  });
+
   it('keeps the band on New', () => {
     const { store, actions } = setup(['I']);
     actions.addTrack('pad');
     const ids = store.state.song.tracks?.map((t) => t.id);
+    actions.savePatternPreset(ids?.[0] ?? '', 'Kept');
     actions.newSong();
     expect(store.state.song.chords).toEqual([]);
     expect(store.state.song.tracks?.map((t) => t.id)).toEqual(ids);
+    expect(store.state.song.patterns?.map((p) => p.name)).toEqual(['Kept']);
   });
 
   it('auditions through the selected track on its MIDI channel and velocity', async () => {

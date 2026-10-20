@@ -27,6 +27,7 @@ import { mountBand } from './views/band';
 import { mountChordEditor } from './views/chordEditor';
 import { mountGrid } from './views/grid';
 import { mountMelody } from './views/melody';
+import { patternEditorKey } from './views/pattern';
 import { mountSaves } from './views/saves';
 import { mountSuggest } from './views/suggest';
 import { mountToolbar } from './views/toolbar';
@@ -131,6 +132,8 @@ async function boot(app: HTMLElement): Promise<void> {
     window,
     (action) => actions.key(action),
     (event) => {
+      // Esc closes an open pattern editor first (docs/specs/pattern-editor-v1.md, B3).
+      if (patternEditorKey(event, store.state, actions)) return true;
       // The melody lane takes its keys first while it has focus (docs/specs/melody-v1.md, B3).
       const melodyAction = melodyKeyAction(event, store.state.focus);
       if (melodyAction === null) return false;

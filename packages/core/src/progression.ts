@@ -13,7 +13,13 @@ import type { Degree, Key, Mode } from './theory';
 import { isMode, parseNoteName } from './theory';
 import { isRestToken, TokenError, parseToken } from './token';
 import type { NoteSelector, Pattern, PatternStep, Track } from './tracks';
-import { NOTE_SELECTOR_NAMES, TRACK_ROLES, cloneTrack } from './tracks';
+import {
+  NOTE_SELECTOR_NAMES,
+  TRACK_ROLES,
+  USER_PATTERN_PREFIX,
+  clonePattern,
+  cloneTrack,
+} from './tracks';
 
 export interface SongChord {
   /** A `roman-numeral-v1` token or 'rest'. */
@@ -24,10 +30,10 @@ export interface SongChord {
 
 export interface Song {
   /**
-   * 3 since melody v1 (2: tracks v1). validateSong migrates schema 1 (no tracks) and schema 2
-   * (no melody).
+   * 4 since the pattern editor (3: melody v1, 2: tracks v1). validateSong migrates schema 1 (no
+   * tracks), schema 2 (no melody) and schema 3 (no song presets).
    */
-  schema: 1 | 2 | 3;
+  schema: 1 | 2 | 3 | 4;
   title: string;
   /** Tonic as a note name, e.g. 'C', 'F#', 'Bb'. */
   key: { tonic: string; mode: Mode };
@@ -40,6 +46,11 @@ export interface Song {
   tracks?: Track[];
   /** The melody lane (schema 3). Undefined only for schema-1/2 song objects built by hand. */
   melody?: Melody;
+  /**
+   * Song presets (schema 4): patterns saved with "Save as preset" in the pattern editor, ids
+   * starting with USER_PATTERN_PREFIX. Undefined only for schema-1..3 song objects built by hand.
+   */
+  patterns?: Pattern[];
 }
 
 /** Thrown by validateSong / deserializeSong; `path` points at the offending value. */
@@ -55,13 +66,17 @@ export class SongError extends Error {
 
 export const DEFAULT_SONG_TITLE = 'Untitled';
 
+/** Most song presets a song may hold. */
+export const MAX_SONG_PATTERNS = 64;
+
 /**
- * A new schema-3 song with defaults (C major, 120 BPM, 4/4, no chords, DEFAULT_TRACKS(), an
- * empty melody) overridden by `partial` (deep-copied; `partial.schema` is ignored). Not validated.
+ * A new schema-4 song with defaults (C major, 120 BPM, 4/4, no chords, DEFAULT_TRACKS(), an
+ * empty melody, no song presets) overridden by `partial` (deep-copied; `partial.schema` is
+ * ignored). Not validated.
  */
 export function createSong(partial: Partial<Song> = {}): Song {
   return {
-    schema: 3,
+    schema: 4,
     title: partial.title ?? DEFAULT_SONG_TITLE,
     key: partial.key ? { ...partial.key } : { tonic: 'C', mode: 'major' },
     tempo: partial.tempo ?? 120,
@@ -69,6 +84,7 @@ export function createSong(partial: Partial<Song> = {}): Song {
     chords: (partial.chords ?? []).map((c) => ({ token: c.token, beats: c.beats })),
     tracks: partial.tracks ? partial.tracks.map(cloneTrack) : DEFAULT_TRACKS(),
     melody: partial.melody ? cloneMelody(partial.melody) : defaultMelody(),
+    patterns: (partial.patterns ?? []).map(clonePattern),
   };
 }
 
@@ -219,6 +235,25 @@ function validateTracks(value: unknown): Track[] {
   });
 }
 
+function validateSongPatterns(value: unknown): Pattern[] {
+  if (!Array.isArray(value)) throw new SongError('patterns', 'expected an array');
+  if (value.length > MAX_SONG_PATTERNS) {
+    throw new SongError('patterns', `at most ${MAX_SONG_PATTERNS} song presets`);
+  }
+  const seen = new Set<string>();
+  return value.map((item: unknown, i) => {
+    const path = `patterns[${i}]`;
+    const pattern = validatePattern(item, path);
+    if (!pattern.id.startsWith(USER_PATTERN_PREFIX) || pattern.id === USER_PATTERN_PREFIX) {
+      throw new SongError(`${path}.id`, `must start with "${USER_PATTERN_PREFIX}"`);
+    }
+    if (seen.has(pattern.id)) throw new SongError(`${path}.id`, `duplicate id "${pattern.id}"`);
+    seen.add(pattern.id);
+    if (pattern.name.trim() === '') throw new SongError(`${path}.name`, 'must not be empty');
+    return pattern;
+  });
+}
+
 const DEGREES: readonly Degree[] = [1, 2, 3, 4, 5, 6, 7];
 
 /** True when `n` is a whole number of melody steps (1/16 notes). */
@@ -270,17 +305,18 @@ function validateMelody(value: unknown): Melody {
 }
 
 /**
- * Check that `value` is a valid Song and return a normalised schema-3 copy (unknown fields
+ * Check that `value` is a valid Song and return a normalised schema-4 copy (unknown fields
  * dropped). Older songs are migrated: schema 1 ignores any `tracks` field and gets
  * DEFAULT_TRACKS() (fresh ids); schema 1 and 2 ignore any `melody` field and get an empty
- * defaultMelody(). Throws SongError with a path such as 'chords[3].beats',
- * 'tracks[1].pattern.steps[2].at' or 'melody.notes[0].degree'.
+ * defaultMelody(); schema 1-3 ignore any `patterns` field and get no song presets. Throws
+ * SongError with a path such as 'chords[3].beats', 'tracks[1].pattern.steps[2].at',
+ * 'melody.notes[0].degree' or 'patterns[0].id'.
  */
 export function validateSong(value: unknown): Song {
   const root = record(value, '');
   const schema = root['schema'];
-  if (schema !== 1 && schema !== 2 && schema !== 3) {
-    throw new SongError('schema', 'expected 1, 2 or 3');
+  if (schema !== 1 && schema !== 2 && schema !== 3 && schema !== 4) {
+    throw new SongError('schema', 'expected 1, 2, 3 or 4');
   }
   const title = stringField(root, 'title', '');
 
@@ -329,14 +365,15 @@ export function validateSong(value: unknown): Song {
   });
 
   return {
-    schema: 3,
+    schema: 4,
     title,
     key: { tonic, mode },
     tempo,
     meter: { beats: meterBeats, unit },
     chords,
     tracks: schema === 1 ? DEFAULT_TRACKS() : validateTracks(root['tracks']),
-    melody: schema === 3 ? validateMelody(root['melody']) : defaultMelody(),
+    melody: schema >= 3 ? validateMelody(root['melody']) : defaultMelody(),
+    patterns: schema === 4 ? validateSongPatterns(root['patterns']) : [],
   };
 }
 
@@ -369,13 +406,13 @@ export function songTokens(song: Song): string[] {
 
 /**
  * JSON (2-space indented) with a stable key order; unknown fields are dropped. Writes
- * schema 3 with the tracks and the melody (an empty default one when the object has none); a
- * song object without `tracks` (a hand-built schema-1 song) is written as schema 1, which
- * validateSong migrates on load.
+ * schema 4 with the tracks, the melody (an empty default one when the object has none) and the
+ * song presets (none when the object has none); a song object without `tracks` (a hand-built
+ * schema-1 song) is written as schema 1, which validateSong migrates on load.
  */
 export function serializeSong(song: Song): string {
   const ordered: Song = {
-    schema: song.tracks === undefined ? 1 : 3,
+    schema: song.tracks === undefined ? 1 : 4,
     title: song.title,
     key: { tonic: song.key.tonic, mode: song.key.mode },
     tempo: song.tempo,
@@ -385,6 +422,7 @@ export function serializeSong(song: Song): string {
   if (song.tracks !== undefined) {
     ordered.tracks = song.tracks.map(cloneTrack);
     ordered.melody = cloneMelody(song.melody ?? defaultMelody());
+    ordered.patterns = (song.patterns ?? []).map(clonePattern);
   }
   return JSON.stringify(ordered, null, 2);
 }

@@ -38,6 +38,8 @@ export interface AppState {
   selected: number | null;
   /** Id of the track selected in the Band panel (target of `M` and of auditions). */
   selectedTrack: string | null;
+  /** Id of the track whose pattern editor is open (docs/specs/pattern-editor-v1.md, B1). */
+  patternEditor: string | null;
   /** Beat position of the playhead. */
   cursor: number;
   playing: boolean;
@@ -76,6 +78,7 @@ export function initialState(song: Song = createSong()): AppState {
     song,
     selected: null,
     selectedTrack: null,
+    patternEditor: null,
     cursor: 0,
     playing: false,
     loop: false,
@@ -186,6 +189,7 @@ export class Store {
       song,
       selected: null,
       selectedTrack: null,
+      patternEditor: null,
       cursor: 0,
       loopRange: null,
       melodyCursor: 0,
@@ -211,7 +215,8 @@ export class Store {
   #restore(song: Song): void {
     const selected = clampSelection(this.#state.selected, song.chords.length);
     const selectedTrack = clampTrackSelection(this.#state.selectedTrack, song);
-    this.#emit({ ...this.#state, song, selected, selectedTrack });
+    const patternEditor = clampTrackSelection(this.#state.patternEditor, song);
+    this.#emit({ ...this.#state, song, selected, selectedTrack, patternEditor });
   }
 
   #emit(next: AppState): void {

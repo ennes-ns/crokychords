@@ -40,7 +40,8 @@ pnpm dev            # http://localhost:5173
   their probability, from an n-gram model over Roman-numeral chord tokens. "Popular" shows the most
   common chords in the key instead; "diatonic only" filters out borrowed chords. Hover to listen.
 - **Playback.** A band of tracks (chords, bass, arpeggio, …) with pattern presets, octave, velocity,
-  gate and a MIDI channel per track, played by a Web Audio synth.
+  gate and a MIDI channel per track, played by a Web Audio synth. A step-grid pattern editor per
+  track draws arpeggios and rhythms and saves them as song presets.
 - **Export.** Download the progression as a multi-track `.mid` file.
 - **Web MIDI out.** Drive a DAW or hardware synth live through a virtual MIDI port, one channel per track.
 

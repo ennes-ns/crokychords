@@ -1,5 +1,5 @@
 /** Everything the views and the keyboard can do, wired to the store, audio and MIDI. */
-import type { Degree, MelodyNote, Song, TrackRole } from '@crokychords/core';
+import type { Degree, MelodyNote, Pattern, Song, TrackRole } from '@crokychords/core';
 import {
   MELODY_OCTAVE_MAX,
   MELODY_OCTAVE_MIN,
@@ -21,10 +21,15 @@ import {
   auditionEvents,
   auditionTrack,
   channelsToSilence,
+  deletePatternPreset,
   findTrack,
   moveTrack,
   removeTrack,
+  savePatternPreset,
+  setTrackPattern,
+  setTrackPatternData,
   silencedTracks,
+  songPatterns,
   songTracks,
   toggleMute,
   trackChannels,
@@ -101,6 +106,20 @@ export interface Actions {
   toggleMute(id: string): void;
   /** Apply ROLE_DEFAULTS of the track's role (octave, pattern, velocity). */
   applyRoleDefaults(id: string): void;
+  /** Give the track a copy of a built-in or song preset. */
+  setTrackPattern(id: string, presetId: string): void;
+  /**
+   * Open the pattern editor under a track (and select it), or close it with null
+   * (docs/specs/pattern-editor-v1.md).
+   */
+  openPatternEditor(id: string | null): void;
+  /** Commit an edited pattern; `base` is the song to undo to (after drag previews). */
+  editPattern(id: string, pattern: Pattern, base?: Song): void;
+  /** Show and play an edited pattern without recording history (drags). */
+  previewPattern(id: string, pattern: Pattern): void;
+  /** Store the track's pattern as a song preset; false when nothing was saved. */
+  savePatternPreset(id: string, name: string): boolean;
+  deletePatternPreset(presetId: string): void;
   newSong(): void;
   undo(): void;
   redo(): void;
@@ -320,7 +339,10 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
 
     removeTrack(id) {
       const song = removeTrack(store.state.song, id);
-      store.commit(song, { selectedTrack: clampTrackSelection(store.state.selectedTrack, song) });
+      store.commit(song, {
+        selectedTrack: clampTrackSelection(store.state.selectedTrack, song),
+        patternEditor: clampTrackSelection(store.state.patternEditor, song),
+      });
     },
 
     moveTrack(id, delta) {
@@ -339,16 +361,51 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       store.commit(applyRoleDefaults(store.state.song, id));
     },
 
+    setTrackPattern(id, presetId) {
+      store.commit(setTrackPattern(store.state.song, id, presetId));
+    },
+
+    openPatternEditor(id) {
+      const patternEditor = clampTrackSelection(id, store.state.song);
+      if (patternEditor === null) {
+        if (store.state.patternEditor !== null) store.set({ patternEditor: null });
+        return;
+      }
+      store.set({ patternEditor, selectedTrack: patternEditor });
+    },
+
+    editPattern(id, pattern, base) {
+      const song = setTrackPatternData(base ?? store.state.song, id, pattern);
+      store.commit(song, {}, base === undefined ? {} : { base });
+    },
+
+    previewPattern(id, pattern) {
+      store.preview(setTrackPatternData(store.state.song, id, pattern));
+    },
+
+    savePatternPreset(id, name) {
+      const saved = savePatternPreset(store.state.song, id, name);
+      if (saved === null) return false;
+      store.commit(saved.song);
+      return true;
+    },
+
+    deletePatternPreset(presetId) {
+      store.commit(deletePatternPreset(store.state.song, presetId));
+    },
+
     newSong() {
       actions.stop();
       const { key, tempo, meter, tracks } = store.state.song;
-      // The band and the melody's routing carry over; chords and melody notes start empty.
+      // The band, its song presets and the melody's routing carry over; chords and melody notes
+      // start empty.
       const song = createSong({
         key: { ...key },
         tempo,
         meter: { ...meter },
         ...(tracks === undefined ? {} : { tracks }),
         melody: { ...songMelody(store.state.song), notes: [] },
+        patterns: [...songPatterns(store.state.song)],
       });
       store.commit(song, { selected: null, cursor: 0, melodyCursor: 0 });
     },

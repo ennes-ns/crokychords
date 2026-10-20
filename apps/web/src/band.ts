@@ -1,16 +1,20 @@
 /** Pure track ("band") operations used by the Band panel, the toolbar and auditions. */
 import type { NoteEvent, Pattern, Song, Track, TrackRole } from '@crokychords/core';
 import {
+  MAX_SONG_PATTERNS,
   PATTERN_PRESETS,
   ROLE_DEFAULTS,
   TRACK_ROLES,
+  clonePattern,
   createTrack,
   isRestToken,
+  newPatternId,
   patternPreset,
   patternRoles,
   renderTrack,
   tryParseToken,
 } from '@crokychords/core';
+import { CUSTOM_PATTERN_ID } from './pattern';
 
 export const MIDI_CHANNELS = 16;
 export const OCTAVE_MIN = -1;
@@ -132,9 +136,58 @@ export function toggleMute(song: Song, id: string): Song {
   return track === undefined ? song : updateTrack(song, id, { muted: !track.muted });
 }
 
-/** Replace the track's pattern with a fresh copy of a preset. */
+/** The song presets (docs/specs/pattern-editor-v1.md, A4); `[]` for older song objects. */
+export function songPatterns(song: Song): readonly Pattern[] {
+  return song.patterns ?? [];
+}
+
+/**
+ * Replace the track's pattern with a fresh copy of a preset: a song preset with that id, else a
+ * built-in one (throws RangeError for unknown ids).
+ */
 export function setTrackPattern(song: Song, id: string, presetId: string): Song {
-  return updateTrack(song, id, { pattern: patternPreset(presetId) });
+  const own = songPatterns(song).find((p) => p.id === presetId);
+  return updateTrack(song, id, {
+    pattern: own === undefined ? patternPreset(presetId) : clonePattern(own),
+  });
+}
+
+/** Replace the track's pattern (an edit from the pattern editor). */
+export function setTrackPatternData(song: Song, id: string, pattern: Pattern): Song {
+  return updateTrack(song, id, { pattern });
+}
+
+/**
+ * Store the track's pattern as a new song preset named `name` (trimmed); the track then uses
+ * that preset. Null when the track is missing, the name is empty or the song is full.
+ */
+export function savePatternPreset(
+  song: Song,
+  trackId: string,
+  name: string,
+  random: () => number = Math.random,
+): { song: Song; presetId: string } | null {
+  const track = findTrack(song, trackId);
+  const trimmed = name.trim();
+  const presets = songPatterns(song);
+  if (track === undefined || trimmed === '' || presets.length >= MAX_SONG_PATTERNS) return null;
+  let presetId = newPatternId(random);
+  while (presets.some((p) => p.id === presetId)) presetId = newPatternId(random);
+  const preset: Pattern = { ...clonePattern(track.pattern), id: presetId, name: trimmed };
+  const saved = updateTrack({ ...song, patterns: [...presets, preset] }, trackId, {
+    pattern: clonePattern(preset),
+  });
+  return { song: saved, presetId };
+}
+
+/** Remove a song preset; tracks that used it keep their pattern as a custom one. */
+export function deletePatternPreset(song: Song, presetId: string): Song {
+  const presets = songPatterns(song);
+  if (!presets.some((p) => p.id === presetId)) return song;
+  const tracks = songTracks(song).map((t) =>
+    t.pattern.id === presetId ? { ...t, pattern: { ...t.pattern, id: CUSTOM_PATTERN_ID } } : t,
+  );
+  return { ...song, tracks, patterns: presets.filter((p) => p.id !== presetId) };
 }
 
 /** The fields ROLE_DEFAULTS sets for the track's current role (octave, pattern, velocity). */
@@ -157,9 +210,9 @@ export function applyRoleDefaults(song: Song, id: string): Song {
   return track === undefined ? song : updateTrack(song, id, roleDefaultsPatch(track.role));
 }
 
-/** True when `pattern` is one of the built-in presets (by id). */
-export function isPresetPattern(pattern: Pattern): boolean {
-  return PATTERN_PRESETS.some((p) => p.id === pattern.id);
+/** True when `pattern` is one of the built-in presets or of `songPresets` (by id). */
+export function isPresetPattern(pattern: Pattern, songPresets: readonly Pattern[] = []): boolean {
+  return [...PATTERN_PRESETS, ...songPresets].some((p) => p.id === pattern.id);
 }
 
 export interface PresetGroup {

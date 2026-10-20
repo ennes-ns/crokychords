@@ -17,21 +17,36 @@ function steps(
 
 /** 0, every, 2 * every, ... below 4 beats. */
 function grid(every: number): number[] {
+  return gridOf(every, 4);
+}
+
+/** 0, every, 2 * every, ... below `length` beats. */
+function gridOf(every: number, length: number): number[] {
   const out: number[] = [];
-  for (let i = 0; i * every < 4; i++) out.push(i * every);
+  for (let i = 0; i * every < length; i++) out.push(i * every);
   return out;
 }
 
+/** Tone selectors cycling through `indices`, one per step. */
+function tones(indices: readonly number[]): (i: number) => NoteSelector {
+  return (i) => ({ index: indices[i % indices.length] ?? 0 });
+}
+
 const ARP_UP_DOWN = [0, 1, 2, 3, 2, 1, 0, 1] as const;
+/** Walking bass over one chord: bass note, third, fifth, octave. */
+const WALK: readonly NoteSelector[] = ['bass', { index: 1 }, { index: 2 }, 'octave'];
 
 interface PresetDef {
   pattern: Pattern;
   roles: readonly TrackRole[];
+  /** One line for the pattern select. */
+  description: string;
 }
 
 const PRESET_DEFS: readonly PresetDef[] = [
   {
     roles: ['chords', 'pad'],
+    description: 'One chord held to the chord end',
     pattern: {
       id: 'sustain',
       name: 'Sustain',
@@ -42,14 +57,17 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['chords'],
+    description: 'One chord every four beats',
     pattern: { id: 'whole', name: 'Whole notes', length: 4, steps: steps([0], 4, 'chord') },
   },
   {
     roles: ['chords'],
+    description: 'Chords on beats 1 and 3',
     pattern: { id: 'half', name: 'Half notes', length: 4, steps: steps([0, 2], 2, 'chord') },
   },
   {
     roles: ['chords'],
+    description: 'Short chords on every beat',
     pattern: {
       id: 'quarters',
       name: 'Quarter stabs',
@@ -59,10 +77,12 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['chords'],
+    description: 'Short chords on every eighth',
     pattern: { id: 'eighths', name: 'Eighths', length: 4, steps: steps(grid(0.5), 0.25, 'chord') },
   },
   {
     roles: ['chords'],
+    description: 'Chords between the beats',
     pattern: {
       id: 'offbeat',
       name: 'Off-beat eighths',
@@ -72,6 +92,7 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['chords'],
+    description: 'Long-short-long-long ballad rhythm',
     pattern: {
       id: 'pop-ballad',
       name: 'Pop ballad',
@@ -86,6 +107,7 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['bass'],
+    description: 'The bass note held to the chord end',
     pattern: {
       id: 'bass-whole',
       name: 'Bass whole',
@@ -96,6 +118,7 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['bass'],
+    description: 'The bass note on every beat',
     pattern: {
       id: 'bass-quarters',
       name: 'Bass quarters',
@@ -105,6 +128,7 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['bass'],
+    description: 'Bass note and fifth, alternating per beat',
     pattern: {
       id: 'bass-root-fifth',
       name: 'Root–fifth',
@@ -114,6 +138,7 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['bass'],
+    description: 'The bass note on every eighth, off-beats softer',
     pattern: {
       id: 'bass-octaves',
       name: 'Octave eighths',
@@ -123,6 +148,7 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['arp'],
+    description: 'Chord tones climbing in eighths',
     pattern: {
       id: 'arp-up-8',
       name: 'Arp up 1/8',
@@ -132,15 +158,17 @@ const PRESET_DEFS: readonly PresetDef[] = [
   },
   {
     roles: ['arp'],
+    description: 'Four chord tones up, every beat',
     pattern: {
       id: 'arp-up-16',
       name: 'Arp up 1/16',
       length: 4,
-      steps: steps(grid(0.25), 0.22, (i) => ({ index: i })),
+      steps: steps(grid(0.25), 0.22, tones([0, 1, 2, 3])),
     },
   },
   {
     roles: ['arp'],
+    description: 'Chord tones up and down in eighths',
     pattern: {
       id: 'arp-updown-8',
       name: 'Arp up–down 1/8',
@@ -149,7 +177,107 @@ const PRESET_DEFS: readonly PresetDef[] = [
     },
   },
   {
+    roles: ['arp'],
+    description: 'Chord tones up and down in sixteenths',
+    pattern: {
+      id: 'arp-updown-16',
+      name: 'Arp up–down 1/16',
+      length: 4,
+      steps: steps(grid(0.25), 0.22, tones([0, 1, 2, 3, 4, 3, 2, 1])),
+    },
+  },
+  {
+    roles: ['arp'],
+    description: 'Root, fifth, third, octave in eighths',
+    pattern: {
+      id: 'arp-broken-8',
+      name: 'Broken chord 1/8',
+      length: 4,
+      steps: steps(grid(0.5), 0.45, tones([0, 2, 1, 3])),
+    },
+  },
+  {
+    roles: ['arp', 'chords'],
+    description: 'Low, high, middle, high: the classic left hand',
+    pattern: {
+      id: 'alberti',
+      name: 'Alberti',
+      length: 4,
+      steps: steps(grid(0.5), 0.45, tones([0, 2, 1, 2])),
+    },
+  },
+  {
+    roles: ['chords'],
+    description: 'Short stabs between the beats with a pickup',
+    pattern: {
+      id: 'stab-offbeat',
+      name: 'Off-beat stabs',
+      length: 4,
+      steps: steps([0.5, 1.5, 2.5, 3.5, 3.75], 0.2, 'chord', (i) => (i === 4 ? 0.75 : undefined)),
+    },
+  },
+  {
+    roles: ['chords'],
+    description: 'Syncopated piano stabs for four-on-the-floor',
+    pattern: {
+      id: 'house-piano',
+      name: 'House piano',
+      length: 4,
+      steps: steps([0, 0.75, 1.5, 2.5, 3.25], 0.4, 'chord', (i) => (i === 0 ? undefined : 0.85)),
+    },
+  },
+  {
+    roles: ['chords'],
+    description: 'Short chords on beats 2 and 4',
+    pattern: {
+      id: 'reggae-skank',
+      name: 'Reggae skank',
+      length: 4,
+      steps: steps([1, 3], 0.3, 'chord'),
+    },
+  },
+  {
+    roles: ['chords'],
+    description: 'Bass note, then two softer chords (three beats)',
+    pattern: {
+      id: 'waltz-3',
+      name: 'Waltz 3/4',
+      length: 3,
+      steps: [
+        { at: 0, length: 0.9, notes: 'bass' },
+        { at: 1, length: 0.6, notes: 'chord', accent: 0.75 },
+        { at: 2, length: 0.6, notes: 'chord', accent: 0.75 },
+      ],
+    },
+  },
+  {
+    roles: ['bass'],
+    description: 'Bass note and its octave, alternating in eighths',
+    pattern: {
+      id: 'bass-octave-8',
+      name: 'Bass octaves 1/8',
+      length: 4,
+      steps: steps(
+        grid(0.5),
+        0.45,
+        (i) => (i % 2 === 0 ? 'bass' : 'octave'),
+        (i) => (i % 2 === 1 ? 0.8 : undefined),
+      ),
+    },
+  },
+  {
+    roles: ['bass'],
+    description: 'Bass note, third, fifth, octave on the beats',
+    pattern: {
+      id: 'bass-walk-4',
+      name: 'Walking bass',
+      length: 4,
+      steps: steps(grid(1), 0.9, (i) => WALK[i] ?? 'bass'),
+    },
+  },
+  {
     roles: ['pad'],
+    description: 'A soft chord held to the chord end',
     pattern: {
       id: 'pad',
       name: 'Pad',
@@ -184,6 +312,11 @@ export function patternPreset(id: string): Pattern {
 /** Roles a preset is meant for (for grouping in the UI); [] for unknown ids and 'custom'. */
 export function patternRoles(id: string): readonly TrackRole[] {
   return PRESET_DEFS.find((d) => d.pattern.id === id)?.roles ?? [];
+}
+
+/** One-line description of a built-in preset (for the pattern select); '' for unknown ids. */
+export function patternDescription(id: string): string {
+  return PRESET_DEFS.find((d) => d.pattern.id === id)?.description ?? '';
 }
 
 export interface RoleDefaults {
