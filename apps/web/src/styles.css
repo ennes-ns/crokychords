@@ -1106,6 +1106,7 @@ button.icon.danger:hover:not(:disabled) {
 
 .pcell.on.head {
   box-shadow: inset 2px 0 0 var(--text);
+}
 
 .band-instrument > select {
   flex: 1;

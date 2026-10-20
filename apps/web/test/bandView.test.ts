@@ -292,7 +292,9 @@ describe('Band panel instruments and melody row', () => {
     const root = document.createElement('section');
     document.body.append(root);
     const actions = createActions(store, engine, new MidiOut(null));
-    mountBand(root, store, actions, storage, engine.sound, engine.master, engine.samples);
+    mountBand(root, store, actions, storage, engine.sound, engine.master, {
+      samples: engine.samples,
+    });
     const field = <T extends HTMLElement>(track: string, name: string): T => {
       const el = root.querySelector<T>(`[data-track="${track}"] [data-field="${name}"]`);
       if (el === null) throw new Error(`no ${name} in ${track}`);
