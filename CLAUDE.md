@@ -21,7 +21,7 @@ pnpm install                      # once; mise.toml pins node/pnpm/uv
 pnpm check                        # lint + format:check + typecheck + test + build (CI runs this)
 pnpm dev                          # web app on :5173
 cd packages/data && uv sync && uv run pytest -q
-scripts/check-rust.sh             # crates/: fmt + clippy -D warnings + test (not in pnpm check or CI yet)
+scripts/check-rust.sh             # crates/: fmt + clippy -D warnings + test (CI job `rust check`)
 scripts/gen-rust-golden.sh        # regenerate the Rust parity goldens from packages/core
 ```
 
