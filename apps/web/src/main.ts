@@ -19,7 +19,7 @@ function boot(app: HTMLElement): void {
   const store = new Store(initialState(loadSong(storage) ?? createSong()));
   persistSongs(store, storage);
 
-  const audio = new AudioEngine();
+  const audio = new AudioEngine(storage);
   const midi = new MidiOut(browserMidiAccess());
   const actions = createActions(store, audio, midi);
 
@@ -41,7 +41,7 @@ function boot(app: HTMLElement): void {
   mountToolbar(toolbar, store, actions);
   mountGrid(grid, store, actions);
   mountChordEditor(editor, store, actions);
-  mountBand(band, store, actions, storage);
+  mountBand(band, store, actions, storage, audio.sound);
   mountSuggest(suggest, store, actions);
 
   // Browsers only start audio from a user gesture: the first click or key press does it.

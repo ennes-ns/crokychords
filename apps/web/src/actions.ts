@@ -88,6 +88,7 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       });
     },
     stopAll: () => audio.synth?.stopAll(),
+    playDrum: (hit, time) => audio.synth?.playDrum(hit.drum, hit.level, time),
   };
   const midiSink: NoteSink = {
     playNote: (event, time, duration) =>
@@ -103,6 +104,8 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
   const scheduler = new Scheduler(
     { now: () => audio.context?.currentTime ?? performance.now() / 1000 },
     () => [synthSink, midiSink],
+    undefined,
+    () => audio.sound.drums,
   );
   let frame: number | null = null;
   let auditionHandle: NoteHandle | null = null;

@@ -582,6 +582,19 @@ button.icon.danger:hover:not(:disabled) {
   margin-top: 8px;
 }
 
+.band-sound {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.band-sound .hint {
+  margin: 0;
+}
+
 /* Toolbar channel map */
 
 .channel-map {

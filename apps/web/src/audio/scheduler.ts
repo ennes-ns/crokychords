@@ -2,9 +2,12 @@
  * Lookahead scheduler (Chris Wilson, "A Tale of Two Clocks"): a coarse timer wakes every
  * 25 ms and schedules every note event (from core's `renderSong`) that starts within the next
  * 100 ms on the precise audio clock. Sinks (synth, Web MIDI) receive audio-clock times.
+ * Drum hits of the current drum pattern are scheduled the same way, to sinks that play drums.
  */
 import type { NoteEvent, Song } from '@crokychords/core';
 import { renderSong, totalBeats } from '@crokychords/core';
+import type { DrumHit, DrumPatternId } from './instruments';
+import { drumHits } from './instruments';
 
 export const TICK_MS = 25;
 export const LOOKAHEAD_S = 0.1;
@@ -20,6 +23,8 @@ export interface NoteSink {
   /** Play `event` at `time` (audio-clock seconds) for `duration` seconds. */
   playNote(event: NoteEvent, time: number, duration: number): void;
   stopAll(): void;
+  /** Play a drum hit at `time`. Optional: sinks without it (Web MIDI) get no drums. */
+  playDrum?(hit: DrumHit, time: number): void;
 }
 
 export interface Timer {
@@ -53,12 +58,14 @@ export class Scheduler {
   readonly #clock: Clock;
   readonly #sinks: () => readonly NoteSink[];
   readonly #timer: Timer;
+  readonly #drums: () => DrumPatternId;
 
   #timerId: number | null = null;
   #events: NoteEvent[] = [];
   #total = 0;
   #loop = false;
   #secondsPerBeat = 0.5;
+  #beatsPerBar = 4;
   /** Absolute beats (they keep growing while looping) are anchored to an audio time. */
   #anchorTime = 0;
   #anchorBeat = 0;
@@ -68,9 +75,16 @@ export class Scheduler {
   /** Called once when a non-looping song has played to its end. */
   onEnd: (() => void) | null = null;
 
-  constructor(clock: Clock, sinks: () => readonly NoteSink[], timer?: Timer) {
+  /** `drums` is read on every wake-up, so a pattern change applies within the lookahead. */
+  constructor(
+    clock: Clock,
+    sinks: () => readonly NoteSink[],
+    timer?: Timer,
+    drums: () => DrumPatternId = () => 'none',
+  ) {
     this.#clock = clock;
     this.#sinks = sinks;
+    this.#drums = drums;
     this.#timer = timer ?? {
       setInterval: (fn, ms) => window.setInterval(fn, ms),
       clearInterval: (id) => window.clearInterval(id),
@@ -146,6 +160,8 @@ export class Scheduler {
     if (until <= this.#scheduledUntil) return;
 
     const sinks = this.#sinks();
+    const drumSinks = sinks.filter((s) => s.playDrum !== undefined);
+    const pattern = drumSinks.length > 0 ? this.#drums() : 'none';
     const events = this.#events;
     let pass = Math.floor(this.#scheduledUntil / this.#total);
     while (pass * this.#total < until) {
@@ -157,6 +173,13 @@ export class Scheduler {
         const time = this.#timeAt(offset + event.start);
         const duration = event.duration * this.#secondsPerBeat;
         for (const sink of sinks) sink.playNote(event, time, duration);
+      }
+      // Drum bars restart with every pass, like the events.
+      const from = Math.max(0, this.#scheduledUntil - offset);
+      const to = Math.min(this.#total, until - offset);
+      for (const hit of drumHits(pattern, this.#beatsPerBar, from, to)) {
+        const time = this.#timeAt(offset + hit.beat);
+        for (const sink of drumSinks) sink.playDrum?.(hit, time);
       }
       if (!this.#loop) break;
       pass += 1;
@@ -174,6 +197,7 @@ export class Scheduler {
     this.#events = events;
     this.#total = total;
     this.#secondsPerBeat = 60 / song.tempo;
+    this.#beatsPerBar = song.meter.beats;
   }
 
   #beatAt(time: number): number {

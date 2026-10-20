@@ -1,6 +1,8 @@
 import type { NoteEvent, Song, Track } from '@crokychords/core';
 import { createSong, createTrack, patternPreset, renderSong } from '@crokychords/core';
 import { describe, expect, it } from 'vitest';
+import type { DrumHit, DrumPatternId } from '../src/audio/instruments';
+import { drumHits } from '../src/audio/instruments';
 import type { NoteSink, Timer } from '../src/audio/scheduler';
 import {
   LOOKAHEAD_S,
@@ -203,5 +205,89 @@ describe('Scheduler', () => {
     const bassStarts = h.played.filter((p) => p.event.trackId === 'trk-bass');
     expect(bassStarts.map((p) => p.event.start)).toEqual([0]);
     expect(h.played.filter((p) => p.event.trackId === 'trk-chords')).toHaveLength(6);
+  });
+});
+
+describe('Scheduler drums', () => {
+  function drumHarness(pattern: () => DrumPatternId) {
+    let now = 10;
+    const hits: { hit: DrumHit; time: number }[] = [];
+    const notes: NoteEvent[] = [];
+    const drumSink: NoteSink = {
+      playNote: (event) => notes.push(event),
+      stopAll: () => undefined,
+      playDrum: (hit, time) => hits.push({ hit, time }),
+    };
+    const midiLike: NoteSink = { playNote: () => undefined, stopAll: () => undefined };
+    const timer: Timer = { setInterval: () => 1, clearInterval: () => undefined };
+    const scheduler = new Scheduler({ now: () => now }, () => [drumSink, midiLike], timer, pattern);
+    return {
+      scheduler,
+      hits,
+      notes,
+      advance(seconds: number) {
+        const end = now + seconds;
+        while (now < end - 1e-9) {
+          now = Math.min(end, now + 0.025);
+          scheduler.tick();
+        }
+      },
+    };
+  }
+
+  /** One 4/4 bar of I at 120 BPM: 2 s. */
+  const bar = createSong({ tempo: 120, chords: [{ token: 'I', beats: 4 }], tracks: [chordsTrack] });
+
+  it('schedules the drum pattern on the audio clock, each hit once', () => {
+    const h = drumHarness(() => 'straight');
+    h.scheduler.start(bar);
+    h.advance(3);
+    expect(h.scheduler.playing).toBe(false);
+    expect(h.hits.map((x) => x.hit)).toEqual(drumHits('straight', 4, 0, 4));
+    const t0 = 10 + START_DELAY_S;
+    const snare = h.hits.find((x) => x.hit.drum === 'snare');
+    expect(snare?.time).toBeCloseTo(t0 + 0.5); // beat 1 at 0.5 s per beat
+    expect(h.hits.at(-1)?.time).toBeCloseTo(t0 + 3.5 * 0.5);
+  });
+
+  it('restarts the bars on every loop pass', () => {
+    const h = drumHarness(() => 'half-time');
+    const short = { ...bar, chords: [{ token: 'I', beats: 3 }] }; // 3 beats in a 4/4 bar
+    h.scheduler.start(short, { loop: true });
+    h.advance(3 + START_DELAY_S); // two passes of 1.5 s
+    const kicks = h.hits.filter((x) => x.hit.drum === 'kick').map((x) => x.hit.beat);
+    expect(kicks).toEqual([0, 0, 0]);
+    expect(h.hits.filter((x) => x.hit.drum === 'snare')).toHaveLength(2); // beat 2, once a pass
+  });
+
+  it('reads the pattern live: a change applies to hits not yet scheduled', () => {
+    let pattern: DrumPatternId = 'none';
+    const h = drumHarness(() => pattern);
+    h.scheduler.start(bar);
+    h.advance(0.5);
+    expect(h.hits).toHaveLength(0);
+    pattern = 'ballad';
+    h.advance(3);
+    expect(h.hits.length).toBeGreaterThan(0);
+    expect(h.hits.every((x) => x.hit.beat >= 1)).toBe(true);
+    expect(h.notes).toHaveLength(3);
+  });
+
+  it('plays no drums by default and never to sinks without playDrum', () => {
+    const played: number[] = [];
+    const sink: NoteSink = { playNote: (e) => played.push(e.note), stopAll: () => undefined };
+    let asked = 0;
+    const scheduler = new Scheduler(
+      { now: () => 0 },
+      () => [sink],
+      { setInterval: () => 1, clearInterval: () => undefined },
+      () => {
+        asked++;
+        return 'straight';
+      },
+    );
+    scheduler.start(bar);
+    expect(played).toEqual([60, 64, 67]);
+    expect(asked).toBe(0);
   });
 });
