@@ -167,6 +167,31 @@ export class SaveSession {
     this.#emit();
   }
 
+  /**
+   * The sync changed record `id` in the store (docs/specs/sync-v1.md, "Applying remote changes").
+   * `copyId` names the copy that now holds the local version that lost a conflict: when `id` is
+   * open, editing continues on that copy. Without a copy an open, unedited record is reopened (or,
+   * when it was deleted, the newest remaining one); unsaved edits are left to the autosave, whose
+   * version conflict keeps them as a copy.
+   */
+  async remoteChanged(id: string, copyId: string | null): Promise<void> {
+    await this.#enqueue(async () => {
+      if (id !== this.currentId) return;
+      if (copyId !== null) {
+        const copy = await this.#saves.get(copyId);
+        if (copy === null) return;
+        const before = this.#baseline;
+        this.#setCurrent({ id: copy.id, version: copy.version }, copy.song);
+        // Show the copy's title unless the user edited on meanwhile (the next autosave keeps that).
+        if (this.#app.state.song === before) this.#app.preview(copy.song);
+        return;
+      }
+      if (this.#timer !== undefined || this.#app.state.song !== this.#baseline) return;
+      if (!(await this.#load(id)) && !(await this.#openNewest())) this.#loadBlank();
+    });
+    this.#emit();
+  }
+
   /** Save pending edits before switching songs; a failure is logged, not fatal. */
   async #flushQuietly(): Promise<void> {
     try {
