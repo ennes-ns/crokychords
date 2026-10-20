@@ -11,7 +11,7 @@ import {
   noteTail,
 } from '../src/audio/instruments';
 import { PARTIAL_LIMIT_HZ, buildPianoVoice } from '../src/audio/piano';
-import { STEAL_RELEASE, Synth } from '../src/audio/synth';
+import { RELEASE_TAIL, STEAL_RELEASE, Synth } from '../src/audio/synth';
 import {
   FakeBufferSource,
   FakeContext,
@@ -180,7 +180,7 @@ describe('voice budget', () => {
     expect(oscs.every((o) => (o.stops.at(-1) ?? 0) > 10)).toBe(true);
     synth.playNote(70, 0.5, 10, { role: 'chords' });
     const oldest = oscs.slice(0, perNote);
-    for (const o of oldest) expect(o.stops.at(-1)).toBeCloseTo(0.5 + STEAL_RELEASE * 2);
+    for (const o of oldest) expect(o.stops.at(-1)).toBeCloseTo(0.5 + STEAL_RELEASE * RELEASE_TAIL);
     expect(oscs.slice(perNote).every((o) => (o.stops.at(-1) ?? 0) > 10)).toBe(true);
   });
 

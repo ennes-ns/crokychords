@@ -42,7 +42,7 @@ import {
   sampleNotes,
   sampleUrl,
 } from '../src/audio/soundfont';
-import { STEAL_RELEASE, Synth } from '../src/audio/synth';
+import { RELEASE_TAIL, STEAL_RELEASE, Synth } from '../src/audio/synth';
 import { FakeBufferSource, FakeContext, FakeGain, FakeOscillator } from './fakeAudio';
 
 const PIANO = SOUNDFONTS[0];
@@ -364,7 +364,7 @@ describe('Synth with SoundFont instruments (fake context)', () => {
       time: 1.5,
       constant: SAMPLE_RELEASE / 4,
     });
-    expect(src?.stops.at(-1)).toBeCloseTo(1.5 + SAMPLE_RELEASE * 2);
+    expect(src?.stops.at(-1)).toBeCloseTo(1.5 + SAMPLE_RELEASE * RELEASE_TAIL);
   });
 
   it('a sample shorter than its note ends on its own', () => {

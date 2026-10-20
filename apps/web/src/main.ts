@@ -95,6 +95,10 @@ async function boot(app: HTMLElement): Promise<void> {
   });
   void breakcore.init();
   const actions = createActions(store, audio, midi, breakcore);
+  // A hidden tab that plays nothing suspends its audio (issue #82).
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) audio.hidden();
+  });
   const fire = new FireConnection(store, browserFireAccess(), new FireController(store, actions));
   bindFirePageEvents(fire, window);
 

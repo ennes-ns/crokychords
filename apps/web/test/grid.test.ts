@@ -10,7 +10,10 @@ import {
   gridLayout,
   loopSegments,
   mountGrid,
+  placePlayhead,
+  playheadRun,
   plusSlot,
+  removePlayhead,
   xToBeat,
 } from '../src/views/grid';
 
@@ -154,6 +157,7 @@ function fakeActions(): Actions {
     editPattern: noop,
     previewPattern: noop,
     savePatternPreset: () => false,
+    playhead: () => null,
     deletePatternPreset: noop,
     newSong: noop,
     undo: noop,
@@ -290,6 +294,65 @@ describe('mountGrid', () => {
     delete document.documentElement.dataset.theme;
     width.mockRestore();
     expect(root.querySelector('.chord.playing .token')?.textContent).toBe('V');
+    store.set({ playing: false });
+    expect(root.querySelector('.playhead')).toBeNull();
+  });
+});
+
+describe('playhead glide (issue #82)', () => {
+  const layout = gridLayout(song([4, 4, 4, 4, 4]));
+
+  it('glides to the row end, or to the loop or song end when that comes first', () => {
+    // 2 rows of 16 beats.
+    expect(playheadRun(5, layout, 2, 20)).toEqual({ row: 0, from: 5 / 16, to: 1, beats: 11 });
+    expect(playheadRun(17, layout, 2, 20)).toEqual({ row: 1, from: 1 / 16, to: 4 / 16, beats: 3 });
+    expect(playheadRun(6, layout, 2, 8)).toEqual({ row: 0, from: 6 / 16, to: 0.5, beats: 2 });
+    // At or past the end it stands still; past the last row it parks at the end.
+    expect(playheadRun(20, layout, 2, 20)).toMatchObject({ row: 1, beats: 0 });
+    expect(playheadRun(40, layout, 2, 48)).toEqual({ row: 1, from: 1, to: 1, beats: 0 });
+  });
+
+  it('starts one Web Animation per leg and replaces it on the next re-anchor', () => {
+    const track = document.createElement('div');
+    const playhead = document.createElement('div');
+    const cancel = vi.fn();
+    const animate = vi.fn(() => ({ cancel }));
+    Object.defineProperty(playhead, 'animate', { value: animate });
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
+    placePlayhead(playhead, track, 0.25, { to: 1, seconds: 6, delay: 0.06 });
+    expect(playhead.style.transform).toBe('translateX(200px)');
+    expect(animate).toHaveBeenCalledWith(
+      [{ transform: 'translateX(200px)' }, { transform: 'translateX(800px)' }],
+      { duration: 6000, delay: 60, easing: 'linear', fill: 'forwards' },
+    );
+    document.documentElement.dataset.theme = 'pixel';
+    placePlayhead(playhead, track, 0.5001, { to: 0.75, seconds: 2 });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    // Pixel: whole pixels, one step per pixel.
+    expect(animate).toHaveBeenLastCalledWith(
+      [{ transform: 'translateX(400px)' }, { transform: 'translateX(600px)' }],
+      { duration: 2000, delay: 0, easing: 'steps(200, end)', fill: 'forwards' },
+    );
+    delete document.documentElement.dataset.theme;
+    removePlayhead(playhead);
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(playhead.parentElement).toBeNull();
+    width.mockRestore();
+  });
+
+  it('re-anchors only when the cursor, the timing or the rows change', () => {
+    const s = createSong({ chords: [{ token: 'I', beats: 4 }] });
+    const store = new Store(initialState(s));
+    const root = document.createElement('section');
+    const actions = { ...fakeActions(), playhead: vi.fn(() => ({ beat: 1.5, wait: 0 })) };
+    mountGrid(root, store, actions);
+    store.set({ playing: true, cursor: 1 });
+    expect(actions.playhead).toHaveBeenCalledTimes(1);
+    store.set({ selectedTrack: 'x' }); // unrelated update: no re-anchor
+    store.set({ focus: 'melody' });
+    expect(actions.playhead).toHaveBeenCalledTimes(1);
+    store.set({ cursor: 2 });
+    expect(actions.playhead).toHaveBeenCalledTimes(2);
     store.set({ playing: false });
     expect(root.querySelector('.playhead')).toBeNull();
   });

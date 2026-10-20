@@ -132,6 +132,7 @@ function noopActions(): Actions {
     editPattern: noop,
     previewPattern: noop,
     savePatternPreset: () => false,
+    playhead: () => null,
     deletePatternPreset: noop,
     newSong: noop,
     undo: noop,

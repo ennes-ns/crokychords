@@ -404,15 +404,21 @@ export function buildVoice(
     input = filter;
   }
 
+  // Oscillators at the same level share one mix gain (fewer nodes, the same sum).
+  const mixes = new Map<number, GainLike>();
   const sources = instrument.oscillators.map((o) => {
     const osc = ctx.createOscillator();
     osc.type = o.type;
     osc.frequency.value = frequency * 2 ** o.octave;
     osc.detune.value = o.detune;
-    const mix = ctx.createGain();
-    mix.gain.value = o.level;
+    let mix = mixes.get(o.level);
+    if (mix === undefined) {
+      mix = ctx.createGain();
+      mix.gain.value = o.level;
+      mix.connect(input);
+      mixes.set(o.level, mix);
+    }
     osc.connect(mix);
-    mix.connect(input);
     osc.start(start);
     return osc;
   });

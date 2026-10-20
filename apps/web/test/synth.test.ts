@@ -35,7 +35,7 @@ import {
 } from '../src/audio/instruments';
 import { planSong } from '../src/audio/scheduler';
 import { SAMPLE_RELEASE, sampleAmplitude } from '../src/audio/soundfont';
-import { AudioEngine, DRUM_BUS, Synth } from '../src/audio/synth';
+import { AudioEngine, DRUM_BUS, RELEASE_TAIL, Synth } from '../src/audio/synth';
 import {
   FakeBufferSource,
   FakeCompressor,
@@ -305,7 +305,7 @@ describe('Synth (fake context)', () => {
     const synth = new Synth(ctx);
     synth.playNote(60, 1, 0.5, { role: 'chords', track: 't1' });
     const osc = ctx.of(FakeOscillator)[0];
-    expect(osc?.stops.at(-1)).toBeCloseTo(1.5 + INSTRUMENTS.piano.release * 2);
+    expect(osc?.stops.at(-1)).toBeCloseTo(1.5 + INSTRUMENTS.piano.release * RELEASE_TAIL);
     ctx.currentTime = 1.2;
     synth.stopAll();
     expect(osc?.stops.at(-1)).toBeLessThan(1.5);

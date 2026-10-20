@@ -208,6 +208,12 @@ export class Scheduler {
     return this.#songBeat(Math.max(this.#anchorBeat, this.#beatAt(this.#clock.now())));
   }
 
+  /** Seconds until the playhead starts moving (the start delay after Play), else 0. */
+  wait(): number {
+    if (!this.playing) return 0;
+    return Math.max(0, this.#anchorTime - this.#clock.now());
+  }
+
   /** One scheduler wake-up (public for tests). */
   tick(): void {
     if (!this.playing) return;

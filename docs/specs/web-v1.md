@@ -113,8 +113,13 @@ valid token. Invalid combinations are simply not offered (e.g. sus + quality).
 - Synth: one voice per note, `voiceChord` for pitches, gain envelope, master limiter-ish
   gain of 0.2. Start on user gesture; show a "click to enable audio" overlay otherwise.
 - Scheduler: converts beats to seconds from `song.tempo`, loops the song (or the loop range,
-  see `loop-v1.md`) when "Loop" is on, schedules note events ahead, updates `cursor` via
-  `requestAnimationFrame`. Play starts at the loop start when looping, else at beat 0.
+  see `loop-v1.md`) when "Loop" is on, schedules note events ahead, updates `cursor` at every
+  whole beat, chord start and loop end (a timer, not every frame); between those updates the
+  playhead glides on its own as a composited Web Animation along the row. Play starts at the
+  loop start when looping, else at beat 0.
+- The AudioContext suspends about 3 s after Stop once no voice sounds (and at once when the tab
+  is hidden and nothing plays); Play and auditions resume it first. A released voice stops at
+  1.2 × its release (about −42 dB), not 2 ×.
 - Web MIDI: `navigator.requestMIDIAccess()` on demand; output select in the toolbar; when
   set, the scheduler also sends note on/off with the same timing (`output.send(data, time)`
   with DOMHighResTimeStamp). All-notes-off on stop. Works today with a virtual port
