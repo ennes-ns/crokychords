@@ -40,11 +40,16 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 |------|------|--------|
 | SaveStore: IndexedDB, autosave, saved-progressions panel | `specs/savestore-v1.md` | done (#15) |
 | Worker API (Hono): Access-JWT verification, R2/D1, limits | `specs/api-v1.md` | done (#13) |
-| SyncClient: push/pull, conflicts, tombstones, offline queue | `specs/sync-v1.md` | in progress |
-| Deployment runbook and CI deploy (Pages/Workers, Access, hardening) | `specs/deploy-v1.md` | in progress |
-| Default suggestion table from Chordonomicon | `specs/data-default-table.md` | in progress (#3) |
+| SyncClient: push/pull, conflicts, tombstones, offline queue | `specs/sync-v1.md` | done (#24, #31, #32) |
+| Deployment runbook (one Worker, Access, hardening) | `specs/deploy-v1.md` | done (#18) |
+| One Worker serves the static app and the API | `specs/deploy-v1.md` | done (#22) |
+| Security hardening before go-live (CSP, preview URLs off, limits) | issue #29 | in progress |
+| CI deploy workflow | issue #21 | blocked (token scope) |
+| First deploy, Access app, DNS, invite users | `specs/deploy-v1.md` | idea |
+| Default suggestion table from Chordonomicon | `specs/data-default-table.md` | done (#19) |
 | Built-in instruments and presets | `specs/web-instruments-v1.md` | done (#14) |
-| Security review before inviting users | — | idea |
+| Themes: Default and Pixel | `specs/themes-v1.md` | done (#25) |
+| Security review before inviting users | — | done (findings in #29) |
 
 ## Phase 4 — DAW integration without a plugin
 

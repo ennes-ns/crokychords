@@ -76,11 +76,11 @@ larger one from `apps/web/public/data/ngrams.json` when present.
 | Part            | State                                                                                                         |
 | --------------- | ------------------------------------------------------------------------------------------------------------- |
 | `packages/core` | Done: theory, chord tokens, song model with tracks, n-gram suggestions with backoff, MIDI writer. Unit-tested. |
-| `packages/data` | Done: builds `ngrams.json` from Chordonomicon (Python, uv, pytest).                                           |
-| `apps/web`      | Done for v1: grid editor, next-chord panel, playback with the band panel, `.mid` export, Web MIDI out.        |
-| Brand           | Done: logomark, wordmark, favicon, README banner (`apps/web/public/brand/`, `docs/readme/`, `docs/BRAND.md`). |
+| `packages/data` | Done: builds the suggestion tables from Chordonomicon; a trimmed default table ships with the app.             |
+| `apps/web`      | Done for v1: grid editor, next-chord panel, instruments and presets, band panel, saved progressions, themes, `.mid` export, Web MIDI out. |
+| Brand           | Done: pixel banner, favicon and mark from one pixel master (`docs/readme/`, `tools/brand/`, `docs/BRAND.md`).  |
 | CI              | `pnpm check` and the data tests, both required on `main`.                                                     |
-| Online version  | Spec only (`docs/specs/online-v1.md`).                                                                        |
+| Online version  | Code complete (Worker API, sync client); deployment in preparation (`docs/specs/deploy-v1.md`).               |
 
 ## Repository
 

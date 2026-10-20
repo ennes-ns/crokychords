@@ -230,6 +230,9 @@ that is expected. Secrets survive every later `wrangler deploy`. Check:
 
 ### 8. First deploy and custom domain
 
+Build the web app with `VITE_SYNC=on` (otherwise cloud sync stays disabled in production); see
+`apps/web/README.md`.
+
 ```bash
 pnpm --filter @crokychords/web build
 cd apps/api
