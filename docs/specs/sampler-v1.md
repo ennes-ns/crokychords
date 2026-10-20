@@ -207,7 +207,9 @@ Every setter clamps (§2) and is a no-op when nothing changes. Pure helpers (`cl
 
 ## 9. Licence and privacy
 
-User samples never leave the device (later only through the user's own sync, #81). Nothing is
+User samples never leave the device without sync. With sync on (the online version) a slot's own
+sample is also uploaded to the user's own storage on the server and can be shared in the community
+bank, see [`community-v1`](community-v1.md) §4.2 (the patch's `sample.remote`). Nothing is
 committed: the tests generate their fixture samples in code.
 
 ## 10. Tests

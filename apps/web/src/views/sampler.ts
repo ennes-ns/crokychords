@@ -11,6 +11,8 @@ import { SAMPLER_IDS, samplerSlot } from '../audio/instruments';
 import type { AuditionHandle, SamplerPatch, Samplers, WaveformPeaks } from '../audio/sampler';
 import { FILTER_TYPES, LOOP_MODES, MIN_LOOP, MIN_TRIM, RANGES, loadError } from '../audio/sampler';
 import { h, option } from '../dom';
+import type { CommunityDeps } from './community';
+import { createCommunityViews } from './community';
 
 /** Note name with octave: 60 → "C4", 61 → "C#4". */
 export function noteLabel(note: number): string {
@@ -278,6 +280,8 @@ export interface SamplerPanelOptions {
   /** The slot select changed: make the track play `id`. */
   assign(id: SamplerId): void;
   close(): void;
+  /** The community bank (docs/specs/community-v1.md §4); null or absent without sync. */
+  community?: CommunityDeps | null;
 }
 
 export interface SamplerPanel {
@@ -355,10 +359,44 @@ export function createSamplerPanel(options: SamplerPanelOptions): SamplerPanel {
     '✕',
   );
   close.onclick = () => options.close();
+  // Community (docs/specs/community-v1.md §4.3–§4.4): tabs, the Share toggle, the bank.
+  const community =
+    options.community == null
+      ? null
+      : createCommunityViews(options.community, {
+          slot: () => slot,
+          taken: () => {
+            showTab('edit');
+            update();
+          },
+        });
+  const tabButton = (name: 'edit' | 'community', label: string): HTMLButtonElement => {
+    const button = h(
+      'button',
+      {
+        class: 'sampler-tab',
+        props: { type: 'button' },
+        attrs: { role: 'tab', 'aria-selected': 'false', 'data-field': `tab-${name}` },
+      },
+      label,
+    );
+    button.onclick = () => showTab(name);
+    return button;
+  };
+  const tabs =
+    community === null
+      ? null
+      : {
+          edit: tabButton('edit', 'Edit'),
+          community: tabButton('community', 'Community'),
+        };
   const head = h(
     'div',
     { class: 'sampler-head' },
     h('h3', { class: 'sampler-title' }, 'Sampler'),
+    tabs === null
+      ? null
+      : h('span', { class: 'sampler-tabs', attrs: { role: 'tablist' } }, tabs.edit, tabs.community),
     forLabel,
     h('label', { class: 'sampler-select' }, h('span', {}, 'Slot'), slotSelect),
     name,
@@ -366,6 +404,7 @@ export function createSamplerPanel(options: SamplerPanelOptions): SamplerPanel {
     loadButton,
     file,
     remove,
+    community?.shareBar,
     info,
     close,
   );
@@ -694,15 +733,32 @@ export function createSamplerPanel(options: SamplerPanelOptions): SamplerPanel {
   };
 
   // Panel ------------------------------------------------------------------------------------
+  const controlsEl = h('div', { class: 'sampler-controls' }, ...groups.map((g) => g.el));
+  const editParts: HTMLElement[] = [error, wave, controlsEl, keys];
   const el = h(
     'section',
     { class: 'sampler-panel', attrs: { 'aria-label': 'Sampler', 'data-field': 'sampler' } },
     head,
+    community?.shareForm,
     error,
     wave,
-    h('div', { class: 'sampler-controls' }, ...groups.map((g) => g.el)),
+    controlsEl,
     keys,
+    community?.tab,
   );
+  function showTab(next: 'edit' | 'community'): void {
+    if (community === null || tabs === null) return;
+    tabs.edit.setAttribute('aria-selected', String(next === 'edit'));
+    tabs.community.setAttribute('aria-selected', String(next === 'community'));
+    tabs.edit.classList.toggle('active', next === 'edit');
+    tabs.community.classList.toggle('active', next === 'community');
+    for (const part of editParts) part.classList.toggle('tab-hidden', next !== 'edit');
+    community.shareForm.classList.toggle('tab-hidden', next !== 'edit');
+    community.tab.hidden = next !== 'community';
+    if (next === 'community') community.opened();
+    else draw();
+  }
+  showTab('edit');
   el.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     event.preventDefault();
@@ -761,12 +817,17 @@ export function createSamplerPanel(options: SamplerPanelOptions): SamplerPanel {
     else if (p.sample === null) info.textContent = 'No sample';
     else {
       const seconds = (p.end - p.start) / p.sample.sampleRate;
-      info.textContent = `${p.sample.name} · ${secondsLabel(seconds)}`;
+      const remote = p.sample.remote;
+      const from =
+        remote?.community === true ? ` · community · by ${remote.owner ?? 'someone'}` : '';
+      info.textContent = `${p.sample.name} · ${secondsLabel(seconds)}${from}`;
     }
+    info.classList.toggle('community', p.sample?.remote?.community === true);
     info.title = p.sample?.name ?? '';
     const failure = state === 'error' ? samplers.error(slot) : null;
     if (failure !== null) showError(`Could not load the sample: ${failure}`);
     else if (shownError?.startsWith('Could not load the sample') === true) showError(null);
+    community?.update(slot);
     for (const c of controls) c.sync(p);
     buildKeys(p.root);
     for (const key of keys.children) {
@@ -791,6 +852,7 @@ export function createSamplerPanel(options: SamplerPanelOptions): SamplerPanel {
       if (slot !== next) {
         for (const pointer of [...sounding.keys()]) releaseKey(pointer);
         showError(null);
+        community?.refresh();
       }
       slot = next;
       forLabel.textContent = `for ${label}`;

@@ -16,7 +16,7 @@ import type {
 import { dbToGain } from './graph';
 import type { SamplerId } from './instruments';
 import { SAMPLER_IDS, samplerSlot } from './instruments';
-import type { SampleStore } from '../store/samples';
+import type { SampleStore, StoredSample } from '../store/samples';
 import { MAX_SAMPLER_BYTES, SAMPLE_SCHEMA_VERSION } from '../store/samples';
 
 /** Every sample is decoded at this rate, so frame positions never depend on the AudioContext. */
@@ -62,6 +62,16 @@ export const LOOP_MODES: readonly LoopMode[] = ['forward', 'pingpong'];
 export type SamplerFilterType = 'lowpass' | 'highpass' | 'bandpass';
 export const FILTER_TYPES: readonly SamplerFilterType[] = ['lowpass', 'highpass', 'bandpass'];
 
+/**
+ * The server copy of a slot's sample (docs/specs/community-v1.md §4.2): its id, whether it was
+ * taken from the community bank, and then the owner's handle.
+ */
+export interface SampleRemote {
+  id: string;
+  community: boolean;
+  owner?: string;
+}
+
 /** What is stored for a slot; `savedAt` ties the patch to the stored bytes. */
 export interface SampleInfo {
   name: string;
@@ -70,6 +80,8 @@ export interface SampleInfo {
   sampleRate: number;
   channels: 1 | 2;
   savedAt: string;
+  /** Where the bytes also live on the server (only with sync on). */
+  remote?: SampleRemote;
 }
 
 export interface SamplerLoop {
@@ -288,6 +300,16 @@ function str(raw: unknown, key: string, fallback: string): string {
   return typeof v === 'string' ? v : fallback;
 }
 
+function parseRemote(raw: unknown): SampleRemote | null {
+  const id = get(raw, 'id');
+  const community = get(raw, 'community');
+  const owner = get(raw, 'owner');
+  if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/.test(id) || typeof community !== 'boolean') {
+    return null;
+  }
+  return typeof owner === 'string' && owner !== '' ? { id, community, owner } : { id, community };
+}
+
 function parseInfo(raw: unknown): SampleInfo | null {
   const frames = get(raw, 'frames');
   const sampleRate = get(raw, 'sampleRate');
@@ -300,7 +322,10 @@ function parseInfo(raw: unknown): SampleInfo | null {
   }
   if (channels !== 1 && channels !== 2) return null;
   if (typeof name !== 'string' || typeof savedAt !== 'string' || savedAt === '') return null;
-  return { name, frames, sampleRate, channels, savedAt };
+  const remote = parseRemote(get(raw, 'remote'));
+  const info: SampleInfo = { name, frames, sampleRate, channels, savedAt };
+  if (remote !== null) info.remote = remote;
+  return info;
 }
 
 /** A stored patch; anything invalid falls back to the default field by field. */
@@ -836,6 +861,9 @@ export type SamplerState = 'empty' | 'loading' | 'ready' | 'error';
 
 export type SamplerDecoder = (bytes: ArrayBuffer) => Promise<SamplerBuffer>;
 
+/** Downloads the bytes of a sample's server copy by its id. */
+export type RemoteBytes = (remoteId: string) => Promise<ArrayBuffer>;
+
 export interface SamplerBankOptions {
   /** Decodes at SAMPLER_RATE (the app uses an OfflineAudioContext). */
   decode: SamplerDecoder;
@@ -854,6 +882,8 @@ interface Slot {
   peak: number;
   waveform: Map<number, WaveformPeaks>;
   prepared: { key: string; value: PreparedSample } | null;
+  /** The download of this sample's server copy failed (not retried until a reload). */
+  remoteFailed: boolean;
 }
 
 /** The bytes of a picked file (FileReader where Blob.arrayBuffer is missing). */
@@ -900,6 +930,7 @@ export class SamplerBank {
   readonly #slots = new Map<SamplerId, Slot>();
   readonly #listeners = new Set<(id: SamplerId) => void>();
   #store: SampleStore | null = null;
+  #remote: RemoteBytes | null = null;
   /** Bumped per load, so a stale decode never lands. */
   #tokens = new Map<SamplerId, number>();
 
@@ -916,6 +947,14 @@ export class SamplerBank {
   /** Use `store` from now on (the app opens it after start-up). */
   setStore(store: SampleStore): void {
     this.#store = store;
+  }
+
+  /**
+   * Download the bytes of a sample with a server copy when the local store lacks them
+   * (docs/specs/community-v1.md §4.2); they are stored locally again.
+   */
+  setRemote(remote: RemoteBytes | null): void {
+    this.#remote = remote;
   }
 
   state(id: SamplerId): SamplerState {
@@ -948,14 +987,33 @@ export class SamplerBank {
       return Promise.resolve();
     }
     if (slot.savedAt === info.savedAt && slot.state !== 'error') return Promise.resolve();
+    // A failed download is not retried on every edit of the patch (only after a reload).
+    if (slot.savedAt === info.savedAt && slot.remoteFailed) return Promise.resolve();
     const store = this.#store;
     if (store === null) return Promise.resolve();
     return this.#load(id, info.savedAt, async () => {
       const stored = await store.get(id);
-      if (stored === null || stored.saved_at !== info.savedAt) {
+      if (stored !== null && stored.saved_at === info.savedAt) return stored.bytes;
+      const remote = this.#remote;
+      if (info.remote === undefined || remote === null) {
         throw new Error('the sample is no longer stored');
       }
-      return stored.bytes;
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await remote(info.remote.id);
+      } catch (e) {
+        if (slot.savedAt === info.savedAt) slot.remoteFailed = true;
+        throw e;
+      }
+      await store.put({
+        schema_version: SAMPLE_SCHEMA_VERSION,
+        id,
+        name: info.name,
+        type: '',
+        bytes: bytes.slice(0),
+        saved_at: info.savedAt,
+      });
+      return bytes;
     });
   }
 
@@ -967,7 +1025,19 @@ export class SamplerBank {
     if (file.size > MAX_SAMPLER_BYTES) {
       throw new RangeError(`the file is larger than ${MAX_SAMPLER_BYTES / 1024 / 1024} MB`);
     }
-    const bytes = await readBytes(file);
+    return this.importBytes(id, await readBytes(file), file.name, file.type);
+  }
+
+  /** `importFile` for bytes already in hand (a sample from the community bank). */
+  async importBytes(
+    id: SamplerId,
+    bytes: ArrayBuffer,
+    name: string,
+    type: string,
+  ): Promise<SampleInfo> {
+    if (bytes.byteLength > MAX_SAMPLER_BYTES) {
+      throw new RangeError(`the file is larger than ${MAX_SAMPLER_BYTES / 1024 / 1024} MB`);
+    }
     // Decode a copy: decodeAudioData detaches the buffer it is given.
     const buffer = await this.#decode(bytes.slice(0));
     const peak = checkDecoded(buffer);
@@ -975,8 +1045,8 @@ export class SamplerBank {
     await this.#store?.put({
       schema_version: SAMPLE_SCHEMA_VERSION,
       id,
-      name: file.name,
-      type: file.type,
+      name,
+      type,
       bytes,
       saved_at: savedAt,
     });
@@ -988,12 +1058,23 @@ export class SamplerBank {
     slot.state = 'ready';
     this.#emit(id);
     return {
-      name: file.name,
+      name,
       frames: buffer.length,
       sampleRate: buffer.sampleRate,
       channels: buffer.numberOfChannels >= 2 ? 2 : 1,
       savedAt,
     };
+  }
+
+  /** Decode and check bytes that are not stored in a slot (a preview); the slot is untouched. */
+  async decodeLoose(bytes: ArrayBuffer): Promise<{ buffer: SamplerBuffer; peak: number }> {
+    const buffer = await this.#decode(bytes.slice(0));
+    return { buffer, peak: checkDecoded(buffer) };
+  }
+
+  /** Prepared buffers of a loose (preview) sample. */
+  prepareLoose(buffer: SamplerBuffer, patch: SamplerPatch, peak: number): PreparedSample {
+    return prepareSample(buffer, patch, this.#create, peak);
   }
 
   /** Forget and delete the slot's sample. */
@@ -1061,6 +1142,7 @@ export class SamplerBank {
         peak: 0,
         waveform: new Map(),
         prepared: null,
+        remoteFailed: false,
       };
       this.#slots.set(id, slot);
     }
@@ -1068,6 +1150,7 @@ export class SamplerBank {
   }
 
   #reset(slot: Slot, savedAt: string | null): void {
+    if (slot.savedAt !== savedAt) slot.remoteFailed = false;
     slot.savedAt = savedAt;
     slot.buffer = null;
     slot.peak = 0;
@@ -1104,6 +1187,16 @@ export type SamplerAudition = (
   track?: string,
 ) => AuditionHandle | null;
 
+/** Plays one note of prepared buffers now (a preview); null while audio is off. */
+export type SamplerPlay = (
+  ready: { patch: SamplerPatch; prepared: PreparedSample },
+  note: number,
+  velocity: number,
+) => AuditionHandle | null;
+
+/** How many decoded previews `Samplers.preview` keeps. */
+export const PREVIEW_CACHE = 8;
+
 /** What the synth needs to play a slot. */
 export interface SamplerSource {
   /** The patch and prepared buffers of a slot with a decoded sample, else null. */
@@ -1119,13 +1212,25 @@ export class Samplers implements SamplerSource {
   readonly #patches: SamplerPatches;
   readonly #bank: SamplerBank;
   readonly #audition: SamplerAudition | null;
+  readonly #play: SamplerPlay | null;
   readonly #listeners = new Set<(id: SamplerId) => void>();
+  /** Decoded previews by key, oldest first. */
+  readonly #previews = new Map<
+    string,
+    Promise<{ patch: SamplerPatch; prepared: PreparedSample }>
+  >();
   #last: Map<SamplerId, SamplerPatch>;
 
-  constructor(patches: SamplerPatches, bank: SamplerBank, audition: SamplerAudition | null = null) {
+  constructor(
+    patches: SamplerPatches,
+    bank: SamplerBank,
+    audition: SamplerAudition | null = null,
+    play: SamplerPlay | null = null,
+  ) {
     this.#patches = patches;
     this.#bank = bank;
     this.#audition = audition;
+    this.#play = play;
     this.#last = this.#snapshot();
     patches.subscribe(() => {
       const next = this.#snapshot();
@@ -1178,6 +1283,81 @@ export class Samplers implements SamplerSource {
     const fresh = withSample(this.patch(id), id, info, null);
     const pitch = buffer === null ? null : detectRoot(buffer, fresh);
     this.#set(id, { ...fresh, root: pitch?.note ?? 60 });
+  }
+
+  /**
+   * Load bytes already in hand into the slot, like `load` (a sample taken from the community
+   * bank: its root comes with it, `remote` names the server copy).
+   */
+  async loadBytes(
+    id: SamplerId,
+    bytes: ArrayBuffer,
+    meta: { name: string; type: string; root?: number; remote?: SampleRemote },
+  ): Promise<void> {
+    const info = await this.#bank.importBytes(id, bytes, meta.name, meta.type);
+    if (meta.remote !== undefined) info.remote = meta.remote;
+    const buffer = this.#bank.buffer(id);
+    const fresh = withSample(this.patch(id), id, info, null);
+    const root = meta.root ?? (buffer === null ? null : detectRoot(buffer, fresh)?.note) ?? 60;
+    this.#set(id, { ...fresh, root });
+  }
+
+  /**
+   * Record (or forget, with null) the server copy of the slot's sample, provided the slot still
+   * holds the sample saved at `savedAt`. Returns whether it was written.
+   */
+  setRemote(id: SamplerId, savedAt: string, remote: SampleRemote | null): boolean {
+    const p = this.patch(id);
+    if (p.sample?.savedAt !== savedAt) return false;
+    const sample: SampleInfo = { ...p.sample };
+    if (remote === null) delete sample.remote;
+    else sample.remote = remote;
+    this.#set(id, { ...p, sample });
+    return true;
+  }
+
+  /** The stored bytes of the slot's sample (for the upload), or null. */
+  async stored(id: SamplerId): Promise<StoredSample | null> {
+    const stored = (await this.#bank.store?.get(id)) ?? null;
+    return stored !== null && stored.saved_at === this.patch(id).sample?.savedAt ? stored : null;
+  }
+
+  /**
+   * Play a sample that is in no slot at its root note through the sampler voice (the Community
+   * tab's audition): `load` fetches its bytes the first time, the decoded sample is kept under
+   * `key`. Resolves to a handle to release, or null while audio is off; rejects when the bytes
+   * cannot be fetched or decoded.
+   */
+  async preview(
+    key: string,
+    load: () => Promise<ArrayBuffer>,
+    root: number,
+    velocity = 100,
+  ): Promise<AuditionHandle | null> {
+    if (this.#play === null) return null;
+    let ready = this.#previews.get(key);
+    if (ready === undefined) {
+      ready = load().then(async (bytes) => {
+        const { buffer, peak } = await this.#bank.decodeLoose(bytes);
+        const info: SampleInfo = {
+          name: key,
+          frames: buffer.length,
+          sampleRate: buffer.sampleRate,
+          channels: buffer.numberOfChannels >= 2 ? 2 : 1,
+          savedAt: key,
+        };
+        const patch = withSample(defaultPatch('sampler-1'), 'sampler-1', info, root);
+        return { patch, prepared: this.#bank.prepareLoose(buffer, patch, peak) };
+      });
+      this.#previews.set(key, ready);
+      ready.catch(() => this.#previews.delete(key));
+      for (const old of this.#previews.keys()) {
+        if (this.#previews.size <= PREVIEW_CACHE) break;
+        this.#previews.delete(old);
+      }
+    }
+    const playable = await ready;
+    return this.#play(playable, playable.patch.root, velocity);
   }
 
   /** Remove the slot's sample (the rest of the patch stays). */

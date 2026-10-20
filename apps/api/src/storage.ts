@@ -4,6 +4,8 @@ export interface User {
   id: string;
   email: string;
   created_at: string;
+  /** Chosen display name, or null (docs/specs/community-v1.md §1). */
+  handle: string | null;
 }
 
 interface SaveRow {
@@ -37,7 +39,7 @@ export class Storage {
       .bind(crypto.randomUUID(), email, now.toISOString())
       .run();
     const user = await this.db
-      .prepare('SELECT id, email, created_at FROM users WHERE email = ?')
+      .prepare('SELECT id, email, created_at, handle FROM users WHERE email = ?')
       .bind(email)
       .first<User>();
     if (user === null) throw new Error('user row missing after insert');

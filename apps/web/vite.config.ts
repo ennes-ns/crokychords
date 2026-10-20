@@ -106,5 +106,12 @@ export default defineConfig({
     // SHIPPED_PUBLIC_TREES (shipPublicTrees) and SHIPPED_PUBLIC_FILES (shipPublicFiles) go into a
     // build, so a local full data/ngrams.json never ships.
     copyPublicDir: false,
+    // Two pages: the app and the maintainer's review queue (docs/specs/community-v1.md §4.5).
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('index.html', import.meta.url)),
+        review: fileURLToPath(new URL('review.html', import.meta.url)),
+      },
+    },
   },
 });
