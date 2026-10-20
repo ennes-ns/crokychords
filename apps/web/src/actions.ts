@@ -32,7 +32,7 @@ import {
 import type { KeyAction } from './keyboard';
 import { downloadMidi } from './midi/download';
 import type { MidiOut } from './midi/webmidi';
-import type { Store } from './state';
+import type { PlaceMode, Store } from './state';
 import { clampTrackSelection } from './state';
 import { computeSuggestions } from './views/suggest';
 
@@ -42,9 +42,19 @@ const AUDITION_DELAY_S = 0.01;
 export interface Actions {
   select(index: number | null): void;
   insert(token: string): void;
+  /**
+   * Replace the selected chord's token, keeping its length and beat position (undoable).
+   * With nothing selected it inserts (appends) instead.
+   */
+  replaceSelected(token: string): void;
+  /** Insert or replace according to `placeMode` (`replace` forces replacing). */
+  place(token: string, replace?: boolean): void;
+  setPlaceMode(mode: PlaceMode): void;
   /** Click on empty grid space: the top suggestion (or the tonic triad) at the end. */
   appendDefault(): void;
   addDegree(degree: Degree): void;
+  /** Replace the selected chord with the diatonic triad of `degree`. */
+  replaceDegree(degree: Degree): void;
   removeSelected(): void;
   resizeSelected(delta: number): void;
   setSelectedToken(token: string): void;
@@ -153,9 +163,28 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       commit(result.song, result.selected);
     },
 
+    replaceSelected(token) {
+      const { song, selected } = store.state;
+      if (selected === null || song.chords[selected] === undefined) {
+        actions.insert(token);
+        return;
+      }
+      commit(setChordToken(song, selected, token), selected);
+    },
+
+    place(token, replace = false) {
+      if (replace || store.state.placeMode === 'replace') actions.replaceSelected(token);
+      else actions.insert(token);
+    },
+
+    setPlaceMode(mode) {
+      store.set({ placeMode: mode });
+    },
+
     appendDefault() {
       const { song } = store.state;
-      const top = computeSuggestions({ ...store.state, selected: null }).items[0];
+      const top = computeSuggestions({ ...store.state, selected: null, placeMode: 'insert' })
+        .items[0];
       const token = top?.token ?? diatonicTriadToken(1, song.key.mode);
       const result = insertAfter(song, null, token);
       commit(result.song, result.selected);
@@ -164,6 +193,12 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     addDegree(degree) {
       const token = diatonicTriadToken(degree, store.state.song.key.mode);
       actions.insert(token);
+      actions.audition(token);
+    },
+
+    replaceDegree(degree) {
+      const token = diatonicTriadToken(degree, store.state.song.key.mode);
+      actions.replaceSelected(token);
       actions.audition(token);
     },
 
@@ -319,6 +354,9 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       switch (action.type) {
         case 'degree':
           actions.addDegree(action.degree);
+          break;
+        case 'replaceDegree':
+          actions.replaceDegree(action.degree);
           break;
         case 'remove':
           actions.removeSelected();

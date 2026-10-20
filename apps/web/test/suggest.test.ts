@@ -1,8 +1,16 @@
 import type { NgramTable } from '@crokychords/core';
 import { createSong, seedTable } from '@crokychords/core';
 import { describe, expect, it } from 'vitest';
-import { initialState } from '../src/state';
-import { SUGGESTION_LIMIT, computeSuggestions, suggestionContext } from '../src/views/suggest';
+import { createActions } from '../src/actions';
+import { AudioEngine } from '../src/audio/synth';
+import { MidiOut } from '../src/midi/webmidi';
+import { Store, initialState } from '../src/state';
+import {
+  SUGGESTION_LIMIT,
+  computeSuggestions,
+  mountSuggest,
+  suggestionContext,
+} from '../src/views/suggest';
 
 const song = (tokens: string[], mode: 'major' | 'minor' | 'dorian' = 'major') =>
   createSong({ key: { tonic: 'C', mode }, chords: tokens.map((token) => ({ token, beats: 4 })) });
@@ -16,6 +24,36 @@ describe('suggestionContext', () => {
     expect(suggestionContext(song(['I', 'V', 'vi', 'IV']), 1)).toEqual(['I', 'V']);
     expect(suggestionContext(song(['I', 'rest', 'V']), 1)).toEqual(['I']);
     expect(suggestionContext(song([]), null)).toEqual([]);
+  });
+
+  it('leaves the selected chord out when replacing it', () => {
+    expect(suggestionContext(song(['I', 'V', 'vi']), 1, 'replace')).toEqual(['I']);
+    expect(suggestionContext(song(['I', 'V']), 0, 'replace')).toEqual([]);
+    expect(suggestionContext(song(['I', 'V']), null, 'replace')).toEqual(['I', 'V']);
+  });
+});
+
+describe('mountSuggest', () => {
+  it('toggles Insert/Replace, shows the mode, and Shift+click replaces', () => {
+    const store = new Store(initialState(song(['I', 'V'])));
+    const actions = createActions(store, new AudioEngine(), new MidiOut(null));
+    actions.select(0);
+    const root = document.createElement('div');
+    mountSuggest(root, store, actions);
+    const segs = [...root.querySelectorAll<HTMLButtonElement>('button.seg')];
+    const replace = segs.find((b) => b.textContent === 'Replace');
+    const hint = () => root.querySelector('.hint')?.textContent ?? '';
+    expect(hint()).toContain('Insert mode');
+
+    const first = () => root.querySelector<HTMLButtonElement>('button.suggestion');
+    const token = first()?.querySelector('.token')?.textContent;
+    first()?.dispatchEvent(new MouseEvent('click', { shiftKey: true }));
+    expect(store.state.song.chords.map((c) => c.token)).toEqual([token, 'V']);
+
+    replace?.click();
+    expect(store.state.placeMode).toBe('replace');
+    expect(replace?.getAttribute('aria-pressed')).toBe('true');
+    expect(hint()).toContain('Replace mode');
   });
 });
 

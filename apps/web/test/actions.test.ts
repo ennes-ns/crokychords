@@ -46,6 +46,49 @@ describe('actions', () => {
     expect(tokensOf()).toEqual(['i', 'VI', 'iv', 'III', 'VII']);
   });
 
+  it('replaces the selected chord, keeping its length and position; undo restores it', () => {
+    const { store, actions, tokensOf } = setup(['I', 'V', 'vi']);
+    actions.select(1);
+    actions.resizeSelected(-1);
+    const before = store.state.song;
+    actions.replaceSelected('IV');
+    expect(tokensOf()).toEqual(['I', 'IV', 'vi']);
+    expect(store.state.song.chords.map((c) => c.beats)).toEqual([4, 3, 4]);
+    expect(store.state.selected).toBe(1);
+    actions.undo();
+    expect(store.state.song).toBe(before);
+    actions.redo();
+    expect(tokensOf()).toEqual(['I', 'IV', 'vi']);
+  });
+
+  it('inserts instead of replacing when nothing is selected', () => {
+    const { store, actions, tokensOf } = setup(['I']);
+    actions.replaceSelected('V');
+    expect(tokensOf()).toEqual(['I', 'V']);
+    expect(store.state.selected).toBe(1);
+  });
+
+  it('places by mode: insert, replace, or forced replace (Shift+click)', () => {
+    const { store, actions, tokensOf } = setup(['I', 'V']);
+    actions.select(0);
+    actions.place('ii');
+    expect(tokensOf()).toEqual(['I', 'ii', 'V']);
+    actions.place('IV', true);
+    expect(tokensOf()).toEqual(['I', 'IV', 'V']);
+    actions.setPlaceMode('replace');
+    expect(store.state.placeMode).toBe('replace');
+    actions.place('vi');
+    expect(tokensOf()).toEqual(['I', 'vi', 'V']);
+  });
+
+  it('replaces with a diatonic triad via Shift+1–7', () => {
+    const { store, actions, tokensOf } = setup(['i', 'iv'], 'minor');
+    actions.select(1);
+    actions.key({ type: 'replaceDegree', degree: 6 });
+    expect(tokensOf()).toEqual(['i', 'VI']);
+    expect(store.state.selected).toBe(1);
+  });
+
   it('removes, resizes, deselects, undoes and redoes', () => {
     const { store, actions, tokensOf } = setup(['I', 'V', 'vi']);
     actions.select(1);

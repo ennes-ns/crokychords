@@ -112,8 +112,12 @@ function noopActions(): Actions {
   return {
     select: noop,
     insert: noop,
+    replaceSelected: noop,
+    place: noop,
+    setPlaceMode: noop,
     appendDefault: noop,
     addDegree: noop,
+    replaceDegree: noop,
     removeSelected: noop,
     resizeSelected: noop,
     setSelectedToken: noop,
