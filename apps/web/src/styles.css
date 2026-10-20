@@ -118,14 +118,28 @@ h2 {
 
 /* Toolbar */
 
+/* One fixed-height row from 1366 px up (docs/specs/web-v1.md, "Toolbar"); narrower windows wrap. */
 .toolbar {
+  position: relative;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
+  gap: 8px 12px;
   padding: var(--toolbar-pad);
   background: var(--panel);
   border-bottom: var(--border-w) solid var(--line);
+  white-space: nowrap;
+}
+
+.toolbar > * {
+  flex: none;
+}
+
+@media (min-width: 1366px) {
+  .toolbar {
+    flex-wrap: nowrap;
+  }
 }
 
 .toolbar .brand {
@@ -152,6 +166,47 @@ h2 {
 
 .toolbar .title {
   width: 160px;
+  min-width: 88px;
+  flex: 0 1 auto;
+}
+
+.toolbar select[aria-label='Mode'] {
+  max-width: 120px;
+}
+
+.toolbar .tool-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-height);
+  padding-inline: 4px;
+}
+
+/* Pixel icons at 2× so every icon pixel is a whole 2 px square in both themes. */
+.pixel-icon {
+  width: auto;
+  height: 16px;
+}
+
+.pixel-icon .ink {
+  fill: currentColor;
+}
+
+/* Below 1600 px the Key and Meter labels give their room to the row (the values speak for
+   themselves; the group keeps its name for screen readers and as a tooltip). */
+@media (max-width: 1599px) {
+  .toolbar {
+    gap: 6px 8px;
+  }
+
+  .toolbar .group-key > .label,
+  .toolbar .group-meter > .label {
+    display: none;
+  }
+
+  .toolbar select[aria-label='Mode'] {
+    max-width: 104px;
+  }
 }
 
 .toolbar .group {
@@ -178,8 +233,27 @@ h2 {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+  min-width: 0;
   color: var(--muted);
   font-size: var(--font-size-sm);
+}
+
+/* The status gives way first when the row is full: the name shortens, then the whole box clips,
+   so the More button always stays on screen. */
+.toolbar > .table-status {
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+
+.table-status .badge {
+  flex: none;
+}
+
+.table-status .table-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
 }
 
 .table-status .badge {
@@ -197,6 +271,59 @@ h2 {
 .table-status.error .badge {
   color: var(--danger);
   border-color: var(--danger);
+}
+
+/* The "More" panel at the end of the toolbar: rarely used controls, one section per line. */
+.toolbar .more {
+  position: relative;
+}
+
+.toolbar-more {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 320px;
+  padding: var(--space-panel);
+  background: var(--panel);
+  border: var(--border-w) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--overlay-shadow);
+  white-space: normal;
+}
+
+.toolbar-more[hidden] {
+  display: none;
+}
+
+.more-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.more-label {
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: var(--font-size-h);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--heading-tracking);
+  text-transform: uppercase;
+}
+
+.more-row,
+.more-row .table-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.more-row .table-summary {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
 }
 
 /* Workspace */
@@ -411,7 +538,7 @@ h2 {
   max-height: calc(100% - 316px);
 }
 
-/* A tighter toolbar keeps it at two rows on laptop widths. */
+/* A tighter toolbar keeps its one row on laptop widths. */
 .shell.compact .toolbar {
   gap: 6px 8px;
   padding-top: 6px;
@@ -420,10 +547,6 @@ h2 {
 
 .shell.compact .toolbar .title {
   width: 112px;
-}
-
-.shell.compact .toolbar select[aria-label='Mode'] {
-  max-width: 112px;
 }
 
 .shell.compact .suggestion {
@@ -1569,8 +1692,8 @@ button.icon.danger:hover:not(:disabled) {
   width: 72px;
 }
 
-.breakcore select[aria-label='Break'] {
-  max-width: 150px;
+.break-settings select[aria-label='Break'] {
+  max-width: 200px;
 }
 
 .break-percent {

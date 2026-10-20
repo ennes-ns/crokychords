@@ -127,6 +127,11 @@ describe('shell CSS', () => {
     }
   });
 
+  it('keeps the toolbar on one row from 1366 px up (issue #84)', () => {
+    expect(css).toMatch(/@media \(min-width: 1366px\) \{\s*\.toolbar \{\s*flex-wrap: nowrap;/);
+    expect(css).toMatch(/\.toolbar > \.table-status \{[^}]*overflow: hidden;/);
+  });
+
   it('has the compact density rules', () => {
     for (const selector of ['.shell.compact .track', '.shell.compact .melody-track']) {
       expect(css).toContain(`${selector} {`);

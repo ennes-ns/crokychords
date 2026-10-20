@@ -509,7 +509,8 @@ describe('transport controls', () => {
     expect(store.state.breakcore.intensity).toBe(80);
     expect(view.element.querySelector('.break-percent')?.textContent).toBe('80%');
 
-    const [speed, source] = [...view.element.querySelectorAll('select')];
+    expect(view.element.querySelector('select')).toBeNull();
+    const [speed, source] = [...view.settings.querySelectorAll('select')];
     if (speed === undefined || source === undefined) throw new Error('no selects');
     speed.value = '2';
     speed.dispatchEvent(new Event('change'));

@@ -177,3 +177,100 @@ describe('toolbar Loop control', () => {
     expect(clear.hidden).toBe(true);
   });
 });
+
+describe('one-row toolbar (issue #84)', () => {
+  afterEach(() => document.body.replaceChildren());
+
+  function mount() {
+    const store = new Store(initialState());
+    const actions = createActions(store, new AudioEngine(), new MidiOut(null));
+    const toolbar = document.createElement('header');
+    document.body.append(toolbar);
+    mountToolbar(toolbar, store, actions, {
+      storage: null,
+      fire: { connect: () => undefined, disconnect: () => undefined },
+    });
+    const toggle = toolbar.querySelector<HTMLButtonElement>('.more-toggle');
+    const panel = toolbar.querySelector<HTMLElement>('.toolbar-more');
+    if (toggle === null || panel === null) throw new Error('no More panel');
+    return { store, toolbar, toggle, panel };
+  }
+
+  it('keeps transport, Breakcore room, history and status in the row, the rest in More', () => {
+    const { toolbar, panel } = mount();
+    const row = [...toolbar.children].map((c) => c.className);
+    expect(row).toEqual([
+      'brand',
+      'title',
+      'group group-key',
+      'group group-bpm',
+      'group group-meter',
+      'group transport',
+      'group history',
+      'table-status loading',
+      'more',
+    ]);
+    const sections = [...panel.querySelectorAll('.more-section')].map((s) =>
+      s.getAttribute('aria-label'),
+    );
+    expect(sections).toEqual(['Song', 'MIDI', 'Suggestions', 'Look']);
+    const panelButtons = [...panel.querySelectorAll('button')].map((b) => b.textContent);
+    expect(panelButtons).toEqual(['New', 'Export MIDI', 'Enable MIDI out', 'Connect Fire']);
+    expect(panel.querySelector('select[aria-label="Theme"]')).not.toBeNull();
+    expect(panel.querySelector('.table-summary')?.textContent).toContain('sections (major)');
+  });
+
+  it('shows undo and redo as labelled icon buttons with their shortcuts', () => {
+    const { toolbar } = mount();
+    const undo = toolbar.querySelector<HTMLButtonElement>('button[aria-label="Undo"]');
+    const redo = toolbar.querySelector<HTMLButtonElement>('button[aria-label="Redo"]');
+    expect(undo?.title).toContain('Ctrl/Cmd+Z');
+    expect(redo?.title).toContain('Ctrl/Cmd+Shift+Z');
+    expect(undo?.querySelector('svg.pixel-icon')).not.toBeNull();
+    expect(undo?.disabled).toBe(true);
+  });
+
+  it('shows the table name in the row and the full summary as its tooltip', () => {
+    const { toolbar } = mount();
+    const status = toolbar.querySelector<HTMLElement>(':scope > .table-status');
+    expect(status?.querySelector('.badge')?.textContent).toBe('loading…');
+    expect(status?.querySelector('.table-name')?.textContent).toBe('seed');
+    expect(status?.title).toContain('sections (major)');
+  });
+
+  it('opens with the keyboard into its first control and closes with Escape', () => {
+    const { toggle, panel } = mount();
+    expect(panel.hidden).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-controls')).toBe(panel.id);
+    // A keyboard activation is a click with detail 0.
+    toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+    expect(panel.hidden).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement?.textContent).toBe('New');
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.activeElement?.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(panel.hidden).toBe(true);
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it('closes on a click outside or when the focus leaves it, not on a mouse click inside', () => {
+    const { toolbar, toggle, panel } = mount();
+    toggle.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(panel.hidden).toBe(false);
+    expect(document.activeElement).not.toBe(panel.querySelector('button'));
+    panel.querySelector('select')?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(panel.hidden).toBe(false);
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(panel.hidden).toBe(true);
+
+    toggle.click();
+    const outside = toolbar.querySelector<HTMLInputElement>('input.title');
+    panel
+      .querySelector('button')
+      ?.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }));
+    expect(panel.hidden).toBe(true);
+  });
+});

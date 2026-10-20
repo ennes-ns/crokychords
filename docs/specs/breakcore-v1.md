@@ -99,10 +99,12 @@ Non-goals for v1: drums in the MIDI export, per-song break settings, a slice edi
 
 ## 5. UI and keys
 
-- Transport group: a **Breakcore** toggle button with a small pixel-art lamp (an 8×10 SVG of
-  square pixels, coloured with theme tokens, so it works in Default and Pixel), an intensity
-  slider (0–100, step 5), a speed select (×1, ×2), the Break select (Bundled, Own), a "Use my own
-  break…" button (hidden file input) and "Remove" when an own break is stored.
+- Toolbar group: a **Breakcore** toggle button with a small pixel-art lamp (an 8×10 SVG of
+  square pixels, coloured with theme tokens, so it works in Default and Pixel) and an intensity
+  slider (0–100, step 5) with its percentage. The settings sit in the toolbar's More panel
+  (section "Breakcore", `web-v1.md` §9, issue #84): a speed select (×1, ×2) and the Break select
+  (Bundled, Own) with "Use my own break…" (hidden file input) and "Remove" when an own break is
+  stored.
 - Lamp states: off (`--muted`), loading (`--accent`, blinking unless reduced motion), on
   (`--ok`), error (`--danger`, the title says why).
 - **Keys:** `K` toggles Breakcore, `Shift+K` cycles the intensity 25 → 50 → 75 → 100 → 25 (from

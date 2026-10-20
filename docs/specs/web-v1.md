@@ -163,8 +163,8 @@ Single-screen shell (issue #59). The whole editor fits one screen without page s
 └──────────────────────────────────────────────────────────────┴────────────────────────┘
 ```
 
-- CSS grid inside a `100dvh` flex column: the toolbar row takes its natural height (it wraps on
-  narrow screens), the workspace takes the rest. `html` and `body` get `overflow: hidden`; only
+- CSS grid inside a `100dvh` flex column: the toolbar row takes its natural height (one row from
+  1366 px wide, see "Toolbar" below; it wraps on narrower screens), the workspace takes the rest. `html` and `body` get `overflow: hidden`; only
   the panels scroll (`overflow-y: auto`, `overscroll-behavior: contain`): grid rows, melody rows,
   the Band body, the suggestion list, the saves list.
 - Side column: Next chord, the chord editor (fields in three columns) and the saved
@@ -175,8 +175,8 @@ Single-screen shell (issue #59). The whole editor fits one screen without page s
 - Band panel: below the stage, as wide as the stage. Its open/closed state is stored
   (`crokychords.bandOpen`); with nothing stored it starts open, except in compact mode.
 - **Compact mode** under 960 px viewport height (`COMPACT_QUERY = (max-height: 959px)`; the shell
-  sets `.shell.compact` and follows resizes): tighter gaps and padding (the toolbar stays at two
-  rows on laptop widths), chord cells 48 px instead of 68 px with smaller text, melody rows 180 px
+  sets `.shell.compact` and follows resizes): tighter gaps and padding (a narrower title field and
+  less toolbar padding), chord cells 48 px instead of 68 px with smaller text, melody rows 180 px
   instead of 210 px (12 px per pitch row), side-column minimums of 212 px (Next chord) and 88 px
   (saves), and the Band panel collapsed by default.
 - Pixel theme: every size in the shell is a whole pixel value (melody rows 210 / 180 px over 15
@@ -184,5 +184,19 @@ Single-screen shell (issue #59). The whole editor fits one screen without page s
 - Fallback: on 1366×768 with a chord selected, Next chord sits at its minimum (about two
   suggestions visible, the list scrolls). Should even the minimums not fit, the chord editor, then
   the stage or side column, scrolls inside itself; the page still never does.
+- **Toolbar** (issue #84): one fixed-height row (`flex-wrap: nowrap`) at 1366 px and wider, in
+  both themes, also with loop points set. Left to right: brand, song title, key and mode, tempo,
+  meter; transport (Play, Loop, loop points, clear); the Breakcore toggle with its intensity
+  slider; Undo and Redo as pixel-icon buttons (`aria-label` plus a tooltip with the shortcut); the
+  suggestion-table status (badge and table name, the full summary, description and attribution as
+  its tooltip); and a **More** icon button at the end. More is a disclosure (`aria-expanded`,
+  `aria-controls`) for the rarely used controls, one section each: Song (New, Export MIDI), MIDI
+  (MIDI out, channel map, Connect Fire), Breakcore (speed, break source, own break), Suggestions
+  (table summary and table switch) and Look (theme). Opening it with the keyboard focuses its first
+  control; Escape closes it and returns the focus to the button; Tab past its end or a click
+  outside closes it. Below 1600 px the Key and Meter labels are hidden (the groups keep their
+  name as `aria-label` and tooltip), the gaps shrink and the mode select narrows. When the row is
+  full the table name shortens first and then the status box clips, so the More button never
+  leaves the screen. Between 900 and 1365 px the row may wrap.
 - Below 900 px width the old stacked layout applies and the page scrolls. Mobile and touch are
   out of scope (later issue).
