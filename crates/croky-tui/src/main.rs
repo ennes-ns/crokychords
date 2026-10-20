@@ -1,9 +1,11 @@
 //! croky-tui: Croky Chords in the terminal, for a headless machine that sends MIDI to a DAW.
 //! Chord grid with replace-first editing, Next chord suggestions, the band (every track with its
 //! pattern, plus the melody) played to an ALSA sequencer port on a real-time scheduler thread,
-//! loop points, and songs saved as SaveStore records. See docs/specs/tui-v1.md.
+//! loop points, and songs saved as SaveStore records. See docs/specs/tui-v1.md. `--commands`
+//! drives the same editor with JSON commands over stdin (docs/specs/assistant-v1.md §A5).
 
 mod app;
+mod commands;
 mod config;
 mod edit;
 mod export;
@@ -13,6 +15,7 @@ mod latency;
 mod player;
 #[cfg(test)]
 mod render_tests;
+mod rpc;
 mod saves;
 mod session;
 #[cfg(test)]
@@ -35,6 +38,7 @@ use ratatui::crossterm::{execute, terminal};
 use app::{App, Effect, PlayView, SavesView, Screen};
 use config::{default_config_path, Config, FileConfig};
 use player::Player;
+use rpc::{serve, CommandMode, OpenPlayer};
 use session::{Opened, Saved, Session};
 
 const USAGE: &str = "\
@@ -48,6 +52,8 @@ croky-tui [options]
   --data DIR          saves in DIR/saves, .mid exports in DIR/exports
                       (default $XDG_DATA_HOME/croky-chords)
   --song PATH         edit this file instead (a song JSON or a save record); w writes it back
+  --commands          no screen: read JSON-RPC requests (or bare commands) from stdin, one per
+                      line, and answer on stdout (docs/howto/agents.md)
   --list-ports        list MIDI outputs and inputs, then exit
   --latency-test      measure MIDI round trips through an in-process loopback and exit
     --count N         round trips (default 500)
@@ -71,6 +77,7 @@ struct Args {
     list_ports: bool,
     latency: bool,
     jitter: bool,
+    commands: bool,
     seconds: f64,
     count: usize,
     out: Option<String>,
@@ -95,6 +102,7 @@ fn parse_args() -> Result<Args, String> {
             "--list-ports" => a.list_ports = true,
             "--latency-test" => a.latency = true,
             "--jitter-test" => a.jitter = true,
+            "--commands" => a.commands = true,
             "--count" => a.count = value()?.parse().map_err(|_| "--count needs a number")?,
             "--seconds" => {
                 a.seconds = value()?
@@ -458,6 +466,30 @@ fn run_tui(args: Args, config: Config) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
+/// `--commands`: the command API over stdin/stdout, no terminal UI.
+fn run_commands(args: Args, config: Config) -> Result<(), String> {
+    let (table, table_name, warning) = load_table(&config)?;
+    if let Some(w) = warning {
+        eprintln!("croky-tui: {w}");
+    }
+    let mut session = Session::new(config.data_dir.clone());
+    let opened = match &args.song {
+        Some(path) => session.open_file(path.clone())?,
+        None => session.start()?,
+    };
+    let mut app = App::new(create_song(), table, table_name);
+    app.load(opened.song, opened.looping);
+    let port = config.port.clone();
+    let priority = config.realtime_priority;
+    let open: OpenPlayer = Box::new(move || {
+        let (conn, name) = open_output(&port)?;
+        Ok(Player::new(conn, name, priority))
+    });
+    let exports = config.data_dir.join("exports");
+    let mut mode = CommandMode::new(app, session, exports, config.audition, open);
+    serve(&mut mode, std::io::stdin().lock(), std::io::stdout().lock())
+}
+
 fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(a) => a,
@@ -495,6 +527,8 @@ fn main() -> ExitCode {
         );
         if args.jitter {
             jitter::run(args.seconds, config.realtime_priority).map(|r| println!("{}", r.text()))
+        } else if args.commands {
+            run_commands(args, config)
         } else {
             run_tui(args, config)
         }

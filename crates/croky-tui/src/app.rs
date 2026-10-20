@@ -106,8 +106,8 @@ pub struct App {
     pub screen: Screen,
     /// Where the song is saved, for the header (`v3`, `new *`, `file demo.json`).
     pub save_label: String,
-    undo: Vec<Song>,
-    redo: Vec<Song>,
+    pub(crate) undo: Vec<Song>,
+    pub(crate) redo: Vec<Song>,
 }
 
 impl App {
