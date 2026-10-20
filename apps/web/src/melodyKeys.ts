@@ -22,6 +22,12 @@ export type MelodyKeyAction =
   | { type: 'remove' }
   | { type: 'grid' };
 
+/** `H` while the melody lane has focus: show or hide the chord-tone tint (B4). */
+export function isChordTonesKey(e: KeyLike, focus: Focus): boolean {
+  if (focus !== 'melody' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
+  return e.key.toLowerCase() === 'h';
+}
+
 const DEGREE_KEYS: Record<string, Degree> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7 };
 
 /** The melody action for a key press while `focus` is active, or null. */

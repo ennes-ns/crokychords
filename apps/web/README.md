@@ -80,10 +80,13 @@ and applied (secondary) function; only combinations with a valid token are offer
 
 Under the chord grid sits a single-voice melody, written as scale degrees of the song's key
 (so it follows a key or mode change). Each grid row is a small piano roll from degree 5 an
-octave down to degree 5 an octave up; the tonic rows are shaded. Notes are coloured by how they
-sit on the chord under them: **chord tone**, **scale tone** (in the key, not in the chord) or
-**outside** (an altered note that is not a chord tone). The header switches the grid between
-1/8 and 1/16 notes, mutes the melody and picks its MIDI channel (default 4). The melody plays
+octave down to degree 5 an octave up; the tonic rows are shaded. Each note has the colour of its
+degree, the same as a chord on that degree (a `5` is the colour of `V`); a sharp is one step
+lighter, a flat one step darker. Under each chord, the rows of its root, third, fifth and seventh
+are faintly tinted (the root a little stronger), so a note on a tinted row is a chord tone and one
+on a plain row a passing tone. The header switches the chord-tone tint (`H`, remembered on this
+device), switches the grid between 1/8 and 1/16 notes, mutes the melody and picks its MIDI
+channel (default 4). The melody plays
 through the Lead instrument, goes out over Web MIDI on its channel and is exported as a
 `Melody` track. See [`docs/specs/melody-v1.md`](../../docs/specs/melody-v1.md).
 
@@ -104,6 +107,7 @@ either one does too). In the melody lane:
 | `B` / `S` | Toggle flat / sharp |
 | `Backspace` / `Delete` | Delete the note under the cursor |
 | `G` | Grid 1/8 ↔ 1/16 |
+| `H` | Chord-tone tint on / off |
 | `Home` | Cursor to the start |
 | `Esc` | Back to the chord grid |
 

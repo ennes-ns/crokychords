@@ -8,7 +8,7 @@ import { moveSelection } from './edit';
 import { bindLoopPersistence } from './loop';
 import { FireController } from './midi/fire/controller';
 import { FireConnection, bindFirePageEvents, browserFireAccess } from './midi/fire/connect';
-import { melodyKeyAction } from './melodyKeys';
+import { isChordTonesKey, melodyKeyAction } from './melodyKeys';
 import { MidiOut, browserMidiAccess } from './midi/webmidi';
 import { browserStorage } from './persist';
 import { bindShortcuts } from './shortcuts';
@@ -106,7 +106,7 @@ async function boot(app: HTMLElement): Promise<void> {
     fire: { connect: () => void fire.connect(), disconnect: () => fire.disconnect() },
   });
   mountGrid(grid, store, actions);
-  mountMelody(melody, store, actions);
+  const melodyLane = mountMelody(melody, store, actions, storage);
   // Working in the chord grid gives the editing keys back to the chords.
   grid.addEventListener('pointerdown', () => actions.setFocus('chords'));
   mountChordEditor(editor, store, actions);
@@ -132,6 +132,10 @@ async function boot(app: HTMLElement): Promise<void> {
     (action) => actions.key(action),
     (event) => {
       // The melody lane takes its keys first while it has focus (docs/specs/melody-v1.md, B3).
+      if (isChordTonesKey(event, store.state.focus)) {
+        melodyLane.toggleChordTones();
+        return true;
+      }
       const melodyAction = melodyKeyAction(event, store.state.focus);
       if (melodyAction === null) return false;
       actions.melodyKey(melodyAction);

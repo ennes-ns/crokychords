@@ -35,6 +35,9 @@ export const pixelTheme: Theme = {
     '--line-strong': '#5a5a5a',
     '--rest-a': '#1f1f1f',
     '--rest-b': '#292929',
+    // Flat dark tints of the yellow accent, no alpha (tones, root).
+    '--melody-chord-tone': '#2a2614',
+    '--melody-chord-root': '#383117',
     '--text': '#f6ecd6',
     '--muted': '#b4aa96',
     '--accent': '#f1c40f',

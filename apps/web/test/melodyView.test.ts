@@ -6,7 +6,9 @@ import { AudioEngine } from '../src/audio/synth';
 import { PITCH_ROWS, songMelody } from '../src/melody';
 import { MidiOut } from '../src/midi/webmidi';
 import { Store, initialState } from '../src/state';
+import { MELODY_TONES_KEY } from '../src/persist';
 import {
+  chordToneSpans,
   melodyLaneBeats,
   melodyLayout,
   mountMelody,
@@ -48,17 +50,27 @@ function stubRects(root: HTMLElement): void {
   });
 }
 
-function setup(notes: MelodyNote[] = []) {
+/** An in-memory Storage stand-in. */
+function memoryStorage(initial: Record<string, string> = {}) {
+  const data = new Map(Object.entries(initial));
+  return {
+    data,
+    getItem: (k: string) => data.get(k) ?? null,
+    setItem: (k: string, v: string) => void data.set(k, v),
+  };
+}
+
+function setup(notes: MelodyNote[] = [], storage = memoryStorage()) {
   const store = new Store(initialState(melodySong(notes)));
   const actions = createActions(store, new AudioEngine(), new MidiOut(null));
   const root = document.createElement('section');
   document.body.replaceChildren(root);
-  mountMelody(root, store, actions);
+  const lane = mountMelody(root, store, actions, storage);
   stubRects(root);
   store.subscribe(() => stubRects(root));
   const notesOf = () =>
     songMelody(store.state.song).notes.map((n) => [n.beat, n.length, n.degree, n.octave]);
-  return { store, actions, root, notesOf };
+  return { store, actions, root, notesOf, lane, storage };
 }
 
 const pointer = (type: string, x: number, y: number, target: EventTarget = window): void => {
@@ -102,9 +114,50 @@ describe('melody layout', () => {
       'scale',
       'scale',
     ]);
+    expect(segs.map((s) => s.hue)).toEqual([52, 30, 125, 125, 0, 0]);
     expect(segs[0]?.lane).toBe(5);
     expect([segs[4]?.clamped, segs[4]?.lane]).toEqual(['up', PITCH_ROWS - 1]);
     expect([segs[5]?.clamped, segs[5]?.lane]).toEqual(['down', 0]);
+  });
+
+  it('tints the rows of each chord tone under that chord, the root apart', () => {
+    const song = melodySong([]);
+    const spans = chordToneSpans(song, melodyLayout(song));
+    // I: degrees 1 3 5; V: 5 7 2. Lanes run from degree 5 an octave down (lane 0) upwards.
+    const under = (left: number) =>
+      spans.filter((s) => s.left === left).map((s) => [s.lane, s.root]);
+    expect(under(0)).toEqual([
+      [0, false],
+      [3, true],
+      [5, false],
+      [7, false],
+      [10, true],
+      [12, false],
+      [14, false],
+    ]);
+    expect(under(0.25)).toEqual([
+      [0, true],
+      [2, false],
+      [4, false],
+      [7, true],
+      [9, false],
+      [11, false],
+      [14, true],
+    ]);
+    expect(spans.every((s) => s.row === 0 && s.width === 0.25)).toBe(true);
+  });
+
+  it('tints nothing under rests and spells altered tones on their degree', () => {
+    const song = createSong({
+      chords: [
+        { token: 'rest', beats: 4 },
+        { token: 'bVII', beats: 4 },
+      ],
+    });
+    const spans = chordToneSpans(song, melodyLayout(song));
+    expect(spans.every((s) => s.left === 0.25)).toBe(true);
+    // bVII: b7 (root), 2, 4.
+    expect(spans.filter((s) => s.root).map((s) => s.lane)).toEqual([2, 9]);
   });
 
   it('maps y to pitch rows', () => {
@@ -115,15 +168,21 @@ describe('melody layout', () => {
 });
 
 describe('mountMelody', () => {
-  it('renders rows, pitch stripes, notes with labels and harmony classes', () => {
-    const { root } = setup([note(0, 1, 3), note(1, 1, 4, { accidental: 1 })]);
+  it('renders rows, pitch stripes, notes with labels, degree hues and accidentals', () => {
+    const { root } = setup([
+      note(0, 1, 3),
+      note(1, 1, 4, { accidental: 1 }),
+      note(2, 1, 6, { accidental: -1 }),
+    ]);
     expect(root.querySelectorAll('.melody-track')).toHaveLength(1);
     expect(root.querySelectorAll('.melody-pitch')).toHaveLength(PITCH_ROWS);
     expect(root.querySelectorAll('.melody-pitch.tonic')).toHaveLength(2);
     const notes = [...root.querySelectorAll<HTMLElement>('.mnote')];
-    expect(notes.map((n) => n.textContent)).toEqual(['3', '♯4']);
-    expect(notes[0]?.classList.contains('chord-tone')).toBe(true);
-    expect(notes[1]?.classList.contains('outside')).toBe(true);
+    expect(notes.map((n) => n.textContent)).toEqual(['3', '♯4', '♭6']);
+    expect(notes.map((n) => n.style.getPropertyValue('--hue'))).toEqual(['52', '125', '228']);
+    expect(notes.map((n) => n.className)).toEqual(['mnote', 'mnote sharp', 'mnote flat']);
+    expect(notes.map((n) => n.dataset['harmony'])).toEqual(['chord', 'outside', 'outside']);
+    expect(notes[0]?.title).toContain('chord tone');
     expect(notes[0]?.style.left).toBe('0%');
     expect(notes[0]?.style.width).toBe('6.25%');
   });
@@ -181,6 +240,40 @@ describe('mountMelody', () => {
     pointer('pointermove', 200, laneY(5));
     pointer('pointerup', 200, laneY(5));
     expect(notesOf()).toEqual([[2, 2, 3, 0]]);
+  });
+
+  it('draws the chord-tone tint and toggles it from the header, H and storage', () => {
+    const { root, lane, storage } = setup();
+    expect(root.querySelectorAll('.melody-tone')).toHaveLength(14);
+    expect(root.querySelectorAll('.melody-tone.root')).toHaveLength(5);
+    const box = root.querySelector<HTMLInputElement>('[data-field="melody-tones"]');
+    if (box === null) throw new Error('no toggle');
+    expect(box.checked).toBe(true);
+    expect(root.classList.contains('hide-tones')).toBe(false);
+    box.checked = false;
+    box.dispatchEvent(new Event('change'));
+    expect(root.classList.contains('hide-tones')).toBe(true);
+    expect(storage.data.get(MELODY_TONES_KEY)).toBe('false');
+    lane.toggleChordTones();
+    expect(box.checked).toBe(true);
+    expect(root.classList.contains('hide-tones')).toBe(false);
+    expect(storage.data.get(MELODY_TONES_KEY)).toBe('true');
+
+    const off = setup([], memoryStorage({ [MELODY_TONES_KEY]: 'false' }));
+    expect(off.root.classList.contains('hide-tones')).toBe(true);
+  });
+
+  it('reuses the tint while only the melody changes', () => {
+    const { store, root } = setup();
+    const before = [...root.querySelectorAll<HTMLElement>('.melody-tone')].map(
+      (t) => t.style.cssText,
+    );
+    store.set({ focus: 'melody' });
+    store.commit({ ...store.state.song, melody: { ...defaultMelody(), notes: [note(0, 1, 1)] } });
+    const after = [...root.querySelectorAll<HTMLElement>('.melody-tone')].map(
+      (t) => t.style.cssText,
+    );
+    expect(after).toEqual(before);
   });
 
   it('switches grid, mute and channel from the header', () => {

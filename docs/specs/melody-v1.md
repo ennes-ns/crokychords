@@ -8,8 +8,9 @@ migration, rendering, MIDI) and `apps/web` (lane view, keyboard, lead instrument
 A single-voice melody written as **scale degrees** (1–7 with octave and accidental), placed on a
 1/8 or 1/16 grid under the chord grid, with note lengths. It plays back through a lead instrument,
 is exported as its own track in the `.mid` file, goes out over Web MIDI on its own channel and is
-saved with the song. Notes are coloured by how they relate to the chord under them, so a user sees
-at a glance which notes are chord tones.
+saved with the song. Notes carry the colour of their degree (the chord blocks' colours), and the
+rows of the chord tones are tinted under each chord, so a user sees at a glance which notes are
+chord tones (B4, issue #74).
 
 Because notes are degrees, changing the key or mode moves the melody with the chords.
 
@@ -62,6 +63,7 @@ Functions:
 | `defaultMelody()` | `{ channel: 3, muted: false, notes: [] }` |
 | `cloneMelody(m)` | deep copy, canonical field order |
 | `melodyNotePitch(note, key)` | MIDI note number |
+| `chordTones(chord, key)` (`src/chords.ts`) | the chord's core tones, root first: root, third (or the sus tones replacing it), fifth(s) (altered ones included), seventh; each `{ role, interval, pitchClass, degree, accidental }`, spelled on a degree of the key (C major: `V7` → 5 7 2 4, `bVII` → ♭7 2 4, `V/vi` → 3 ♯5 7). Extensions and added tones are left out; the inversion does not change the set |
 | `melodyNoteHarmony(song, note)` | `'chord'` when the note's pitch class is a tone of the chord sounding at `note.beat`; else `'scale'` when `accidental === 0`; else `'outside'`. Rests and beats after the last chord count as no chord |
 | `renderMelody(song, opts)` | note events (`NoteEvent`, track id `melody`, the melody channel, velocity 100, duration `length * 0.95`). Muted melody renders nothing unless `includeMuted`. Notes starting at or after the end of the chords are dropped; a note crossing it is cut to it, so playback and export end with the chords. |
 
@@ -117,7 +119,8 @@ are removed and a note running into it is shortened.
 ### B2. The lane (`src/views/melody.ts`)
 
 A panel directly under the chord grid (above the chord editor). The head holds the title, the
-grid toggle (`1/8 | 1/16`), a Mute checkbox and the channel select (1–16). The body mirrors the
+grid toggle (`1/8 | 1/16`), a Chord tones checkbox (B4), a Mute checkbox and the channel select
+(1–16). The body mirrors the
 grid's rows (same bars per row, same beat → x mapping as `views/grid.ts`), each row a small
 piano roll of 15 degree rows, from degree 5 one octave down to degree 5 one octave up; notes
 outside that range sit on the top or bottom row with a dotted edge. Rows on degree 1 are shaded so the
@@ -150,6 +153,7 @@ and `Shift+1`…`Shift+7` / Shift+click (insert after the selected chord, `web-v
 | `B` / `S` | Toggle flat / sharp on the note under the cursor |
 | `Backspace` / `Delete` | Delete the note under the cursor |
 | `G` | Grid 1/8 ↔ 1/16 |
+| `H` | Chord-tone tint on / off (B4) |
 | `Home` | Cursor to the start |
 | `Esc` | Back to the chord lane |
 
@@ -158,12 +162,40 @@ alone on purpose (issue #44), so sharps use `S` rather than `#` (Shift+3 on most
 The handler lives in `src/melodyKeys.ts`; `keyboard.ts` is unchanged and `bindShortcuts`
 (`src/shortcuts.ts`) asks the melody handler first, after Space and outside form controls.
 
-### B4. Harmony colouring
+### B4. Note colours and chord-tone tint (issue #74)
 
-Each note gets a class from `melodyNoteHarmony`: `chord-tone`, `scale-tone` or `outside`. The
-colours come straight from the theme tokens (`--ok` chord tone, `--accent` scale tone,
-`--danger` outside), so every theme gets them without new theme tokens; `styles.css` only
-adds the lane's rules.
+**Notes by degree.** A note has the hue of its degree, the same hue a chord block on that degree
+has (`DEGREE_HUES` in `music.ts`, themes-v1 §Degree hue): a `1` is the colour of `I`, a `5` the
+colour of `V`. The note sets `--hue` and uses the theme's chord saturation/lightness pairs, so
+both themes stay consistent without new note tokens:
+
+| Note | Fill | Edge | Label |
+|------|------|------|-------|
+| natural | `--chord-fill` | `--chord-edge` | `--chord-ink` |
+| sharp (`.sharp`) | `--chord-hover` (one step lighter) | `--chord-edge` | `--chord-ink` |
+| flat (`.flat`) | `--suggestion-hover` (one step darker) | `--chord-edge` | `--chord-ink` |
+| selected (cursor) | `--chord-selected` | `--chord-ring` | `--chord-ink`, plus the `--focus-w` ring in `--text` |
+
+`melodyNoteHarmony` no longer colours the note; it is kept as `data-harmony` and in the
+tooltip (`chord tone`, `passing tone`, `outside the key`), so the relation is not shown by
+colour alone.
+
+**Chord-tone tint.** Under every chord segment of the grid, the lane rows whose degree carries one
+of the chord's `chordTones` (root, third or sus, fifth, seventh; in every octave the lane shows)
+get a faint tint over the chord's span: a note on a tinted row is a chord tone, one on a plain
+row a passing tone. A chromatic chord tone tints the row of the degree it is spelled on (`bVII`
+tints the 7 rows), where the note with its accidental goes. Rests tint nothing.
+
+- Theme tokens `--melody-chord-tone` and `--melody-chord-root` (root a little stronger).
+  Default: the accent at 8 % / 12 % alpha. Pixel: flat dark tints of its yellow accent, no
+  alpha. The tint has no border; a transparent top edge keeps the pitch line visible, and the
+  bar and beat lines stay on top. It is never louder than the selection, the cursor or the
+  playhead.
+- The spans are recomputed only when the chords, the key or the row length change, not when
+  only the melody, the cursor or the playhead moves (no per-frame DOM work, issue #61).
+- Toggle: the "Chord tones" checkbox in the lane header or `H` (melody focus), default on,
+  stored per device in `localStorage` under `crokychords.melodyChordTones`. Toggling only flips
+  a class on the lane (`hide-tones`), so it costs no re-render.
 
 ### B5. Playback, MIDI out, export
 
@@ -183,5 +215,7 @@ pitch per mode and octave, harmony classes (chord tone, scale tone, outside, res
 (mute, cut at the end), MIDI melody track (name, channel, notes, skipped when empty or muted).
 Web: pure melody edits, melody key map (including the keys it must leave alone), actions
 (place/move/step/octave/length/accidental/delete, focus, grid toggle, undo), the lane view
-(rows, notes and classes, click to add, drag, double-click), scheduler with melody events, lead
+(rows, notes with degree hues and accidental classes, chord-tone spans and their toggle, click
+to add, drag, double-click), `chordTones` (triads, sevenths, borrowed and applied chords, sus,
+altered fifths, inversions), scheduler with melody events, lead
 instrument headroom.

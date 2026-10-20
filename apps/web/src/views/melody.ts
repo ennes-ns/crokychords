@@ -1,12 +1,16 @@
 /**
  * Melody lane under the chord grid (docs/specs/melody-v1.md, B2): the grid's rows as small
- * piano rolls of scale-degree rows, notes coloured by how they sit on the chord under them.
+ * piano rolls of scale-degree rows. Notes carry their degree's hue (the chord blocks' colours);
+ * rows holding a tone of the chord above them are tinted (B4).
  */
 import type { MelodyNote, Song } from '@crokychords/core';
-import { melodyNoteHarmony } from '@crokychords/core';
+import { chordTones, melodyNoteHarmony, songKey, tryParseToken } from '@crokychords/core';
 import type { MelodyHarmony } from '@crokychords/core';
 import type { Actions } from '../actions';
 import { h, option, replaceChildren } from '../dom';
+import { degreeHue } from '../music';
+import type { SongStorage } from '../persist';
+import { loadMelodyTones, saveMelodyTones } from '../persist';
 import {
   MELODY_GRIDS,
   MELODY_GRID_LABELS,
@@ -23,12 +27,20 @@ import {
 } from '../melody';
 import type { AppState, Store } from '../state';
 import type { GridLayout } from './grid';
-import { beatToRowPosition, gridLayout, placePlayhead, xToBeat } from './grid';
+import { beatToRowPosition, chordSegments, gridLayout, placePlayhead, xToBeat } from './grid';
 
-export const HARMONY_CLASSES: Record<MelodyHarmony, string> = {
-  chord: 'chord-tone',
-  scale: 'scale-tone',
-  outside: 'outside',
+/** How a note's tooltip names its relation to the chord under it. */
+export const HARMONY_LABELS: Record<MelodyHarmony, string> = {
+  chord: 'chord tone',
+  scale: 'passing tone',
+  outside: 'outside the key',
+};
+
+/** Class for a note's accidental: one step lighter (sharp) or darker (flat) than its hue. */
+export const ACCIDENTAL_CLASSES: Record<MelodyNote['accidental'], string | null> = {
+  [-1]: 'flat',
+  0: null,
+  1: 'sharp',
 };
 
 /** The chord grid's layout, with extra rows when the melody runs past it. */
@@ -58,6 +70,8 @@ export interface NoteSegment {
   /** The note lies above or below the rows the lane shows. */
   clamped: 'up' | 'down' | null;
   harmony: MelodyHarmony;
+  /** Hue of the note's degree, the same as a chord on that degree (`DEGREE_HUES`). */
+  hue: number;
 }
 
 /** Note blocks per row; a note crossing a row boundary is split. */
@@ -68,6 +82,7 @@ export function noteSegments(song: Song, layout: GridLayout): NoteSegment[] {
     const clamped = pitch > PITCH_ROW_MAX ? 'up' : pitch < PITCH_ROW_MIN ? 'down' : null;
     const lane = Math.min(PITCH_ROW_MAX, Math.max(PITCH_ROW_MIN, pitch)) - PITCH_ROW_MIN;
     const harmony = melodyNoteHarmony(song, note);
+    const hue = degreeHue(note.degree);
     const end = note.beat + note.length;
     let from = note.beat;
     while (from < end - 1e-9) {
@@ -84,11 +99,52 @@ export function noteSegments(song: Song, layout: GridLayout): NoteSegment[] {
         lane,
         clamped,
         harmony,
+        hue,
       });
       from = to;
     }
   });
   return segments;
+}
+
+/** A tinted lane row under one chord: a tone of that chord sits on this row's degree. */
+export interface ToneSpan {
+  row: number;
+  /** Left edge and width as fractions of the row (the chord's span in that row). */
+  left: number;
+  width: number;
+  /** Pitch row inside the lane, 0 = bottom. */
+  lane: number;
+  /** The chord's root is on this degree (drawn slightly stronger). */
+  root: boolean;
+}
+
+/**
+ * Chord-tone tint of the lane: for every chord segment, the lane rows whose degree carries one
+ * of the chord's core tones (`chordTones`: root, third or sus, fifth, seventh; natural or
+ * altered), in every octave the lane shows. Rests and unparseable tokens tint nothing.
+ */
+export function chordToneSpans(song: Song, layout: GridLayout): ToneSpan[] {
+  const key = songKey(song);
+  const spans: ToneSpan[] = [];
+  const tonesByToken = new Map<string, ReturnType<typeof chordTones>>();
+  for (const seg of chordSegments(song, layout)) {
+    let tones = tonesByToken.get(seg.token);
+    if (tones === undefined) {
+      const chord = tryParseToken(seg.token);
+      tones = chord === undefined ? [] : chordTones(chord, key);
+      tonesByToken.set(seg.token, tones);
+    }
+    if (tones.length === 0) continue;
+    for (let lane = 0; lane < PITCH_ROWS; lane++) {
+      const { degree } = rowPitch(lane + PITCH_ROW_MIN);
+      const onRow = tones.filter((t) => t.degree === degree);
+      if (onRow.length === 0) continue;
+      const root = onRow.some((t) => t.role === 'root');
+      spans.push({ row: seg.row, left: seg.left, width: seg.width, lane, root });
+    }
+  }
+  return spans;
 }
 
 /** Pitch (degree, octave) of the lane row under `y` px from the top of a `height` px track. */
@@ -105,7 +161,17 @@ function pct(fraction: number): string {
   return `${(fraction * 100).toFixed(4)}%`;
 }
 
-export function mountMelody(root: HTMLElement, store: Store, actions: Actions): void {
+export interface MelodyLane {
+  /** Show or hide the chord-tone tint (`H`); the choice is kept in local settings. */
+  toggleChordTones(): void;
+}
+
+export function mountMelody(
+  root: HTMLElement,
+  store: Store,
+  actions: Actions,
+  storage: SongStorage | null = null,
+): MelodyLane {
   root.classList.add('panel', 'melody');
   root.setAttribute('aria-label', 'Melody lane');
 
@@ -126,6 +192,21 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
     ...Array.from({ length: 16 }, (_, ch) => option(String(ch), String(ch + 1))),
   );
   channel.onchange = () => actions.setMelodyChannel(Number(channel.value));
+  const tones = h('input', {
+    props: { type: 'checkbox' },
+    attrs: { 'data-field': 'melody-tones' },
+  });
+  /** A class switch only: the tint stays in the DOM, so toggling it costs no re-render. */
+  const showTones = (on: boolean): void => {
+    tones.checked = on;
+    root.classList.toggle('hide-tones', !on);
+  };
+  showTones(loadMelodyTones(storage));
+  const setTones = (on: boolean): void => {
+    showTones(on);
+    saveMelodyTones(storage, on);
+  };
+  tones.onchange = () => setTones(tones.checked);
   const status = h('span', { class: 'hint melody-status' });
   const head = h(
     'div',
@@ -139,6 +220,12 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
         { class: 'segmented', attrs: { role: 'group', 'aria-label': 'Grid' } },
         ...gridButtons,
       ),
+      h(
+        'label',
+        { class: 'check', attrs: { title: 'Tint the rows of the chord tones (H)' } },
+        tones,
+        'Chord tones',
+      ),
       h('label', { class: 'check' }, mute, 'Mute'),
       h('label', {}, 'Ch ', channel),
     ),
@@ -151,6 +238,17 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
   let tracks: HTMLElement[] = [];
   let last: unknown[] = [];
   let lastHead: unknown[] = [];
+  /** Tint spans, recomputed only when the chords, the key or the row length change. */
+  let toneSpans: ToneSpan[] = [];
+  let toneInputs: unknown[] = [];
+  const spansFor = (song: Song): ToneSpan[] => {
+    const inputs = [song.chords, song.key.tonic, song.key.mode, layout.rowBeats];
+    if (!inputs.every((value, i) => value === toneInputs[i])) {
+      toneInputs = inputs;
+      toneSpans = chordToneSpans(song, layout);
+    }
+    return toneSpans;
+  };
 
   /** Beat and pitch under a pointer, snapped to the grid ('floor': the cell; 'round': a line). */
   const locate = (
@@ -287,7 +385,6 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
     const { song } = state;
     layout = melodyLayout(song);
     tracks = [];
-    const rows: HTMLElement[] = [];
     for (let row = 0; row < layout.rows; row++) {
       const track = h('div', { class: 'melody-track', attrs: { 'data-row': String(row) } });
       for (let lane = 0; lane < PITCH_ROWS; lane++) {
@@ -300,14 +397,28 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
           }),
         );
       }
+      tracks.push(track);
+    }
+    for (const span of spansFor(song)) {
+      tracks[span.row]?.append(
+        h('div', {
+          class: span.root ? 'melody-tone root' : 'melody-tone',
+          style: {
+            left: pct(span.left),
+            width: pct(span.width),
+            bottom: pct(span.lane / PITCH_ROWS),
+            height: pct(1 / PITCH_ROWS),
+          },
+        }),
+      );
+    }
+    for (const track of tracks) {
       for (let b = 0; b < layout.barsPerRow; b++) {
         const bar = h('div', { class: 'bar' });
         for (let t = 0; t < layout.ticksPerBar; t++) bar.append(h('span', { class: 'tick' }));
         track.append(bar);
       }
       track.addEventListener('pointerdown', (e) => startCreate(e));
-      tracks.push(track);
-      rows.push(track);
     }
 
     const cursorIndex =
@@ -319,7 +430,9 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
     for (const seg of noteSegments(song, layout)) {
       const track = tracks[seg.row];
       if (track === undefined) continue;
-      const classes = ['mnote', HARMONY_CLASSES[seg.harmony]];
+      const classes = ['mnote'];
+      const accidental = ACCIDENTAL_CLASSES[seg.note.accidental];
+      if (accidental !== null) classes.push(accidental);
       if (seg.index === cursorIndex) classes.push('selected');
       if (!seg.first) classes.push('cont');
       if (!seg.last) classes.push('wraps');
@@ -334,10 +447,12 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
             width: pct(seg.width),
             bottom: pct(seg.lane / PITCH_ROWS),
             height: pct(1 / PITCH_ROWS),
+            '--hue': String(seg.hue),
           },
           attrs: {
             'data-index': String(seg.index),
-            title: `${label} · octave ${seg.note.octave} · ${seg.note.length} beats`,
+            'data-harmony': seg.harmony,
+            title: `${label} · ${HARMONY_LABELS[seg.harmony]} · octave ${seg.note.octave} · ${seg.note.length} beats`,
           },
         },
         seg.first ? label : '',
@@ -369,7 +484,7 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
         }),
       );
     }
-    replaceChildren(body, ...rows);
+    replaceChildren(body, ...tracks);
   };
 
   const renderHead = (state: AppState): void => {
@@ -424,4 +539,5 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
 
   render(store.state);
   store.subscribe(render);
+  return { toggleChordTones: () => setTones(!tones.checked) };
 }

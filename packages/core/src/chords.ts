@@ -195,6 +195,66 @@ export function chordBassPitchClass(chord: Chord, key: Key): PitchClass {
   return toPitchClass(chordRootPitchClass(chord, key) + bassInterval(chord));
 }
 
+/** `third` is the chord's third, or the sus tone that replaces it. */
+export type ChordToneRole = 'root' | 'third' | 'fifth' | 'seventh';
+
+/** One core tone of a chord, spelled as a scale degree of the key. */
+export interface ChordTone {
+  role: ChordToneRole;
+  /** Semitones above the root. */
+  interval: number;
+  pitchClass: PitchClass;
+  /** The degree of the key the tone is spelled on (the third of V is degree 7, ...). */
+  degree: Degree;
+  /** Semitones from that degree as the mode has it: 0 in the mode, -1 flat, +1 sharp. */
+  accidental: number;
+}
+
+/** Scale steps above the root on which a core tone is spelled. */
+function toneSteps(role: ChordToneRole, interval: number): number {
+  switch (role) {
+    case 'root':
+      return 0;
+    case 'third':
+      return interval === 2 ? 1 : interval === 5 ? 3 : 2;
+    case 'fifth':
+      return 4;
+    case 'seventh':
+      return 6;
+  }
+}
+
+const SCALE_DEGREES: readonly Degree[] = [1, 2, 3, 4, 5, 6, 7];
+
+/** The degree `steps` scale steps above `degree`, wrapping round the octave. */
+function stepDegree(degree: Degree, steps: number): Degree {
+  return at(SCALE_DEGREES, (degree - 1 + steps) % 7) as Degree;
+}
+
+/**
+ * The core tones of a chord (root, third or sus tones, fifth(s), seventh), root first, each
+ * spelled on a degree of the key: in C major V7 is 5 7 2 4, bVII is b7 2 4 and V/vi is 3 #5 7.
+ * Extensions and added tones are left out, and the inversion does not change the set.
+ */
+export function chordTones(chord: Chord, key: Key): ChordTone[] {
+  const s = chordStructure(chord);
+  const rootPc = chordRootPitchClass(chord, key);
+  const rootDegree =
+    chord.applied === undefined ? chord.degree : stepDegree(chord.applied.target, chord.degree - 1);
+  const slots: [ChordToneRole, number][] = [
+    ['root', 0],
+    ...s.thirds.map((i): [ChordToneRole, number] => ['third', i]),
+    ...s.fifths.map((i): [ChordToneRole, number] => ['fifth', i]),
+  ];
+  if (s.seventh !== undefined) slots.push(['seventh', s.seventh]);
+  return slots.map(([role, interval]) => {
+    const pitchClass = toPitchClass(rootPc + interval);
+    const degree = stepDegree(rootDegree, toneSteps(role, interval));
+    const accidental = toPitchClass(pitchClass - pitchClassOf(key, degree) + 6) - 6;
+    return { role, interval, pitchClass, degree, accidental };
+  });
+}
+
 /** Position on the circle of fifths of each major-scale degree, relative to the tonic. */
 const MAJOR_DEGREE_FIFTHS = [0, 2, 4, -1, 1, 3, 5] as const;
 

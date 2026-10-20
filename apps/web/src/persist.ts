@@ -67,6 +67,27 @@ export function saveBandOpen(storage: SongStorage | null, open: boolean): void {
   }
 }
 
+export const MELODY_TONES_KEY = 'crokychords.melodyChordTones';
+
+/** Whether the melody lane tints the chord-tone rows (default: on). */
+export function loadMelodyTones(storage: SongStorage | null): boolean {
+  if (storage === null) return true;
+  try {
+    return storage.getItem(MELODY_TONES_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function saveMelodyTones(storage: SongStorage | null, on: boolean): void {
+  if (storage === null) return;
+  try {
+    storage.setItem(MELODY_TONES_KEY, String(on));
+  } catch {
+    // A view preference: the tint just shows in its default state next time.
+  }
+}
+
 export const MASTER_KEY = 'crokychords.master';
 
 /** Master section: output protection and volume. A local listening setting, never in the song. */

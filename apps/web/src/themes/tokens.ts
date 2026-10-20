@@ -11,6 +11,8 @@ export const TOKEN_NAMES = [
   '--line-strong',
   '--rest-a',
   '--rest-b',
+  '--melody-chord-tone',
+  '--melody-chord-root',
   // Text
   '--text',
   '--muted',
