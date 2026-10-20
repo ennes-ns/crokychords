@@ -23,7 +23,7 @@ import {
 } from '../melody';
 import type { AppState, Store } from '../state';
 import type { GridLayout } from './grid';
-import { beatToRowPosition, gridLayout, xToBeat } from './grid';
+import { beatToRowPosition, gridLayout, placePlayhead, xToBeat } from './grid';
 
 export const HARMONY_CLASSES: Record<MelodyHarmony, string> = {
   chord: 'chord-tone',
@@ -150,6 +150,7 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
   let layout = melodyLayout(store.state.song);
   let tracks: HTMLElement[] = [];
   let last: unknown[] = [];
+  let lastHead: unknown[] = [];
 
   /** Beat and pitch under a pointer, snapped to the grid ('floor': the cell; 'round': a line). */
   const locate = (
@@ -396,8 +397,7 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
     const { row, fraction } = beatToRowPosition(state.cursor, layout);
     const track = tracks[Math.min(row, tracks.length - 1)];
     if (track === undefined) return;
-    if (playhead.parentElement !== track) track.append(playhead);
-    playhead.style.left = pct(row >= tracks.length ? 1 : fraction);
+    placePlayhead(playhead, track, row >= tracks.length ? 1 : fraction);
   };
 
   const render = (state: AppState): void => {
@@ -406,7 +406,19 @@ export function mountMelody(root: HTMLElement, store: Store, actions: Actions): 
       last = inputs;
       renderLane(state);
     }
-    renderHead(state);
+    // The head only changes with these inputs; skipping it keeps playback frames free of
+    // DOM writes that would force a layout (issue #61).
+    const headInputs = [
+      state.song,
+      state.focus,
+      state.melodyGrid,
+      state.melodyOctave,
+      state.melodyLength,
+    ];
+    if (!headInputs.every((value, i) => value === lastHead[i])) {
+      lastHead = headInputs;
+      renderHead(state);
+    }
     renderPlayhead(state);
   };
 

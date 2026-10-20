@@ -117,8 +117,8 @@ describe('styles.css', () => {
 });
 
 /**
- * Playback repaints the chord row every frame (the playhead moves by `left`), so the rules the
- * playhead passes over must stay cheap in every theme (issue #48). Per-frame-expensive effects
+ * The playhead moves by `transform` on its own composited layer (issue #61), but the rules it
+ * passes over must still stay cheap in every theme (issue #48). Per-frame-expensive effects
  * (backdrop filters, blur filters, large soft shadows) belong nowhere on this path.
  */
 describe('playback paint path', () => {
@@ -136,7 +136,10 @@ describe('playback paint path', () => {
 
   it('has no backdrop-filter, will-change or transitioned geometry on the chord row', () => {
     for (const { selector, body } of onPath) {
-      expect(body, selector).not.toMatch(/backdrop-filter|will-change/);
+      expect(body, selector).not.toMatch(/backdrop-filter/);
+      // Only the playhead gets its own layer, and only for transform (issue #61).
+      if (selector === '.playhead') expect(body).toMatch(/will-change:\s*transform;/);
+      else expect(body, selector).not.toMatch(/will-change/);
       expect(body, selector).not.toMatch(/transition:[^;]*\b(left|width|all)\b/);
     }
   });

@@ -272,8 +272,17 @@ describe('mountGrid', () => {
     const root = document.createElement('section');
     mountGrid(root, store, fakeActions());
     expect(root.querySelector('.playhead')).toBeNull();
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(801);
     store.set({ playing: true, cursor: 5 });
-    expect(root.querySelector<HTMLElement>('.playhead')?.style.left).toBe('31.25%');
+    const playhead = root.querySelector<HTMLElement>('.playhead');
+    // Moved by transform, never by left (issue #61); 5 of 16 beats on an 801px track.
+    expect(playhead?.style.left).toBe('');
+    expect(playhead?.style.transform).toBe('translateX(250.3125px)');
+    document.documentElement.dataset.theme = 'pixel';
+    store.set({ cursor: 5.001 });
+    expect(playhead?.style.transform).toBe('translateX(250px)');
+    delete document.documentElement.dataset.theme;
+    width.mockRestore();
     expect(root.querySelector('.chord.playing .token')?.textContent).toBe('V');
     store.set({ playing: false });
     expect(root.querySelector('.playhead')).toBeNull();
