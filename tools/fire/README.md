@@ -8,6 +8,7 @@ ports `fire.py`'s encoders to TypeScript.
 |---|---|
 | `fire.py` | Protocol helper: pad colour SysEx, OLED bitmap SysEx, button/encoder numbers, a port wrapper that opens only the Fire and clears it on close |
 | `demo.py` | Interactive prototype of the recommended v1 mapping (timeline rows 1–3, palette row 4, SELECT encoder suggestions, transport) |
+| `oled_font.py` | Rasterises the Pixel theme's font (Departure Mono, 7 x 11 cell) into `apps/web/src/midi/fire/font.ts` for the OLED |
 | `promo.py` | ~60 s animation (no input, no audio) for filming: title, I–V–vi–IV, playhead at 112 BPM, suggestion bars, blinking Croky, fade-out |
 
 ## Run
@@ -21,7 +22,15 @@ RUN="uv run --no-project --with mido --with python-rtmidi --with pillow python -
 $RUN tools/fire/demo.py --monitor --seconds 30   # print every pad/button/encoder event
 $RUN tools/fire/demo.py                          # interactive demo, Ctrl+C to quit
 $RUN tools/fire/promo.py                         # the animation
+$RUN tools/fire/fire.py --oled-fps 10 20 30 60   # OLED frame-rate measurement (Linux, 10 s per rate)
+$RUN tools/fire/fire.py --band-check             # partial OLED update test pattern (look at the screen)
+$RUN tools/fire/oled_font.py                     # regenerate the OLED font (needs --with fonttools --with brotli)
 ```
+
+The frame-rate measurement sends full OLED frames (pads and LEDs stay dark, no sound) at each rate
+and then as fast as the device drains them, reads the kernel's `Tx bytes` counter of the Fire's
+port in `/proc/asound/cardN/midi0`, and prints the frames sent, the largest backlog, how long the
+backlog took to drain and how many frames were dropped. The OLED is blanked afterwards.
 
 The scripts use the ALSA sequencer (Linux) or CoreMIDI, so other MIDI software can stay connected;
 they open only ports whose name contains `FIRE` and on exit turn every LED off and blank the OLED.

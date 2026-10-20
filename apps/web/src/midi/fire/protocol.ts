@@ -51,6 +51,8 @@ export const ROW_LED_DULL_RED = 1;
 export const ROW_LED_DULL_GREEN = 2;
 export const ROW_LED_RED = 3;
 export const ROW_LED_GREEN = 4;
+/** The four LEDs next to BANK (CHANNEL, MIXER, USER 1, USER 2): CC 0x1B, value 0x10 | mask. */
+export const CC_BANK_LEDS = 0x1b;
 /** CC 0x7F value 0: every LED off (pads and buttons). */
 export const CC_ALL_OFF = 0x7f;
 
@@ -105,6 +107,11 @@ export function ledCc(number: number, value: number): number[] {
   return [CONTROL_CHANGE, number & 0x7f, value & 0x7f];
 }
 
+/** BANK LEDs: bit 0 = LED 1 (CHANNEL) … bit 3 = LED 4 (USER 2). */
+export function bankLeds(mask: number): number[] {
+  return ledCc(CC_BANK_LEDS, 0x10 | (mask & 0x0f));
+}
+
 export function allLedsOff(): number[] {
   return ledCc(CC_ALL_OFF, 0);
 }
@@ -151,7 +158,6 @@ export function hueRgb(hue: number, light = 1, sat = 1): Rgb {
 
 export const OLED_W = 128;
 export const OLED_H = 64;
-const OLED_BYTES = 1171; // ceil(128 * 64 / 7)
 const BIT_MUTATE: readonly (readonly number[])[] = [
   [13, 19, 25, 31, 37, 43, 49],
   [0, 20, 26, 32, 38, 44, 50],
@@ -170,64 +176,34 @@ export function blankFrame(): OledFrame {
   return new Uint8Array(OLED_W * OLED_H);
 }
 
-/** SysEx that writes a full OLED frame (1182 bytes). */
-export function oledSysex(pixels: OledFrame): number[] {
-  const data = new Array<number>(OLED_BYTES).fill(0);
-  for (let y = 0; y < OLED_H; y++) {
+export const OLED_BANDS = 8;
+/** Rows per band: the unit of partial OLED updates. */
+export const BAND_ROWS = 8;
+
+/**
+ * SysEx that writes bands `first..last` (8 rows each, all 128 columns). The pixel packing
+ * restarts at `first`: column index = x + 128 * (band - first), as in `oled_bands_sysex`.
+ */
+export function oledBandsSysex(pixels: OledFrame, first: number, last: number): number[] {
+  const bands = last - first + 1;
+  const data = new Array<number>(Math.ceil((bands * OLED_W * BAND_ROWS) / 7)).fill(0);
+  for (let y = first * BAND_ROWS; y < (last + 1) * BAND_ROWS; y++) {
     const mutate = BIT_MUTATE[y % 8] ?? [];
     for (let x = 0; x < OLED_W; x++) {
       if (!pixels[y * OLED_W + x]) continue;
-      const col = x + OLED_W * Math.floor(y / 8);
+      const col = x + OLED_W * (Math.floor(y / BAND_ROWS) - first);
       const bit = mutate[col % 7] ?? 0;
       const at = Math.floor(col / 7) * 8 + Math.floor(bit / 7);
       data[at] = (data[at] ?? 0) | (1 << (bit % 7));
     }
   }
-  const payload = [0x00, 0x07, 0x00, 0x7f, ...data]; // bands 0..7, columns 0..127
+  const payload = [first, last, 0x00, 0x7f, ...data]; // bands first..last, columns 0..127
   return [...SYSEX_HEADER, CMD_OLED, ...len14(payload.length), ...payload, 0xf7];
 }
 
-/** 5x7 glyphs for the v1 splash only (the device has no font; a full font is v2). */
-const GLYPHS: Record<string, readonly string[]> = {
-  C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
-  D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
-  H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
-  K: ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
-  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
-  R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
-  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
-  Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
-};
-
-/** Draw `text` (glyphs above; others render as blanks) centred at row `y`, `scale`x size. */
-export function drawText(frame: OledFrame, text: string, y: number, scale: number): void {
-  const advance = 6 * scale;
-  const width = text.length * advance - scale;
-  const x0 = Math.max(0, Math.floor((OLED_W - width) / 2));
-  [...text].forEach((ch, k) => {
-    const glyph = GLYPHS[ch.toUpperCase()];
-    if (glyph === undefined) return;
-    glyph.forEach((line, gy) => {
-      [...line].forEach((cell, gx) => {
-        if (cell !== '#') return;
-        for (let dy = 0; dy < scale; dy++) {
-          for (let dx = 0; dx < scale; dx++) {
-            const px = x0 + k * advance + gx * scale + dx;
-            const py = y + gy * scale + dy;
-            if (px < OLED_W && py < OLED_H) frame[py * OLED_W + px] = 1;
-          }
-        }
-      });
-    });
-  });
-}
-
-/** The v1 OLED: a static "Croky Chords" title. */
-export function titleFrame(): OledFrame {
-  const frame = blankFrame();
-  drawText(frame, 'CROKY', 7, 3);
-  drawText(frame, 'CHORDS', 36, 3);
-  return frame;
+/** SysEx that writes a full OLED frame (1183 bytes). */
+export function oledSysex(pixels: OledFrame): number[] {
+  return oledBandsSysex(pixels, 0, OLED_BANDS - 1);
 }
 
 // --- Input -------------------------------------------------------------------------------------

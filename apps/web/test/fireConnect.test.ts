@@ -73,15 +73,28 @@ function setup(request: (() => Promise<FireAccessLike>) | null) {
   const store = new Store(initialState(song));
   const actions = createActions(store, new AudioEngine(), new MidiOut(null));
   const queue: (() => void)[] = [];
+  const clock = { now: 0, timers: [] as { at: number; fn: () => void }[] };
   const connection = new FireConnection(store, request, new FireController(store, actions), {
     schedule: (paint) => queue.push(paint),
+    now: () => clock.now,
+    delay: (fn, ms) => clock.timers.push({ at: clock.now + ms, fn }),
   });
   const flush = () => queue.splice(0).forEach((paint) => paint());
-  return { store, connection, queue, flush };
+  /** Advance the fake clock and run the timers that are due. */
+  const advance = (ms: number) => {
+    clock.now += ms;
+    const due = clock.timers.filter((t) => t.at <= clock.now);
+    clock.timers = clock.timers.filter((t) => t.at > clock.now);
+    due.forEach((t) => t.fn());
+  };
+  return { store, connection, queue, flush, advance, clock, actions };
 }
 
 const sysexPads = (m: number[]) => m[0] === 0xf0 && m[4] === 0x65;
 const padCount = (m: number[]) => (((m[5] ?? 0) << 7) | (m[6] ?? 0)) / 4;
+const sysexOled = (m: number[]) => m[0] === 0xf0 && m[4] === 0x0e;
+/** First and last band of an OLED SysEx. */
+const oledBands = (m: number[]) => [m[7], m[8]];
 
 describe('FireConnection', () => {
   it('says unsupported without Web MIDI and denied when SysEx is refused', async () => {
@@ -93,7 +106,7 @@ describe('FireConnection', () => {
     expect(b.store.state.fire.status).toBe('denied');
   });
 
-  it('waits for a Fire, then paints title, LEDs and all pads in one SysEx', async () => {
+  it('waits for a Fire, then paints the OLED, LEDs and all pads in one SysEx', async () => {
     const fake = fakeAccess();
     const { store, connection, flush, queue } = setup(() => Promise.resolve(fake.access));
     await connection.connect();
@@ -101,12 +114,14 @@ describe('FireConnection', () => {
     const { output } = fake.plug();
     expect(store.state.fire.status).toBe('connected');
     expect(output.sent[0]).toEqual([0xb0, 0x7f, 0]);
-    expect(output.sent[1]).toHaveLength(1183); // OLED title
     expect(queue).toHaveLength(1);
     flush();
     const pads = output.sent.filter(sysexPads);
     expect(pads).toHaveLength(1);
     expect(padCount(pads[0] ?? [])).toBe(64);
+    const oled = output.sent.filter(sysexOled);
+    expect(oled.map((m) => m.length)).toEqual([1183]); // one full frame
+    expect(output.sent).toContainEqual([0xb0, 0x1b, 0x11]); // BANK LED 1: Replace
     // The DAW port is untouched.
     expect(fake.outputs[0]?.sent).toEqual([]);
   });
@@ -159,5 +174,41 @@ describe('FireConnection', () => {
     store.set({ selected: 0 });
     flush();
     expect(output.sent).toEqual([]);
+  });
+
+  it('sends only the OLED bands that changed, at most 30 frames a second', async () => {
+    const fake = fakeAccess();
+    const { store, connection, flush, advance, clock } = setup(() => Promise.resolve(fake.access));
+    await connection.connect();
+    const { input, output } = fake.plug();
+    flush();
+    output.sent = [];
+    // BANK toggles Add mode: the badge in band 0 (and its descender rows in band 1) changes.
+    input.emit(0x90, 0x1a, 0x7f);
+    input.emit(0x80, 0x1a, 0);
+    expect(store.state.fire.mode).toBe('add');
+    flush();
+    // Within 1/30 s of the first frame: nothing yet, a timer sends it when the interval is over.
+    expect(output.sent.filter(sysexOled)).toEqual([]);
+    expect(output.sent).toContainEqual([0xb0, 0x1b, 0x12]); // BANK LED 2: Add
+    expect(clock.timers).toHaveLength(1);
+    advance(40);
+    const first = output.sent.filter(sysexOled);
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.every((m) => m.length < 1183)).toBe(true);
+    expect(first.map(oledBands)[0]?.[0]).toBe(0);
+    // Two changes inside one interval coalesce into one update with the latest state.
+    output.sent = [];
+    input.emit(0x90, 0x1a, 0x7f);
+    flush();
+    input.emit(0x90, 0x1a, 0x7f);
+    flush();
+    expect(store.state.fire.mode).toBe('add');
+    expect(output.sent.filter(sysexOled)).toEqual([]); // back where the device already is
+    advance(40);
+    expect(output.sent.filter(sysexOled)).toEqual([]);
+    // Nothing changed: nothing sent.
+    connection.paint();
+    expect(output.sent.filter(sysexOled)).toEqual([]);
   });
 });

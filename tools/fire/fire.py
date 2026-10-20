@@ -140,6 +140,27 @@ def blank() -> list[list[bool]]:
     return [[False] * OLED_W for _ in range(OLED_H)]
 
 
+def oled_bands_sysex(pixels: Sequence[Sequence[bool]], first: int, last: int) -> list[int]:
+    """SysEx that writes bands `first..last` (8 rows each), all 128 columns.
+
+    The packing restarts at the first band: column index = x + 128 * (band - first).
+    """
+    width = OLED_W
+    count = (last - first + 1) * width * 8
+    data = [0] * -(-count // 7)
+    for band in range(first, last + 1):
+        for y in range(band * 8, band * 8 + 8):
+            row = pixels[y]
+            for x in range(width):
+                if not row[x]:
+                    continue
+                col = x + width * (band - first)
+                bit = _BIT_MUTATE[y % 8][col % 7]
+                data[col // 7 * 8 + bit // 7] |= 1 << (bit % 7)
+    payload = [first, last, 0x00, 0x7F, *data]
+    return [*SYSEX_HEADER, CMD_OLED, *_len14(len(payload)), *payload, 0xF7]
+
+
 # --- Text on the OLED (Pillow, optional) ------------------------------------------------------
 
 
@@ -218,3 +239,133 @@ class Fire:
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+
+# --- OLED frame-rate measurement --------------------------------------------------------------
+#
+#     uv run --no-project --with mido --with python-rtmidi python -I tools/fire/fire.py --oled-fps
+#
+# Sends full OLED frames (moving stripes; pads and buttons stay dark, no sound) at each rate for at
+# most 10 s and reads the kernel's "Tx bytes" counter of the Fire's rawmidi port
+# (/proc/asound/cardN/midi0, Linux) to see how far the device lags behind. Bytes sent but never
+# transmitted were dropped: the ALSA sequencer drops a SysEx that does not fit in the port's
+# 4 KiB output buffer ("MIDI output buffer overrun").
+
+
+def _tx_counter() -> str | None:
+    """Path of the /proc file whose Output 0 counts bytes the Fire's port has transmitted."""
+    import glob
+
+    for path in sorted(glob.glob("/proc/asound/card*/midi0")):
+        with open(path) as f:
+            if PORT_MATCH in f.readline().upper():
+                return path
+    return None
+
+
+def _tx_bytes(path: str) -> int:
+    with open(path) as f:
+        for line in f:
+            if line.strip().startswith("Tx bytes"):
+                return int(line.split(":")[1])
+    return 0
+
+
+def _stripes(n: int) -> list[list[bool]]:
+    return [[(x + y + n * 3) % 16 < 4 for x in range(OLED_W)] for y in range(OLED_H)]
+
+
+def bench_oled(fire: Fire, fps: float | None, seconds: float, path: str) -> dict[str, float]:
+    """Send full frames at `fps` (None: as fast as the device drains them, one frame in flight)."""
+    import time
+
+    frames = [oled_sysex(_stripes(n)) for n in range(16)]
+    size = len(frames[0])
+    tx0 = _tx_bytes(path)
+    sent = 0
+    max_backlog = 0
+    n = 0
+    start = time.monotonic()
+    while True:
+        now = time.monotonic()
+        if now - start >= seconds:
+            break
+        backlog = sent - (_tx_bytes(path) - tx0)
+        max_backlog = max(max_backlog, backlog)
+        if fps is None:
+            if backlog > 0:
+                time.sleep(0.0005)
+                continue
+        else:
+            due = start + n / fps
+            if now < due:
+                time.sleep(min(0.002, due - now))
+                continue
+        fire.send(frames[n % len(frames)])
+        sent += size
+        n += 1
+    elapsed = time.monotonic() - start
+    # Let the device catch up (at most 3 s), then compare what went out with what was sent.
+    drain_start = time.monotonic()
+    while sent - (_tx_bytes(path) - tx0) > 0 and time.monotonic() - drain_start < 3:
+        time.sleep(0.001)
+    drain = time.monotonic() - drain_start
+    dropped = max(0, sent - (_tx_bytes(path) - tx0))
+    return {
+        "target": fps or 0.0,
+        "frames": n,
+        "fps": n / elapsed,
+        "max_backlog_frames": max_backlog / size,
+        "drain_ms": drain * 1000,
+        "dropped_frames": dropped / size,
+    }
+
+
+def band_check(fire: Fire, seconds: float = 8.0) -> None:
+    """Visual check of partial OLED updates: blank the screen, then send only bands 1, 3 and 5-6.
+
+    Correct packing shows clean vertical bars, 2 px wide every 8 px, in rows 8-15, 24-31 and 40-55
+    and nothing else; scrambled dots mean the device packs partial regions differently.
+    """
+    import time
+
+    fire.oled(blank())
+    bars = [[x % 8 < 2 for x in range(OLED_W)] for _ in range(OLED_H)]
+    for first, last in ((1, 1), (3, 3), (5, 6)):
+        fire.send(oled_bands_sysex(bars, first, last))
+    time.sleep(min(10.0, seconds))
+    fire.oled(blank())
+
+
+def _main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Akai Fire OLED frame-rate measurement")
+    ap.add_argument("--oled-fps", nargs="*", type=float, default=[10, 20, 30, 60])
+    ap.add_argument("--seconds", type=float, default=10.0)
+    ap.add_argument("--band-check", action="store_true", help="show the partial-update test pattern")
+    args = ap.parse_args()
+    if args.band_check:
+        with Fire() as fire:
+            band_check(fire, args.seconds)
+        return
+    path = _tx_counter()
+    if path is None:
+        raise SystemExit("No /proc/asound/card*/midi0 for the Fire (Linux only)")
+    seconds = min(10.0, args.seconds)
+    with Fire() as fire:
+        fire.clear()
+        for fps in [*args.oled_fps, None]:
+            r = bench_oled(fire, fps, seconds, path)
+            label = "max" if fps is None else f"{fps:g}"
+            print(
+                f"target {label:>4} fps: sent {r['frames']:4d} frames = {r['fps']:5.1f} fps, "
+                f"max backlog {r['max_backlog_frames']:4.1f} frames, drain {r['drain_ms']:6.1f} ms, "
+                f"dropped {r['dropped_frames']:.1f} frames",
+                flush=True,
+            )
+            fire.oled(blank())
+
+
+if __name__ == "__main__":
+    _main()

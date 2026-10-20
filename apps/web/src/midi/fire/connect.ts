@@ -1,8 +1,8 @@
 /**
  * Akai Fire connection: asks for Web MIDI with SysEx only when the user clicks "Connect Fire",
  * finds the Fire's ports by name, feeds its input to the controller, and paints the pads, LEDs
- * and OLED from the store. Repaints are diffed (only changed pads, in one SysEx) and coalesced
- * to one per animation frame. The device is cleared on disconnect and page hide, and the
+ * and OLED from the store. Repaints are diffed (only changed pads, in one SysEx; only changed
+ * OLED bands) and coalesced to one per animation frame; the OLED is capped at OLED_MAX_FPS. The device is cleared on disconnect and page hide, and the
  * connection re-attaches when the Fire is plugged in again (statechange).
  *
  * This is a second MIDIAccess next to `MidiOut` (the DAW output without SysEx); the two use
@@ -12,7 +12,8 @@ import type { FireStatus, Store } from '../../state';
 import type { MidiOutputLike } from '../webmidi';
 import type { FireController } from './controller';
 import { buttonLeds, followScroll } from './controller';
-import type { Rgb } from './protocol';
+import { OLED_MAX_FPS, oledModel, oledUpdates, renderOled } from './oled';
+import type { OledFrame, Rgb } from './protocol';
 import {
   PAD_COUNT,
   PORT_MATCH,
@@ -22,7 +23,6 @@ import {
   ledCc,
   oledSysex,
   padsSysex,
-  titleFrame,
 } from './protocol';
 import { renderPads } from './view';
 
@@ -74,18 +74,34 @@ function firstFirePort<T extends { readonly name: string | null; readonly state?
 export interface FireConnectionOptions {
   /** Schedules a repaint (requestAnimationFrame in the browser). */
   schedule?: (paint: () => void) => void;
+  /** Milliseconds clock for the OLED rate cap (performance.now in the browser). */
+  now?: () => number;
+  /** Runs `fn` after `ms` milliseconds (setTimeout in the browser). */
+  delay?: (fn: () => void, ms: number) => void;
 }
+
+/** Shortest time between two OLED updates. */
+const OLED_INTERVAL_MS = 1000 / OLED_MAX_FPS;
 
 export class FireConnection {
   readonly #store: Store;
   readonly #request: RequestFireAccess | null;
   readonly #schedule: (paint: () => void) => void;
+  readonly #now: () => number;
+  readonly #delay: (fn: () => void, ms: number) => void;
   readonly controller: FireController;
   #access: FireAccessLike | null = null;
   #input: FireInputLike | null = null;
   #output: MidiOutputLike | null = null;
   #pads: Rgb[] | null = null;
   #leds = new Map<number, number>();
+  /** The frame on the device (null: unknown, send a full frame next). */
+  #oled: OledFrame | null = null;
+  /** The frame to show, waiting for the rate cap. */
+  #oledNext: OledFrame | null = null;
+  #oledKey: string | null = null;
+  #oledAt = -Infinity;
+  #oledTimer = false;
   #queued = false;
   #wanted = false;
   #unsubscribe: (() => void) | null = null;
@@ -117,6 +133,8 @@ export class FireConnection {
         if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => paint());
         else setTimeout(paint, 0);
       });
+    this.#now = options.now ?? (() => performance.now());
+    this.#delay = options.delay ?? ((fn, ms) => setTimeout(fn, ms));
   }
 
   /** Ask for SysEx access (call from the "Connect Fire" click) and attach to the Fire. */
@@ -154,14 +172,13 @@ export class FireConnection {
   /** Page hidden or unloading: leave the device dark (it keeps the last frame otherwise). */
   suspend(): void {
     if (this.#output !== null) this.#clear(this.#output);
-    this.#pads = null;
-    this.#leds.clear();
+    this.#forget();
   }
 
   /** Page shown again (back/forward cache): repaint everything. */
   resume(): void {
     if (this.#output === null) return;
-    this.#send(oledSysex(titleFrame()));
+    this.#forget();
     this.#requestPaint();
   }
 
@@ -192,7 +209,6 @@ export class FireConnection {
     input.addEventListener('midimessage', this.#onMessage);
     void input.open?.().catch(() => undefined);
     this.#send(allLedsOff());
-    this.#send(oledSysex(titleFrame()));
     this.#setStatus('connected');
     this.#requestPaint();
   }
@@ -204,9 +220,17 @@ export class FireConnection {
     if (clear && output !== null && output.state !== 'disconnected') this.#clear(output);
     this.#input = null;
     this.#output = null;
+    this.#forget();
+    this.controller.reset();
+  }
+
+  /** Forget what the device shows, so the next paint sends everything. */
+  #forget(): void {
     this.#pads = null;
     this.#leds.clear();
-    this.controller.reset();
+    this.#oled = null;
+    this.#oledNext = null;
+    this.#oledKey = null;
   }
 
   #clear(output: MidiOutputLike): void {
@@ -252,6 +276,35 @@ export class FireConnection {
       this.#leds.set(cc, value);
       this.#send(ledCc(cc, value));
     }
+    const model = oledModel(state, this.controller.suggestions(state), this.controller.touched);
+    const key = JSON.stringify(model);
+    if (key !== this.#oledKey) {
+      this.#oledKey = key;
+      this.#oledNext = renderOled(model);
+    }
+    this.#flushOled();
+  }
+
+  /** Send the pending OLED frame (changed bands only), at most OLED_MAX_FPS times a second. */
+  #flushOled(): void {
+    const next = this.#oledNext;
+    if (next === null || this.#output === null) return;
+    const wait = this.#oledAt + OLED_INTERVAL_MS - this.#now();
+    if (wait > 0) {
+      if (!this.#oledTimer) {
+        this.#oledTimer = true;
+        this.#delay(() => {
+          this.#oledTimer = false;
+          this.#flushOled();
+        }, wait);
+      }
+      return;
+    }
+    this.#oledNext = null;
+    const updates = oledUpdates(this.#oled, next);
+    for (const message of updates) this.#send(message);
+    this.#oled = next;
+    if (updates.length > 0) this.#oledAt = this.#now();
   }
 
   #send(data: number[]): void {
