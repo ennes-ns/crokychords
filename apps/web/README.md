@@ -20,6 +20,11 @@ empty song in the same key (undoable). Audio starts after the first click or key
 (browsers block sound before a user gesture). Web MIDI works in Chrome, Edge and Opera, and in
 Firefox after its site-permission prompt; Safari has no Web MIDI.
 
+Cloud sync of saved progressions (`docs/specs/sync-v1.md`) is off unless the build sets
+`VITE_SYNC=on`; the API base defaults to same-origin `/api` and can be changed with
+`VITE_SYNC_API`. A small status next to **+ New** shows synced / syncing / offline / error /
+sign in.
+
 ## Keyboard shortcuts
 
 | Key | Action |

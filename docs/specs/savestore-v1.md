@@ -76,22 +76,13 @@ Implementations in `apps/web/src/store/`:
 - **The editor never discards edits.** When an autosave hits a conflict (another tab or device saved
   first), the editor saves its song as a new record (fresh `id`, `version: 1`, title suffixed with
   `" (copy)"`) and continues editing that copy. Both versions survive; the user deletes one.
-- `delete(id)` is unconditional in v1 (last delete wins). Sync of deletes is part of #11.
+- `delete(id)` is unconditional in v1 (last delete wins). Remote deletes sync through tombstones (`sync-v1.md`).
 
 ## Sync
 
-`SyncClient` is the seam for the cloud:
-
-```ts
-interface SyncClient {
-  push(record: SaveRecord): Promise<SyncResult>; // send one local record
-  pull(since: string | null): Promise<SaveRecord[]>; // records changed after `since` (updated_at)
-}
-type SyncResult = { status: 'ok' } | { status: 'conflict'; remote: SaveRecord } | { status: 'offline' };
-```
-
-v1 ships only `NoopSyncClient` (`push` answers `offline`, `pull` returns `[]`); the editor does not
-call it yet. The remote implementation and when to push/pull belong to issue #11.
+`SyncClient` is the seam for the cloud. v1 of this spec shipped only a no-op client; the remote
+client, the interface it settled on (`list`/`get`/`push`/`remove`), when to push and pull,
+conflicts and tombstones are specified in `sync-v1.md` (issue #16). The record format is unchanged.
 
 ## Editor wiring
 
@@ -109,6 +100,5 @@ call it yet. The remote implementation and when to push/pull belong to issue #11
 
 ## Out of scope (follow-ups)
 
-- Remote `SyncClient` against the Worker API, push/pull scheduling and merge of remote changes (#11).
-- Tombstones for deletes so they sync.
+- Remote `SyncClient`, push/pull scheduling and tombstones: done in `sync-v1.md` (#16).
 - Search and sorting options in the panel; duplicate/export from the panel.

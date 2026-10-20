@@ -21,7 +21,7 @@ import {
   memoryTable,
   storedVersion,
 } from '../src/store/saveStore';
-import { NoopSyncClient } from '../src/store/sync';
+import { NoopSyncClient, SyncError } from '../src/store/sync';
 import { FakeIndexedDb } from './fakeIndexedDb';
 
 function rec(id: string, version: number, minute = 0, title = id): SaveRecord {
@@ -241,7 +241,9 @@ describe('openSaveStore', () => {
 describe('NoopSyncClient', () => {
   it('is always offline', async () => {
     const sync = new NoopSyncClient();
-    expect(await sync.push(rec('a', 1))).toEqual({ status: 'offline' });
-    expect(await sync.pull(null)).toEqual([]);
+    await expect(sync.list()).rejects.toMatchObject({ kind: 'offline' });
+    await expect(sync.get('a')).rejects.toBeInstanceOf(SyncError);
+    await expect(sync.push(rec('a', 1), 0)).rejects.toMatchObject({ kind: 'offline' });
+    await expect(sync.remove('a', 1)).rejects.toMatchObject({ kind: 'offline' });
   });
 });

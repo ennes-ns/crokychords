@@ -21,6 +21,8 @@ export interface SavesViewOptions {
   /** Asks before deleting; window.confirm in the app. */
   confirm?: (message: string) => boolean;
   now?: () => Date;
+  /** Shown in the header next to "+ New" (the sync status, when sync is on). */
+  status?: HTMLElement;
 }
 
 export function mountSaves(
@@ -39,7 +41,12 @@ export function mountSaves(
   newButton.onclick = () => run(session.newSong());
   const listEl = h('ul', { class: 'saves-list', attrs: { 'aria-label': 'Saved progressions' } });
   root.append(
-    h('header', { class: 'panel-head' }, h('h2', {}, 'Saved progressions'), newButton),
+    h(
+      'header',
+      { class: 'panel-head' },
+      h('h2', {}, 'Saved progressions'),
+      h('span', { class: 'saves-actions' }, options.status, newButton),
+    ),
     listEl,
   );
 

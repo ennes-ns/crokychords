@@ -10,7 +10,13 @@ import { browserStorage } from './persist';
 import { Store, initialState } from './state';
 import { browserIndexedDb } from './store/indexedDb';
 import { browserLocalStorage, openSaveStore } from './store/open';
+import type { SaveStore } from './store/saveStore';
 import { SaveSession } from './store/session';
+import { syncConfig } from './sync/config';
+import { SyncEngine, bindSyncEvents } from './sync/engine';
+import { HttpSyncClient } from './sync/http';
+import { openSyncState } from './sync/state';
+import { syncStatusView } from './sync/statusView';
 import { mountBand } from './views/band';
 import { mountChordEditor } from './views/chordEditor';
 import { mountGrid } from './views/grid';
@@ -18,13 +24,44 @@ import { mountSaves } from './views/saves';
 import { mountSuggest } from './views/suggest';
 import { mountToolbar } from './views/toolbar';
 
+/** The sync engine when the build enables sync (docs/specs/sync-v1.md), else null. */
+async function startSync(local: SaveStore): Promise<SyncEngine | null> {
+  const config = syncConfig(import.meta.env);
+  if (!config.enabled) return null;
+  // Web Locks keep two tabs from running a cycle at the same time (not in every browser).
+  const locks = 'locks' in navigator ? navigator.locks : null;
+  return new SyncEngine({
+    client: new HttpSyncClient({
+      baseUrl: config.baseUrl,
+      fetch: (url, init) => fetch(url, init),
+      online: () => navigator.onLine,
+    }),
+    local,
+    state: await openSyncState(browserIndexedDb(), browserLocalStorage()),
+    online: () => navigator.onLine,
+    ...(locks !== null
+      ? {
+          withLock: async (run: () => Promise<void>) => {
+            await locks.request('crokychords-sync', run);
+          },
+        }
+      : {}),
+  });
+}
+
 async function boot(app: HTMLElement): Promise<void> {
   const storage = browserStorage();
   const store = new Store(initialState(createSong()));
-  const saves = await openSaveStore(browserIndexedDb(), browserLocalStorage());
-  const session = new SaveSession(store, { saves, storage });
+  const local = await openSaveStore(browserIndexedDb(), browserLocalStorage());
+  const engine = await startSync(local);
+  const session = new SaveSession(store, { saves: engine?.wrap() ?? local, storage });
+  engine?.onRemoteChange((id, copyId) => session.remoteChanged(id, copyId));
   await session.start();
   window.addEventListener('pagehide', () => void session.flush());
+  if (engine !== null) {
+    bindSyncEvents(engine, window);
+    void engine.start();
+  }
 
   const audio = new AudioEngine(storage);
   const midi = new MidiOut(browserMidiAccess());
@@ -56,7 +93,7 @@ async function boot(app: HTMLElement): Promise<void> {
   mountChordEditor(editor, store, actions);
   mountBand(band, store, actions, storage, audio.sound);
   mountSuggest(suggest, store, actions);
-  mountSaves(savesPanel, session);
+  mountSaves(savesPanel, session, engine === null ? {} : { status: syncStatusView(engine) });
 
   // Browsers only start audio from a user gesture: the first click or key press does it.
   const unlock = (): void => {
