@@ -48,10 +48,34 @@ Regenerate with `ffmpeg -i <preview.mp3> -ac 1 -ar 44100 -af atrim=end_sample=15
 s16 -compression_level 12 pseudoamen-141.flac`. A user's own break ("Use my own break") is stored
 only in that browser's IndexedDB, never in git or the build.
 
+## SoundFonts
+
+The browser instruments of `docs/specs/soundfonts-v1.md` play samples that are downloaded at
+build time, never committed:
+
+| What | Value |
+|------|-------|
+| Source | MIDI.js soundfonts (`https://github.com/gleitz/midi-js-soundfonts`), folder `FluidR3_GM/`, files `<instrument>-ogg.js` |
+| Pinned commit | `044fab8e1456bfafc5776e86dfd6bb8697149aef` |
+| Licence | The repository's `LICENSE.txt` is MIT (copyright 2012 Benjamin Gleitzman); its README states the rendered Fluid soundfont is released under Creative Commons Attribution 3.0. The source SoundFont `FluidR3_GM.sf2` (Frank Wen) is distributed under MIT. `LICENSE.txt` and a `NOTICE.txt` with this attribution ship next to the samples. |
+| Instruments | Acoustic Grand Piano, Bright Acoustic Piano, Electric Piano 1, Harpsichord, Vibraphone, Church Organ, Acoustic Guitar (nylon), Acoustic Bass, Electric Bass (finger), Synth Bass 1, Pizzicato Strings, String Ensemble 1, Choir Aahs, Clarinet, Flute |
+| Notes | Every third semitone from A0 to C8 (30 per instrument; 26 or 22 where the source is silent at the top), Ogg Vorbis unpacked byte for byte from the base64 data |
+| Size | 9.53 MB in total, 0.45–0.84 MB per instrument, 428 files (budget: 12 MB, 1 MB each) |
+
+- `node tools/soundfonts/fetch.mjs` downloads the source files into a fresh temporary
+  directory, checks them and every extracted note against `tools/soundfonts/manifest.json`
+  (SHA-256 and size), and writes `apps/web/public/soundfonts/` (git-ignored). It is idempotent:
+  a second run finds everything verified and touches nothing. `--check` verifies only.
+- CI fetches before `pnpm check`, the deploy before `pnpm build`; the production build ships
+  the folder (`SHIPPED_PUBLIC_TREES` in `apps/web/vite.config.ts`).
+- Changing the commit, the instrument list or the note rule: edit the manifest's instrument
+  entries (name, program, top note) and run `fetch.mjs --write-manifest --downloads <new dir>`,
+  then update the catalogue in `apps/web/src/audio/instruments.ts` and `SOUNDFONT_VERSION`.
+
 ## Licensing
 
 The code is MIT (`LICENSE`). Suggestion data derived from Chordonomicon (CC BY-NC 4.0):
-attribution required, non-commercial.
+attribution required, non-commercial. SoundFont samples: see "SoundFonts" above.
 
 ## Token mapping caveats
 

@@ -6,7 +6,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SHIPPED_PUBLIC_DIRS, SHIPPED_PUBLIC_FILES } from '../vite.config';
+import {
+  SHIPPED_PUBLIC_DIRS,
+  SHIPPED_PUBLIC_FILES,
+  SHIPPED_PUBLIC_TREES,
+  listTree,
+} from '../vite.config';
 
 const webRoot = fileURLToPath(new URL('..', import.meta.url));
 const outDir = mkdtempSync(join(tmpdir(), 'crokychords-web-build-'));
@@ -41,6 +46,18 @@ describe('vite build', () => {
     }
     for (const file of SHIPPED_PUBLIC_FILES) {
       expect(existsSync(join(outDir, file)), file).toBe(true);
+    }
+  });
+
+  it('ships the fetched SoundFont samples and their licence when present', () => {
+    for (const tree of SHIPPED_PUBLIC_TREES) {
+      const dir = join(webRoot, 'public', tree);
+      if (!existsSync(dir)) continue;
+      const files = listTree(dir);
+      expect(files).toContain('LICENSE.txt');
+      expect(files).toContain('NOTICE.txt');
+      expect(files).toContain('acoustic_grand_piano/C4.ogg');
+      for (const file of files) expect(existsSync(join(outDir, tree, file)), file).toBe(true);
     }
   });
 

@@ -47,6 +47,17 @@ describe('one Worker for the web app and the API', () => {
     expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
   });
 
+  it('serves SoundFont samples with a long immutable cache, ignoring the version query', async () => {
+    const res = await SELF.fetch('https://chords.example.test/soundfonts/flute/C4.ogg?v=0123abcd');
+    expect(res.status).toBe(200);
+    expect(new TextDecoder().decode(await res.arrayBuffer())).toBe('soundfont fixture\n');
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    // The page-wide security headers still apply.
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    const page = await SELF.fetch('https://chords.example.test/');
+    expect(page.headers.get('Cache-Control') ?? '').not.toContain('immutable');
+  });
+
   it('never serves the _headers file itself', async () => {
     const res = await SELF.fetch('https://chords.example.test/_headers');
     expect(await res.text()).not.toContain('Content-Security-Policy');

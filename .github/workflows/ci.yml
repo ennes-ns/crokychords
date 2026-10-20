@@ -21,7 +21,19 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # SoundFont samples (docs/specs/soundfonts-v1.md §3): cached per manifest; the fetch verifies
+      # every checksum (and downloads only what the cache lacks), so the build and the tests that
+      # decode the shipped files run with them.
+      - uses: actions/cache@v4
+        with:
+          path: apps/web/public/soundfonts
+          key: soundfonts-${{ hashFiles('tools/soundfonts/manifest.json') }}
+      - run: node tools/soundfonts/fetch.mjs
       - run: pnpm check
+      - name: Work tree stays clean (samples and builds are git-ignored)
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)" || { echo "::error::files changed or untracked after the check"; exit 1; }
 
   python:
     name: data tests

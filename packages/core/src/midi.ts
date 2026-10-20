@@ -1,5 +1,6 @@
 import type { VoicingOptions } from './chords';
 import { voiceChord } from './chords';
+import { MELODY_TRACK_ID } from './melody';
 import type { Song } from './progression';
 import { songKey, totalBeats } from './progression';
 import { renderMelody, renderTrack } from './render';
@@ -30,6 +31,11 @@ export interface MidiOptions {
   trackName?: string;
   /** Also write muted tracks (format 1), default false. */
   includeMuted?: boolean;
+  /**
+   * General MIDI program (0-127) per track id, or `MELODY_TRACK_ID` for the melody (format 1):
+   * the track gets a Program Change at tick 0. Tracks without an entry get none.
+   */
+  programs?: Readonly<Record<string, number>>;
 }
 
 const NOTE_OFF_VELOCITY = 64;
@@ -173,9 +179,10 @@ function noteEvents(
  *
  * - Song with `tracks` (schema 2): format 1. Track 0 is the conductor (name, tempo, time and
  *   key signature); then one track per unmuted track (all with `opts.includeMuted`) in song
- *   order, each with a track name, a MIDI channel prefix and the events of renderTrack on
- *   the track's channel. Then, when the melody has notes and is unmuted (or
- *   `opts.includeMuted`), a track named 'Melody' with renderMelody's events on its channel.
+ *   order, each with a track name, a MIDI channel prefix, a Program Change when
+ *   `opts.programs` names the track, and the events of renderTrack on the track's channel.
+ *   Then, when the melody has notes and is unmuted (or `opts.includeMuted`), a track named
+ *   'Melody' with renderMelody's events on its channel (and `opts.programs.melody`).
  * - Song without `tracks` (schema 1): format 0, one track, every chord voiced with
  *   voiceChord and held for `beats * gate`.
  */
@@ -220,12 +227,14 @@ function multiTrackMidi(
   for (const track of tracks) {
     if (track.muted && !includeMuted) continue;
     const events = renderTrack(song, track, { includeMuted: true });
-    chunks.push(eventTrack(track.name, track.channel, events, ppq, end));
+    const program = opts.programs?.[track.id];
+    chunks.push(eventTrack(track.name, track.channel, events, ppq, end, program));
   }
   const melody = song.melody;
   if (melody !== undefined && melody.notes.length > 0 && (!melody.muted || includeMuted)) {
     const events = renderMelody(song, { includeMuted: true });
-    chunks.push(eventTrack(MELODY_TRACK_NAME, melody.channel, events, ppq, end));
+    const program = opts.programs?.[MELODY_TRACK_ID];
+    chunks.push(eventTrack(MELODY_TRACK_NAME, melody.channel, events, ppq, end, program));
   }
   return smf(1, ppq, chunks);
 }
@@ -233,17 +242,22 @@ function multiTrackMidi(
 /** Name of the melody track in the exported file. */
 export const MELODY_TRACK_NAME = 'Melody';
 
-/** Track chunk body: name, channel prefix and the note events on `channel`. */
+/**
+ * Track chunk body: name, channel prefix, an optional Program Change at tick 0 and the note
+ * events on `channel`.
+ */
 function eventTrack(
   trackName: string,
   trackChannel: number,
   notes: readonly NoteEvent[],
   ppq: number,
   end: number,
+  program?: number,
 ): number[] {
   const channel = checkInt('track.channel', trackChannel, 0, 15);
   const name = utf8(trackName);
   const head = [0, 0xff, 0x03, ...encodeVlq(name.length), ...name, 0, 0xff, 0x20, 0x01, channel];
+  if (program !== undefined) head.push(0, 0xc0 | channel, checkInt('program', program, 0, 127));
   const events: TimedEvent[] = [];
   for (const e of notes) {
     const velocity = checkInt('track.velocity', e.velocity, 1, 127);

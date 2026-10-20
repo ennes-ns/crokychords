@@ -1,12 +1,15 @@
 /**
- * Web Audio poly synth for the built-in instruments (piano, pad, bass, lead) and the drum kit. The
- * current sound preset picks the instrument per track role; every track gets its own gain bus
- * into the master bus (mix → gentle compressor → master gain → limiter / soft clip / bypass →
- * volume); piano voices also send into a shared room. Graph construction lives in `graph.ts`
- * and `piano.ts` and works on an injected `SynthContext`. Instruments with a voice budget steal
- * their oldest voice when it is full.
+ * Web Audio poly synth for the built-in instruments (piano, pad, bass, lead), the SoundFont
+ * instruments and the drum kit. The sound settings pick the instrument per track (the preset's
+ * choice for its role unless the track has its own); a SoundFont instrument plays its synth
+ * stand-in until its samples are loaded. Every track gets its own gain bus into the master bus
+ * (mix → gentle compressor → master gain → limiter / soft clip / bypass → volume); piano and
+ * sample voices also send into a shared room. Graph construction lives in `graph.ts`,
+ * `piano.ts` and `soundfont.ts` and works on an injected `SynthContext`. Instruments with a
+ * voice budget, and the sample voices together, steal their oldest voice when full.
  */
 import type { TrackRole } from '@crokychords/core';
+import { MELODY_TRACK_ID, TRACK_ROLES } from '@crokychords/core';
 import type { MasterState } from '../persist';
 import { MasterSettings, defaultMaster } from '../persist';
 import type {
@@ -29,10 +32,32 @@ import {
   setMasterMode,
   setMasterVolume,
 } from './graph';
-import type { Drum, Instrument, InstrumentId, SoundPresetId } from './instruments';
-import { DEFAULT_SOUND_PRESET, instrumentFor, leadFor } from './instruments';
-import type { SoundStorage } from './sound';
+import type {
+  Drum,
+  Instrument,
+  InstrumentId,
+  SoundPresetId,
+  SoundfontId,
+  SoundfontInstrument,
+  SynthId,
+} from './instruments';
+import {
+  DEFAULT_SOUND_PRESET,
+  instrumentFor,
+  presetChoice,
+  presetInstrument,
+  soundfont,
+} from './instruments';
+import type { SoundStorage, TrackVoice } from './sound';
 import { SoundSettings } from './sound';
+import type { SampleCacheStorage, SampleFetch, SampleSet, SampleSource } from './soundfont';
+import {
+  SAMPLE_ATTACK,
+  SAMPLE_VOICES,
+  SoundfontBank,
+  buildSampleVoice,
+  sampleGain,
+} from './soundfont';
 import { buildPianoVoice } from './piano';
 
 export { midiToFrequency } from './instruments';
@@ -51,14 +76,21 @@ export interface NoteHandle {
 }
 
 export interface NoteOptions {
-  /** Track role; the current sound preset maps it to an instrument. Default 'chords'. */
+  /** Track role; with the track id it picks the instrument. Default 'chords'. */
   role?: TrackRole;
-  /** Play this instrument instead of the preset's choice for the role. */
+  /** Play this synth instrument instead of the track's choice. */
   instrument?: Instrument;
   /** MIDI velocity 1-127, default 96. */
   velocity?: number;
-  /** Track id: the gain bus the note goes through (default 'default'). */
+  /** Track id: the gain bus the note goes through (default 'default'); 'melody' is the lane. */
   track?: string;
+}
+
+export interface SynthOptions {
+  /** What plays a track (`role` null for the melody); default: the preset's choice. */
+  voice?: (track: string, role: TrackRole | null) => TrackVoice;
+  /** Decoded SoundFont samples; without them SoundFont instruments play their stand-ins. */
+  samples?: SampleSource | null;
 }
 
 interface Voice {
@@ -69,14 +101,20 @@ interface Voice {
   end: number;
   release: number;
   track: string;
-  /** Instrument of an instrument voice (absent for drums). */
-  instrument?: InstrumentId;
+  /** Instrument of a synth voice (absent for drums and samples). */
+  instrument?: SynthId;
+  /** True for a SoundFont sample voice (they share one voice budget). */
+  sample?: boolean;
+  /** Level held after the attack (sample voices): the release fades from it. */
+  hold?: number;
 }
 
 export class Synth {
   readonly #ctx: SynthContext;
   readonly #master: MasterBus;
   readonly #preset: () => SoundPresetId;
+  readonly #resolve: (track: string, role: TrackRole | null) => TrackVoice;
+  readonly #samples: SampleSource | null;
   readonly #buses = new Map<string, GainLike>();
   #voices = new Set<Voice>();
   #noise: BufferLike | null = null;
@@ -87,16 +125,22 @@ export class Synth {
   #userMode: MasterMode;
 
   /**
-   * `preset` is read on every note, so a preset change applies to the next note; `master` is
-   * the initial master mode and volume (later changes through `setMasterMode`/`setMasterVolume`).
+   * `preset` and `options.voice` are read on every note, so a change applies to the next note;
+   * `master` is the initial master mode and volume (later changes through
+   * `setMasterMode`/`setMasterVolume`).
    */
   constructor(
     ctx: SynthContext,
     preset: () => SoundPresetId = () => DEFAULT_SOUND_PRESET,
     master: MasterState = defaultMaster(),
+    options: SynthOptions = {},
   ) {
     this.#ctx = ctx;
     this.#preset = preset;
+    this.#resolve =
+      options.voice ??
+      ((_track, role) => ({ instrument: presetChoice(this.#preset(), role), transpose: 0 }));
+    this.#samples = options.samples ?? null;
     this.#master = buildMasterBus(ctx, master.mode, master.volume);
     this.#userMode = master.mode;
   }
@@ -134,14 +178,14 @@ export class Synth {
     return this.#voices.size;
   }
 
-  /** The instrument a track of `role` plays with the current preset. */
+  /** The synth recipe a track of `role` plays (or stands in with) under the current preset. */
   instrumentFor(role: TrackRole): Instrument {
     return instrumentFor(this.#preset(), role);
   }
 
-  /** The instrument of the melody lane with the current preset. */
+  /** The synth recipe of the melody lane's instrument (its stand-in for a SoundFont). */
   leadInstrument(): Instrument {
-    return leadFor(this.#preset());
+    return presetInstrument(this.#preset(), this.#resolve(MELODY_TRACK_ID, null).instrument);
   }
 
   /** Play one MIDI note from `time` (AudioContext seconds) for `duration` seconds. */
@@ -241,15 +285,92 @@ export class Synth {
 
   #voice(note: number, time: number, duration: number, opts: NoteOptions): Voice {
     this.#prune();
-    const instrument = opts.instrument ?? this.instrumentFor(opts.role ?? 'chords');
     const track = opts.track ?? 'default';
     const start = Math.max(time, this.#ctx.currentTime);
+    const explicit = opts.instrument;
+    if (explicit !== undefined) {
+      return this.#synthVoice(explicit, note, opts.velocity ?? 96, start, duration, track);
+    }
+    const role = track === MELODY_TRACK_ID ? null : (opts.role ?? 'chords');
+    const choice = this.#resolve(track, role);
+    const pitch = Math.min(127, Math.max(0, note + choice.transpose));
+    const velocity = choice.velocity ?? opts.velocity ?? 96;
+    const font = soundfont(choice.instrument);
+    if (font !== undefined) {
+      const set = this.#samples?.samples(font.id) ?? null;
+      if (set !== null)
+        return this.#sampleVoice(font, set, pitch, velocity, start, duration, track);
+      // Not loaded yet: ask for it and play the stand-in meanwhile.
+      this.#samples?.load(font.id);
+    }
+    const instrument = presetInstrument(this.#preset(), choice.instrument);
+    return this.#synthVoice(instrument, pitch, velocity, start, duration, track);
+  }
+
+  #synthVoice(
+    instrument: Instrument,
+    note: number,
+    velocity: number,
+    start: number,
+    duration: number,
+    track: string,
+  ): Voice {
     this.#steal(instrument, start);
-    const nodes = this.#build(instrument, note, opts.velocity ?? 96, start, this.#bus(track));
+    const nodes = this.#build(instrument, note, velocity, start, this.#bus(track));
     const voice: Voice = { ...nodes, start, end: Infinity, track, instrument: instrument.id };
     this.#voices.add(voice);
     this.#release(voice, start + Math.max(duration, instrument.attack));
     return voice;
+  }
+
+  #sampleVoice(
+    font: SoundfontInstrument,
+    set: SampleSet,
+    note: number,
+    velocity: number,
+    start: number,
+    duration: number,
+    track: string,
+  ): Voice {
+    this.#stealSamples(start);
+    const out = this.#bus(track);
+    const nodes = buildSampleVoice(
+      this.#ctx,
+      font,
+      set,
+      note,
+      velocity,
+      start,
+      out,
+      this.#roomBus(),
+    );
+    const { gain, sources, release } = nodes;
+    const hold = sampleGain(font, velocity);
+    const voice: Voice = {
+      gain,
+      sources,
+      release,
+      start,
+      end: Infinity,
+      track,
+      sample: true,
+      hold,
+    };
+    this.#voices.add(voice);
+    this.#release(voice, start + Math.max(duration, SAMPLE_ATTACK));
+    // A sample shorter than the note ends on its own.
+    voice.end = Math.min(voice.end, start + nodes.length);
+    return voice;
+  }
+
+  /** Keep the sample voices under SAMPLE_VOICES at `start`: release the oldest early. */
+  #stealSamples(start: number): void {
+    const sounding = [...this.#voices]
+      .filter((v) => v.sample === true && v.end > start)
+      .sort((a, b) => a.start - b.start);
+    for (const voice of sounding.slice(0, Math.max(0, sounding.length - SAMPLE_VOICES + 1))) {
+      this.#release(voice, start, STEAL_RELEASE);
+    }
   }
 
   /** Start the release at `time`; only ever moves the release earlier. */
@@ -265,6 +386,8 @@ export class Synth {
       g.setValueAtTime(0, at);
       stopAt = at;
     } else {
+      // Anchor the fade at the held level (some engines mis-handle a target after a ramp).
+      if (voice.hold !== undefined) g.setValueAtTime(voice.hold, at);
       g.setTargetAtTime(0, at, release / 4);
     }
     for (const source of voice.sources) {
@@ -277,26 +400,69 @@ export class Synth {
   }
 }
 
+export interface EngineOptions {
+  /** How samples are fetched (default: the global `fetch`). */
+  fetch?: SampleFetch;
+  /** The Cache API (default: `window.caches` when it exists). */
+  caches?: SampleCacheStorage | null;
+  /** URL prefix of the sample folders (default 'soundfonts/'). */
+  base?: string;
+}
+
+/** SoundFont instruments a sound state may play: the preset's choices and every own choice. */
+function soundfontsInUse(sound: SoundSettings): Set<SoundfontId> {
+  const { state } = sound;
+  const ids: InstrumentId[] = [
+    ...Object.values(soundPresetInstruments(state.preset)),
+    ...Object.values(state.instruments),
+  ];
+  return new Set(ids.flatMap((id) => soundfont(id)?.id ?? []));
+}
+
+function soundPresetInstruments(preset: SoundPresetId): InstrumentId[] {
+  return [...TRACK_ROLES.map((r) => presetChoice(preset, r)), presetChoice(preset, null)];
+}
+
 /**
  * Owns the single AudioContext, created lazily on a user gesture (browsers keep a context
- * created without one suspended).
+ * created without one suspended), and the SoundFont bank.
  */
 export class AudioEngine {
-  /** Sound preset and drum pattern; read live by the synth and the scheduler. */
+  /** Sound preset, drums, per-track instruments; read live by the synth and the scheduler. */
   readonly sound: SoundSettings;
   /** Master mode and volume; applied live to the synth. */
   readonly master: MasterSettings;
+  /** SoundFont samples, loaded on demand. */
+  readonly samples: SoundfontBank;
   #ctx: AudioContext | null = null;
   #synth: Synth | null = null;
 
   /** `storage` keeps the sound settings across reloads (localStorage in the app). */
-  constructor(storage: SoundStorage | null = null) {
+  constructor(storage: SoundStorage | null = null, options: EngineOptions = {}) {
     this.sound = new SoundSettings(storage);
     this.master = new MasterSettings(storage);
     this.master.subscribe((state) => {
       this.#synth?.setMasterMode(state.mode);
       this.#synth?.setMasterVolume(state.volume);
     });
+    this.samples = new SoundfontBank({
+      fetch: options.fetch ?? ((url) => fetch(url)),
+      caches: options.caches !== undefined ? options.caches : browserCaches(),
+      ...(options.base === undefined ? {} : { base: options.base }),
+    });
+    // A newly chosen SoundFont instrument (a preset or one track) starts loading at once.
+    let inUse = soundfontsInUse(this.sound);
+    this.sound.subscribe(() => {
+      const next = soundfontsInUse(this.sound);
+      for (const id of next) if (!inUse.has(id)) this.samples.load(id);
+      inUse = next;
+    });
+  }
+
+  /** Start fetching the current preset's chords instrument (the first thing that plays). */
+  prefetch(): void {
+    const font = soundfont(presetChoice(this.sound.preset, 'chords'));
+    if (font !== undefined) this.samples.load(font.id);
   }
 
   get context(): AudioContext | null {
@@ -316,8 +482,14 @@ export class AudioEngine {
   async start(): Promise<boolean> {
     if (typeof AudioContext === 'undefined') return false;
     if (this.#ctx === null) {
-      this.#ctx = new AudioContext({ latencyHint: 'interactive' });
-      this.#synth = new Synth(this.#ctx, () => this.sound.preset, this.master.state);
+      const ctx = new AudioContext({ latencyHint: 'interactive' });
+      this.#ctx = ctx;
+      this.#synth = new Synth(ctx, () => this.sound.preset, this.master.state, {
+        voice: (track, role) => this.sound.voice(track, role),
+        samples: this.samples,
+      });
+      void this.samples.attach((bytes) => ctx.decodeAudioData(bytes));
+      this.prefetch();
     }
     if (this.#ctx.state === 'suspended') {
       try {
@@ -341,5 +513,14 @@ export class AudioEngine {
       return stamp.performanceTime + (time - stamp.contextTime) * 1000;
     }
     return performance.now() + (time - ctx.currentTime) * 1000;
+  }
+}
+
+/** `window.caches` when the page may use it (secure origins), else null. */
+function browserCaches(): SampleCacheStorage | null {
+  try {
+    return typeof caches === 'undefined' ? null : caches;
+  } catch {
+    return null;
   }
 }

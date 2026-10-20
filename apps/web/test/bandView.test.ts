@@ -224,7 +224,13 @@ describe('Band panel sound row', () => {
     const preset = root.querySelector<HTMLSelectElement>('[data-field="sound-preset"]');
     const drums = root.querySelector<HTMLSelectElement>('[data-field="drums"]');
     if (preset === null || drums === null) throw new Error('no sound row');
-    expect([...preset.options].map((o) => o.text)).toEqual(['Piano', 'Band', 'Pad']);
+    expect([...preset.options].map((o) => o.text)).toEqual([
+      'Piano',
+      'Band',
+      'Pad',
+      'Chamber',
+      'Electric',
+    ]);
     expect([...drums.options].map((o) => o.text)).toEqual([
       'None',
       'Straight',
@@ -234,11 +240,14 @@ describe('Band panel sound row', () => {
     expect([preset.value, drums.value]).toEqual(['band', 'straight']);
 
     change(preset, 'pad');
-    expect(engine.sound.state).toEqual({ preset: 'pad', drums: 'none' });
+    expect(engine.sound.state).toMatchObject({ preset: 'pad', drums: 'none', instruments: {} });
     expect(drums.value).toBe('none');
     change(drums, 'ballad');
     expect(engine.sound.drums).toBe('ballad');
-    expect(storage.data[SOUND_KEY]).toBe('{"preset":"pad","drums":"ballad"}');
+    expect(JSON.parse(storage.data[SOUND_KEY] ?? '{}')).toMatchObject({
+      preset: 'pad',
+      drums: 'ballad',
+    });
 
     engine.sound.setPreset('piano');
     expect([preset.value, drums.value]).toEqual(['piano', 'none']);
@@ -249,5 +258,146 @@ describe('Band panel sound row', () => {
   it('is left out without sound settings', () => {
     const { root } = setup();
     expect(root.querySelector('.band-sound')).toBeNull();
+  });
+});
+
+describe('Band panel instruments and melody row', () => {
+  /** A fetch that never answers until released, so a load stays visible. */
+  function gatedFetch() {
+    let open = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let fail = false;
+    const fetch = async (): Promise<Response> => {
+      await gate;
+      return fail ? new Response('', { status: 404 }) : new Response(new Uint8Array([1]));
+    };
+    return { fetch, release: () => open(), failNext: () => (fail = true) };
+  }
+
+  function setupSound() {
+    const storage = memoryStorage();
+    const gated = gatedFetch();
+    const engine = new AudioEngine(storage, { fetch: gated.fetch, caches: null });
+    const song = createSong({
+      chords: [{ token: 'I', beats: 4 }],
+      tracks: [
+        createTrack('chords', { id: 'trk-a', channel: 0 }),
+        createTrack('bass', { id: 'trk-b', channel: 1 }),
+      ],
+      melody: { channel: 3, muted: false, notes: [] },
+    });
+    const store = new Store(initialState(song));
+    const root = document.createElement('section');
+    document.body.append(root);
+    const actions = createActions(store, engine, new MidiOut(null));
+    mountBand(root, store, actions, storage, engine.sound, engine.master, engine.samples);
+    const field = <T extends HTMLElement>(track: string, name: string): T => {
+      const el = root.querySelector<T>(`[data-track="${track}"] [data-field="${name}"]`);
+      if (el === null) throw new Error(`no ${name} in ${track}`);
+      return el;
+    };
+    return { storage, engine, store, root, field, gated };
+  }
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('adds an Instrument column with SoundFont and Synth groups', () => {
+    const { root, field } = setupSound();
+    expect(BAND_COLUMNS).toContain('Instrument');
+    const select = field<HTMLSelectElement>('trk-a', 'instrument');
+    const groups = [...select.querySelectorAll('optgroup')].map((g) => [
+      g.label,
+      g.children.length,
+    ]);
+    expect(groups).toEqual([
+      ['SoundFont', 15],
+      ['Synth', 4],
+    ]);
+    expect(select.value).toBe('acoustic_grand_piano');
+    expect(field<HTMLSelectElement>('trk-b', 'instrument').value).toBe('acoustic_bass');
+    expect(field<HTMLSelectElement>('melody', 'instrument').value).toBe('lead');
+    // The melody row sits under the track rows, outside the reorderable list.
+    expect(root.querySelectorAll('.band-rows .band-row')).toHaveLength(2);
+    expect(root.querySelector('.band-melody [data-track="melody"]')).not.toBeNull();
+  });
+
+  it('a per-track choice persists, marks the preset custom, and Reset undoes it', () => {
+    const { storage, engine, store, root, field } = setupSound();
+    const preset = root.querySelector<HTMLSelectElement>('[data-field="sound-preset"]');
+    const reset = root.querySelector<HTMLButtonElement>('[data-field="reset"]');
+    if (preset === null || reset === null) throw new Error('no sound row');
+    expect(reset.hidden).toBe(true);
+    change(field<HTMLSelectElement>('trk-b', 'instrument'), 'synth_bass_1');
+    expect(engine.sound.trackInstrument({ id: 'trk-b', role: 'bass' })).toBe('synth_bass_1');
+    expect(JSON.parse(storage.data[SOUND_KEY] ?? '{}').instruments).toEqual({
+      'trk-b': 'synth_bass_1',
+    });
+    expect(preset.selectedOptions[0]?.text).toBe('Band (custom)');
+    expect(reset.hidden).toBe(false);
+    expect(store.canUndo).toBe(false); // a listening setting, not a song edit
+
+    reset.click();
+    expect(engine.sound.state.instruments).toEqual({});
+    expect(preset.selectedOptions[0]?.text).toBe('Band');
+    expect(field<HTMLSelectElement>('trk-b', 'instrument').value).toBe('acoustic_bass');
+
+    change(preset, 'chamber');
+    expect(field<HTMLSelectElement>('trk-a', 'instrument').value).toBe('harpsichord');
+    expect(field<HTMLSelectElement>('melody', 'instrument').value).toBe('clarinet');
+  });
+
+  it('shows a loading mark while samples load and a failure mark after an error', async () => {
+    const { field, gated } = setupSound();
+    const mark = field<HTMLElement>('trk-a', 'loading');
+    expect(mark.textContent).toBe('');
+    change(field<HTMLSelectElement>('trk-a', 'instrument'), 'flute');
+    expect(mark.textContent).toBe('…');
+    expect(mark.title).toBe('Loading the samples');
+    gated.failNext();
+    gated.release();
+    await flush();
+    await flush();
+    expect(mark.textContent).toBe('!');
+    expect(mark.classList.contains('failed')).toBe(true);
+    // A synth instrument never shows a mark.
+    change(field<HTMLSelectElement>('trk-a', 'instrument'), 'pad');
+    expect(mark.textContent).toBe('');
+  });
+
+  it('melody row: mute and channel edit the song, octave and velocity the sound', () => {
+    const { engine, store, field } = setupSound();
+    const mute = field<HTMLInputElement>('melody', 'mute');
+    const channel = field<HTMLSelectElement>('melody', 'channel');
+    const octave = field<HTMLInputElement>('melody', 'octave');
+    const velocity = field<HTMLInputElement>('melody', 'velocity');
+    expect([mute.checked, channel.value, octave.value, velocity.value]).toEqual([
+      false,
+      '3',
+      '0',
+      '100',
+    ]);
+
+    mute.checked = true;
+    mute.dispatchEvent(new Event('change'));
+    expect(store.state.song.melody?.muted).toBe(true);
+    change(channel, '5');
+    expect(store.state.song.melody?.channel).toBe(5);
+    expect(store.canUndo).toBe(true);
+    store.undo();
+    expect(channel.value).toBe('3');
+
+    change(octave, '7');
+    expect(engine.sound.melody.octave).toBe(2);
+    expect(octave.value).toBe('2');
+    change(octave, '-1');
+    velocity.value = '64';
+    velocity.dispatchEvent(new Event('input'));
+    expect(engine.sound.melody).toEqual({ octave: -1, velocity: 64 });
+    expect(store.state.song.melody?.notes).toEqual([]);
+
+    change(field<HTMLSelectElement>('melody', 'instrument'), 'flute');
+    expect(engine.sound.melodyInstrument()).toBe('flute');
   });
 });

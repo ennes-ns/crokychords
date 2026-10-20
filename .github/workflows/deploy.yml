@@ -29,6 +29,13 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The SoundFont samples ship as static assets (docs/specs/soundfonts-v1.md §3); the fetch
+      # verifies every checksum, so a deploy never ships unverified or missing samples.
+      - uses: actions/cache@v4
+        with:
+          path: apps/web/public/soundfonts
+          key: soundfonts-${{ hashFiles('tools/soundfonts/manifest.json') }}
+      - run: node tools/soundfonts/fetch.mjs
       # pnpm -r build orders core → web → api (api depends on web), so ../web/dist exists
       # before `wrangler deploy --dry-run`. VITE_SYNC=on enables cloud sync in the web build.
       - run: pnpm build

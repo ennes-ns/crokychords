@@ -2,3 +2,7 @@
 # default table that the app ships with.
 public/data/*.json
 !public/data/default.json
+
+# SoundFont samples: fetched by tools/soundfonts/fetch.mjs (checksums in its manifest.json),
+# never committed (docs/specs/soundfonts-v1.md §3).
+public/soundfonts/

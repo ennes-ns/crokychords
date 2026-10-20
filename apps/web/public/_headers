@@ -7,3 +7,8 @@
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
+
+# SoundFont samples (docs/specs/soundfonts-v1.md §4): never change under the same URL (the app
+# adds ?v=<source commit>), so browsers may keep them for a year.
+/soundfonts/*
+  Cache-Control: public, max-age=31536000, immutable

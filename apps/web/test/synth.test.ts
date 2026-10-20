@@ -17,11 +17,14 @@ import {
   INSTRUMENTS,
   INSTRUMENT_IDS,
   SOUND_PRESETS,
+  SYNTH_IDS,
   drumHits,
   envelopeAt,
   instrumentFor,
   leadFor,
   midiToFrequency,
+  presetChoice,
+  soundfont,
   noteAmplitude,
   notePan,
   notePeak,
@@ -31,6 +34,7 @@ import {
   soundPreset,
 } from '../src/audio/instruments';
 import { planSong } from '../src/audio/scheduler';
+import { SAMPLE_RELEASE, sampleAmplitude } from '../src/audio/soundfont';
 import { AudioEngine, DRUM_BUS, Synth } from '../src/audio/synth';
 import {
   FakeBufferSource,
@@ -128,7 +132,13 @@ describe('instruments', () => {
 
 describe('sound presets', () => {
   it('Piano, Band and Pad, with Band as the default', () => {
-    expect(SOUND_PRESETS.map((p) => p.name)).toEqual(['Piano', 'Band', 'Pad']);
+    expect(SOUND_PRESETS.map((p) => p.name)).toEqual([
+      'Piano',
+      'Band',
+      'Pad',
+      'Chamber',
+      'Electric',
+    ]);
     expect(DEFAULT_SOUND_PRESET).toBe('band');
   });
 
@@ -176,7 +186,7 @@ describe('graph construction (fake context)', () => {
     expect(comp?.threshold.value).toBe(COMPRESSOR.threshold);
   });
 
-  it.each(INSTRUMENT_IDS.filter((id) => id !== 'piano'))(
+  it.each(SYNTH_IDS.filter((id) => id !== 'piano'))(
     '%s voice: oscillators → lowpass → envelope → out',
     (id) => {
       const ctx = new FakeContext();
@@ -318,7 +328,9 @@ describe('headroom', () => {
    * band (chords, bass, arp, pad all unmuted, four-note chords, straight drums) plus an
    * eighth-note melody through the lead at 120 BPM,
    * sampled every 5 ms with the real envelopes, must stay below full scale before the
-   * compressor does anything.
+   * compressor does anything, with the limiter off. A SoundFont voice counts its loudest sample
+   * at full level for as long as it is held, then the release fade (soundfonts-v1 §6). Every
+   * preset is checked twice: with its SoundFont samples and with their synth stand-ins.
    */
   it('a full band at 120 BPM does not clip', () => {
     const song = createSong({
@@ -348,19 +360,28 @@ describe('headroom', () => {
     expect(new Set(events.map((e) => e.trackId)).size).toBe(5);
     expect(events.filter((e) => e.trackId === 'c' && e.start === 0)).toHaveLength(4);
     const hits = drumHits('straight', song.meter.beats, 0, total);
-    for (const preset of SOUND_PRESETS) {
+    for (const [preset, samples] of SOUND_PRESETS.flatMap((p) => [
+      [p, true] as const,
+      [p, false] as const,
+    ])) {
       let worst = 0;
       for (let t = 0; t < total * spb; t += 0.005) {
         let sum = 0;
         for (const e of events) {
-          const inst =
-            e.trackId === MELODY_TRACK_ID
-              ? leadFor(preset.id)
-              : instrumentFor(preset.id, roles.get(e.trackId) ?? 'chords');
+          const role = e.trackId === MELODY_TRACK_ID ? null : (roles.get(e.trackId) ?? 'chords');
+          const choice = presetChoice(preset.id, role);
           const at = t - e.start * spb;
           if (at <= 0) continue;
+          const held = e.duration * spb;
+          const font = samples ? soundfont(choice) : undefined;
+          if (font !== undefined) {
+            const env = at < held ? 1 : Math.exp(-(at - held) / (SAMPLE_RELEASE / 4));
+            sum += sampleAmplitude(font, e.velocity) * env;
+            continue;
+          }
+          const inst = role === null ? leadFor(preset.id) : instrumentFor(preset.id, role);
           const f = midiToFrequency(e.note);
-          const env = envelopeAt(inst, f, at, e.duration * spb);
+          const env = envelopeAt(inst, f, at, held);
           // The room send adds its wet share (an energy-normalised impulse) on top.
           const wet = 1 + ROOM.maxWet * (inst.room ?? 0);
           sum += noteAmplitude(inst, e.velocity, f) * env * wet;
@@ -376,9 +397,10 @@ describe('headroom', () => {
         worst = Math.max(worst, sum);
       }
       const level = worst * MIX_GAIN * MASTER_GAIN;
-      expect(level, preset.id).toBeLessThan(1);
+      const label = `${preset.id}${samples ? '' : ' (stand-ins)'}`;
+      expect(level, label).toBeLessThan(1);
       // ... and loud enough to hear without turning the volume up.
-      expect(level, preset.id).toBeGreaterThan(0.3);
+      expect(level, label).toBeGreaterThan(0.3);
     }
   });
 });

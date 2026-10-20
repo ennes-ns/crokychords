@@ -56,7 +56,10 @@ beat then drum (kick, snare, hat). Deterministic, no randomness.
 
 ## 3. Sound presets
 
-A preset maps every track role to an instrument and picks a default drum pattern.
+A preset maps every track role to an instrument and picks a default drum pattern. Since
+[`soundfonts-v1`](soundfonts-v1.md) (§8) the instruments include SoundFont instruments, there
+are five presets (Piano, Band, Pad, Chamber, Electric; Band now uses SoundFonts), and every
+track can override its preset's choice; the table below is the v1 state.
 
 | id | Name | chords | bass | arp | pad | custom | drums |
 |----|------|--------|------|-----|-----|--------|-------|
@@ -64,7 +67,8 @@ A preset maps every track role to an instrument and picks a default drum pattern
 | `band` | Band (**default**) | piano | bass | piano | pad | piano | straight |
 | `pad` | Pad | pad | bass | piano | pad | pad | none |
 
-Sound settings (`{ preset, drums }`) live outside the song (they are a listening preference,
+Sound settings (`{ preset, drums }`, extended by `soundfonts-v1` with `instruments` and
+`melody`) live outside the song (they are a listening preference,
 not part of the arrangement or its MIDI): kept by the audio engine, persisted in
 `localStorage` as `crokychords.sound` (invalid or missing → `band` / `straight`). Choosing a
 preset also resets the drum pattern to the preset's default; the drum pattern can then be
