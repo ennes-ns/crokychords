@@ -170,13 +170,14 @@ Single-screen shell (issue #59). The whole editor fits one screen without page s
 - Band panel: below the stage, as wide as the stage. Its open/closed state is stored
   (`crokychords.bandOpen`); with nothing stored it starts open, except in compact mode.
 - **Compact mode** under 960 px viewport height (`COMPACT_QUERY = (max-height: 959px)`; the shell
-  sets `.shell.compact` and follows resizes): tighter gaps and padding, chord cells 48 px instead
-  of 68 px with smaller text, melody rows 180 px instead of 210 px (12 px per pitch row), and the
-  Band panel collapsed by default.
+  sets `.shell.compact` and follows resizes): tighter gaps and padding (the toolbar stays at two
+  rows on laptop widths), chord cells 48 px instead of 68 px with smaller text, melody rows 180 px
+  instead of 210 px (12 px per pitch row), side-column minimums of 212 px (Next chord) and 88 px
+  (saves), and the Band panel collapsed by default.
 - Pixel theme: every size in the shell is a whole pixel value (melody rows 210 / 180 px over 15
   pitch rows), so the theme keeps its integer scaling.
-- Fallback: on 1366×768 with a chord selected and the pattern editor open, Next chord and the
-  saves sit at their minimum and the chord editor scrolls its last rows. Should even the minimums
-  not fit, the stage or side column scrolls inside itself; the page still never does.
+- Fallback: on 1366×768 with a chord selected, Next chord sits at its minimum (about two
+  suggestions visible, the list scrolls). Should even the minimums not fit, the chord editor, then
+  the stage or side column, scrolls inside itself; the page still never does.
 - Below 900 px width the old stacked layout applies and the page scrolls. Mobile and touch are
   out of scope (later issue).

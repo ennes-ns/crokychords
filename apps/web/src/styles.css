@@ -394,6 +394,38 @@ h2 {
   margin-bottom: 6px;
 }
 
+.shell.compact .side > .panel {
+  padding: 8px 10px;
+}
+
+.shell.compact .side > .suggest {
+  min-height: 212px;
+}
+
+.shell.compact .side > .saves {
+  min-height: 88px;
+}
+
+/* 212 + 88 px plus two 8 px gaps, as above. */
+.shell.compact .side > .editor {
+  max-height: calc(100% - 316px);
+}
+
+/* A tighter toolbar keeps it at two rows on laptop widths. */
+.shell.compact .toolbar {
+  gap: 6px 8px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.shell.compact .toolbar .title {
+  width: 112px;
+}
+
+.shell.compact .toolbar select[aria-label='Mode'] {
+  max-width: 112px;
+}
+
 .shell.compact .suggestion {
   padding-top: 4px;
   padding-bottom: 3px;
