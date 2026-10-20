@@ -678,7 +678,6 @@ export class AudioEngine {
       SAMPLER_AUDITION_SECONDS,
       { instrumentId: instrument, velocity, track },
     );
-    this.idle();
     return handle;
   }
 

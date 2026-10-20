@@ -171,9 +171,10 @@ Every setter clamps (§2) and is a no-op when nothing changes. Pure helpers (`cl
   **Sampler** with the eight slots (`1 · <name>`) and a last entry **"Sampler… ✎"**. Choosing a
   slot assigns it and opens the panel; "Sampler… ✎" opens the panel for the track's slot (or
   assigns slot 1 first when the track plays something else). While a track plays a slot, a small
-  ✎ button after its status mark reopens the panel. The panel opens inside the Band panel, right
-  under the row it belongs to (like the pattern editor; one Sampler panel at a time), so the
-  single-screen rule holds: the Band body scrolls, never the page.
+  `∿` button after its status mark (not ✎, which the pattern editor's button next to it uses)
+  reopens the panel. The panel opens inside the Band panel, right under the row it belongs to
+  (like the pattern editor; one Sampler panel at a time), so the single-screen rule holds: the
+  Band body scrolls, never the page.
 - **Head:** the title "Sampler", the slot select (switching it re-assigns the track), the name
   field, the GM program select (export), "Load sample…" (a hidden file input), "Remove", and a
   close button (also Escape while the focus is in the panel).
