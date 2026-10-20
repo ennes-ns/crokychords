@@ -46,7 +46,8 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 | Security hardening before go-live (CSP, preview URLs off, limits) | issue #29 | done (#34) |
 | CI deploy workflow | issue #21 | done (#37), enabled |
 | First deploy, Access app, custom domain | `specs/deploy-v1.md` | done (live) |
-| Zone hardening in the dashboard (WAF, rate limit, Bot Fight Mode, fail-closed) and inviting users | `specs/deploy-v1.md` §9, §12 | in progress |
+| Zone hardening in the dashboard | `specs/deploy-v1.md` §9 | done |
+| Backups (weekly D1 export + R2 mirror) and inviting users | `specs/deploy-v1.md` §11, §12 | in progress |
 | Default suggestion table from Chordonomicon | `specs/data-default-table.md` | done (#19) |
 | Built-in instruments and presets | `specs/web-instruments-v1.md` | done (#14) |
 | Themes: Default and Pixel | `specs/themes-v1.md` | done (#25) |

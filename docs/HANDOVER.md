@@ -15,7 +15,7 @@ collaboration process in `docs/WORKFLOW.md`.
 | Data            | `apps/web/public/data/default.json`: trimmed Chordonomicon table (333 KB), loaded by default; seed table as fallback.                                                       |
 | Brand           | Done: pixel banner (`docs/readme/`), favicon and toolbar mark from the pixel master (`tools/brand/`), `docs/BRAND.md`.                                                       |
 | CI              | `.github/workflows/ci.yml`: `pnpm check` and `data tests`, both required on `main`.                                                                                         |
-| Online version  | **Live** at `chords.cr0ky.com` behind Cloudflare Access (one-time PIN, invited e-mails). One Worker serves app + API; D1 + R2; CI deploy on merge to `main` (`DEPLOY_ENABLED`). Zone-level hardening (WAF, rate limit, Bot Fight Mode, fail-closed route) still to do in the dashboard. |
+| Online version  | **Live** at `chords.cr0ky.com` behind Cloudflare Access (one-time PIN, invited e-mails). One Worker serves app + API; D1 + R2; CI deploy on merge to `main` (`DEPLOY_ENABLED`). Zone hardening done within the Free plan (managed ruleset, Bot Fight Mode, no workers.dev/preview URLs); no free rate-limit slot left, Worker limits apply. |
 
 `pnpm check` (lint, format, typecheck, tests, build) and `uv run pytest` are green on `main`.
 
