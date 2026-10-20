@@ -17,6 +17,7 @@ import { SyncEngine, bindSyncEvents } from './sync/engine';
 import { HttpSyncClient } from './sync/http';
 import { openSyncState } from './sync/state';
 import { syncStatusView } from './sync/statusView';
+import { applyTheme, installThemes, loadThemeId } from './themes';
 import { mountBand } from './views/band';
 import { mountChordEditor } from './views/chordEditor';
 import { mountGrid } from './views/grid';
@@ -51,6 +52,8 @@ async function startSync(local: SaveStore): Promise<SyncEngine | null> {
 
 async function boot(app: HTMLElement): Promise<void> {
   const storage = browserStorage();
+  installThemes();
+  applyTheme(loadThemeId(storage));
   const store = new Store(initialState(createSong()));
   const local = await openSaveStore(browserIndexedDb(), browserLocalStorage());
   const engine = await startSync(local);
@@ -88,7 +91,7 @@ async function boot(app: HTMLElement): Promise<void> {
     ),
     overlay,
   );
-  mountToolbar(toolbar, store, actions);
+  mountToolbar(toolbar, store, actions, { storage });
   mountGrid(grid, store, actions);
   mountChordEditor(editor, store, actions);
   mountBand(band, store, actions, storage, audio.sound);

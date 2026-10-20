@@ -1,4 +1,7 @@
-/** Toolbar: title, key/mode/tempo/meter, transport, history, export, MIDI out, table status. */
+/**
+ * Toolbar: title, key/mode/tempo/meter, transport, history, export, MIDI out, table status,
+ * theme switcher.
+ */
 import type { Mode, NgramTable } from '@crokychords/core';
 import { MODES, parseNoteName, toPitchClass } from '@crokychords/core';
 import type { Actions } from '../actions';
@@ -8,6 +11,8 @@ import { h, option, replaceChildren } from '../dom';
 import { MODE_LABELS, TONICS } from '../music';
 import type { AppState, Store } from '../state';
 import { activeTable } from '../state';
+import type { ThemeStorage } from '../themes';
+import { THEMES, applyTheme, loadThemeId, saveThemeId } from '../themes';
 
 export const TEMPO_MIN = 20;
 export const TEMPO_MAX = 300;
@@ -43,7 +48,38 @@ const STATUS_LABELS: Record<AppState['tableStatus'], string> = {
   error: 'error',
 };
 
-export function mountToolbar(root: HTMLElement, store: Store, actions: Actions): void {
+export interface ToolbarOptions {
+  /** Where the theme choice is persisted (localStorage); null keeps it for this page only. */
+  storage?: ThemeStorage | null;
+}
+
+/**
+ * The theme switcher: applies the stored theme, and on change applies and stores the new one
+ * (docs/specs/themes-v1.md, "Switching and persistence").
+ */
+export function themeSwitcher(storage: ThemeStorage | null, doc: Document = document): HTMLElement {
+  const current = applyTheme(loadThemeId(storage), doc);
+  const select = h(
+    'select',
+    { attrs: { 'aria-label': 'Theme' } },
+    ...THEMES.map((t) => option(t.id, t.label, t.id === current)),
+  );
+  select.value = current;
+  select.onchange = () => saveThemeId(storage, applyTheme(select.value, doc));
+  return h(
+    'span',
+    { class: 'group theme-switch', attrs: { role: 'group', 'aria-label': 'Theme' } },
+    h('span', { class: 'label', attrs: { 'aria-hidden': 'true' } }, 'Theme'),
+    select,
+  );
+}
+
+export function mountToolbar(
+  root: HTMLElement,
+  store: Store,
+  actions: Actions,
+  options: ToolbarOptions = {},
+): void {
   root.classList.add('toolbar');
 
   const title = h('input', {
@@ -143,6 +179,7 @@ export function mountToolbar(root: HTMLElement, store: Store, actions: Actions):
     h('span', { class: 'group' }, newSong, exportMidi),
     h('span', { class: 'group' }, midiBox, channelBox),
     tableBox,
+    themeSwitcher(options.storage ?? null, root.ownerDocument),
   );
 
   let midiKey: unknown[] = [];
