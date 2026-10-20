@@ -34,7 +34,19 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 | Melody lane (scale degrees) and harmonize-by-scale-degree | idea | idea |
 | MusicXML export; import of MIDI/MusicXML files | idea | idea |
 
-## Phase 3 — DAW integration without a plugin
+## Phase 3 — Online version (chords.cr0ky.com, Cloudflare free tier)
+
+| Task | Spec | Status |
+|------|------|--------|
+| SaveStore: IndexedDB, autosave, saved-progressions panel | `specs/savestore-v1.md` | done (#15) |
+| Worker API (Hono): Access-JWT verification, R2/D1, limits | `specs/api-v1.md` | done (#13) |
+| SyncClient: push/pull, conflicts, tombstones, offline queue | `specs/sync-v1.md` | in progress |
+| Deployment runbook and CI deploy (Pages/Workers, Access, hardening) | `specs/deploy-v1.md` | in progress |
+| Default suggestion table from Chordonomicon | `specs/data-default-table.md` | in progress (#3) |
+| Built-in instruments and presets | `specs/web-instruments-v1.md` | done (#14) |
+| Security review before inviting users | — | idea |
+
+## Phase 4 — DAW integration without a plugin
 
 | Task | Spec | Status |
 |------|------|--------|
@@ -42,7 +54,7 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 | Drag-and-drop `.mid` of the selection to the DAW | idea | idea |
 | Document virtual-port setup per OS with screenshots | idea | idea |
 
-## Phase 4 — Native plugin (ADR 0002)
+## Phase 5 — Native plugin (ADR 0002)
 
 | Task | Spec | Status |
 |------|------|--------|
