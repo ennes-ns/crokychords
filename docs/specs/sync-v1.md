@@ -152,9 +152,15 @@ The sync writes to the local store directly (not through the session) and then t
 | Response                                                    | Kind         | What happens                                                    |
 | ----------------------------------------------------------- | ------------ | --------------------------------------------------------------- |
 | `fetch` rejects (network), or `navigator.onLine === false`  | `offline`    | retry with backoff; `online` retries at once                    |
-| `401`, `403 forbidden_origin`, a redirect, or a non-JSON (HTML) answer | `signed-out` | stop; no automatic retry (see below)                 |
+| `401`, `403 forbidden_origin`, a redirect, or a non-JSON `401`/`403` | `signed-out` | stop; no automatic retry (see below)                  |
 | `400`, `403 save_limit_reached`, `413` on a `PUT`           | `rejected`   | `entry.rejected = local version`; other records continue        |
-| `5xx`, `429`, an unparseable JSON body                      | `server`     | retry with backoff                                              |
+| a non-JSON `404`/`413`/`415` on a `PUT` or `DELETE` of one save | `rejected` | the save (or tombstone) waits; other records continue       |
+| a non-JSON `404`/`413`/`415` on a `GET` of one save         | `server` (`invalid_record`) | skipped like an unreadable save; others continue |
+| `5xx`, `429`, an unparseable JSON body, any other non-JSON answer | `server` | retry with backoff                                            |
+
+A non-JSON answer is an HTML page from Access, the edge or a WAF rather than the API, so it is
+classified by its status: only `401`/`403` mean the session is gone. A refused tombstone stays and
+is sent again on the next cycle.
 
 Backoff after a failed cycle: `min(5 min, 2 s × 2^(n-1))`, scaled by a random factor in
 `[0.5, 1)`; `n` resets after a successful cycle and on `online`.
