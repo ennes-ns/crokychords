@@ -73,6 +73,12 @@ describe('authentication', () => {
     const res = await app.request('/api/me', authed(alice), { ...env, ACCESS_AUD: '' });
     expect(res.status).toBe(500);
     expect(await errorCode(res)).toBe('server_misconfigured');
+    const missing = await app.request('/api/me', authed(alice), {
+      ...env,
+      ACCESS_TEAM_DOMAIN: undefined,
+    });
+    expect(missing.status).toBe(500);
+    expect(await errorCode(missing)).toBe('server_misconfigured');
   });
 
   it('creates the user on first request and reuses it afterwards', async () => {
@@ -345,6 +351,34 @@ describe('CORS and headers', () => {
     const res = await client.request(
       '/api/me',
       authed(alice, { headers: { Origin: 'https://evil.example.test' } }),
+    );
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe('forbidden_origin');
+  });
+
+  it('accepts same-origin requests from the web app served by this Worker', async () => {
+    const self = 'https://api.example.test';
+    const put = await client.request(
+      '/api/saves/same-origin',
+      putInit(alice, record('same-origin', 1)),
+    );
+    expect(put.status).toBe(201);
+    const withOrigin = putInit(alice, record('same-origin', 2), '"1"');
+    const headers = new Headers(withOrigin.headers);
+    headers.set('Origin', self);
+    const res = await client.request('/api/saves/same-origin', { ...withOrigin, headers });
+    expect(res.status).toBe(200);
+    const del = await client.request(
+      '/api/saves/same-origin',
+      authed(alice, { method: 'DELETE', headers: { Origin: self, 'If-Match': '"2"' } }),
+    );
+    expect(del.status).toBe(204);
+  });
+
+  it('refuses a foreign origin that only shares the host name', async () => {
+    const res = await client.request(
+      '/api/me',
+      authed(alice, { headers: { Origin: 'http://api.example.test' } }),
     );
     expect(res.status).toBe(403);
     expect(await errorCode(res)).toBe('forbidden_origin');

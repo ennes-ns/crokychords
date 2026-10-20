@@ -11,6 +11,8 @@ export default defineWorkersConfig(async () => {
           singleWorker: true,
           wrangler: { configPath: './wrangler.toml' },
           miniflare: {
+            // Stand-in for ../web/dist, so the tests run without building the web app first.
+            assets: { directory: path.join(import.meta.dirname, 'test', 'assets') },
             bindings: {
               TEST_MIGRATIONS: migrations,
               ACCESS_TEAM_DOMAIN: 'test-team.cloudflareaccess.com',

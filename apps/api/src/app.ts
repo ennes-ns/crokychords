@@ -10,18 +10,22 @@ import type { SaveRecord } from './record';
 import { Storage } from './storage';
 import type { User } from './storage';
 
-/** Bindings and vars of the Worker (see wrangler.toml and docs/specs/api-v1.md §2). */
+/** Bindings, vars and secrets of the Worker (see wrangler.toml and docs/specs/api-v1.md §2). */
 export interface Env {
   DB: D1Database;
   SAVES: R2Bucket;
-  ACCESS_TEAM_DOMAIN: string;
-  ACCESS_AUD: string;
+  /** The built web app (wrangler.toml `[assets]`); not used by the API routes. */
+  ASSETS?: Fetcher;
+  /** Secret; missing until `wrangler secret put` (the API then fails closed). */
+  ACCESS_TEAM_DOMAIN?: string;
+  /** Secret; missing until `wrangler secret put` (the API then fails closed). */
+  ACCESS_AUD?: string;
   ALLOWED_ORIGIN: string;
 }
 
 export interface AppDeps {
-  /** The JWKS to verify Access tokens with, per environment (cached by the caller). */
-  jwks: (env: Env) => JwksSource;
+  /** The JWKS to verify Access tokens with, per team domain (cached by the caller). */
+  jwks: (teamDomain: string) => JwksSource;
   /** Clock, for tests. */
   now?: () => Date;
 }
@@ -48,11 +52,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     c.header('Cache-Control', 'no-store');
   });
 
-  // Refuse foreign origins before anything else; requests without Origin (same-origin GETs,
-  // non-browser clients) still need a valid Access JWT below.
+  // Refuse foreign origins before anything else. Requests without Origin (same-origin GETs,
+  // non-browser clients) and same-origin writes (the web app is served by this Worker) pass,
+  // but still need a valid Access JWT below.
   app.use('*', async (c, next) => {
     const origin = c.req.header('Origin');
-    if (origin !== undefined && origin !== c.env.ALLOWED_ORIGIN) {
+    if (origin !== undefined && !isAllowedOrigin(origin, c)) {
       throw new ApiError('forbidden_origin', 'origin not allowed');
     }
     await next();
@@ -61,7 +66,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.use(
     '*',
     cors({
-      origin: (origin, c: Context<AppEnv>) => (origin === c.env.ALLOWED_ORIGIN ? origin : null),
+      origin: (origin, c: Context<AppEnv>) => (isAllowedOrigin(origin, c) ? origin : null),
       allowMethods: ['GET', 'PUT', 'DELETE'],
       allowHeaders: ['Content-Type', 'If-Match'],
       exposeHeaders: ['ETag'],
@@ -71,8 +76,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   );
 
   app.use('/api/*', async (c, next) => {
-    const teamDomain = c.env.ACCESS_TEAM_DOMAIN.trim();
-    const audience = c.env.ACCESS_AUD.trim();
+    const teamDomain = (c.env.ACCESS_TEAM_DOMAIN ?? '').trim();
+    const audience = (c.env.ACCESS_AUD ?? '').trim();
     if (teamDomain === '' || audience === '') {
       throw new ApiError('server_misconfigured', 'access is not configured');
     }
@@ -80,7 +85,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     if (token === undefined || token === '') throw unauthorized();
     let email: string;
     try {
-      ({ email } = await verifyAccessJwt(token, { teamDomain, audience }, deps.jwks(c.env), now()));
+      ({ email } = await verifyAccessJwt(
+        token,
+        { teamDomain, audience },
+        deps.jwks(teamDomain),
+        now(),
+      ));
     } catch (e) {
       if (e instanceof AuthError) throw unauthorized();
       throw e;
@@ -197,6 +207,11 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   });
 
   return app;
+}
+
+/** `ALLOWED_ORIGIN`, or the origin the request was sent to (the app on the same Worker). */
+function isAllowedOrigin(origin: string, c: Context<AppEnv>): boolean {
+  return origin === c.env.ALLOWED_ORIGIN || origin === new URL(c.req.url).origin;
 }
 
 function unauthorized(): ApiError {

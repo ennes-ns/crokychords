@@ -6,8 +6,8 @@ import type { Env } from './app';
 // One JWKS cache per team domain, kept for the life of the isolate.
 const jwksCache = new Map<string, JwksSource>();
 
-function jwksFor(env: Env): JwksSource {
-  const url = accessCertsUrl(env.ACCESS_TEAM_DOMAIN);
+function jwksFor(teamDomain: string): JwksSource {
+  const url = accessCertsUrl(teamDomain);
   let source = jwksCache.get(url);
   if (source === undefined) {
     source = createCachedJwks({ url });
