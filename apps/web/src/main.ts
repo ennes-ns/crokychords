@@ -110,7 +110,7 @@ async function boot(app: HTMLElement): Promise<void> {
   // Working in the chord grid gives the editing keys back to the chords.
   grid.addEventListener('pointerdown', () => actions.setFocus('chords'));
   mountChordEditor(editor, store, actions);
-  mountBand(band, store, actions, storage, audio.sound);
+  mountBand(band, store, actions, storage, audio.sound, audio.master);
   mountSuggest(suggest, store, actions);
   mountSaves(savesPanel, session, engine === null ? {} : { status: syncStatusView(engine) });
 

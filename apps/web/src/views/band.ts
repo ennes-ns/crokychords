@@ -1,5 +1,6 @@
 /**
- * Band panel: the browser sound (preset and drum pattern), then one row per track (mute, name,
+ * Band panel: the browser sound (preset and drum pattern), the master row (protection mode and
+ * volume), then one row per track (mute, name,
  * role, pattern, octave, MIDI channel, velocity, gate, transpose, reorder, remove) plus "Add
  * track". Rows are patched in place, so focused
  * inputs and dragged sliders survive store updates; every edit is a song commit (undoable).
@@ -13,6 +14,7 @@ import {
   isDrumPatternId,
   isSoundPresetId,
 } from '../audio/instruments';
+import { MASTER_MODES, MASTER_MODE_LABELS, isMasterMode } from '../audio/graph';
 import type { SoundSettings } from '../audio/sound';
 import type { TrackPatch } from '../band';
 import {
@@ -35,7 +37,7 @@ import {
   updateTrack,
 } from '../band';
 import { h, option } from '../dom';
-import type { SongStorage } from '../persist';
+import type { MasterSettings, SongStorage } from '../persist';
 import { loadBandOpen, saveBandOpen } from '../persist';
 import type { AppState, Store } from '../state';
 
@@ -323,12 +325,46 @@ export function soundControls(sound: SoundSettings): HTMLElement {
   );
 }
 
+/** Master volume slider and protection-mode select (browser sound only, kept locally). */
+export function masterControls(master: MasterSettings): HTMLElement {
+  const volume = h('input', {
+    class: 'band-range',
+    props: { type: 'range', min: '0', max: '100', step: '1' },
+    attrs: { 'aria-label': 'Master volume', 'data-field': 'master-volume' },
+  });
+  const value = h('span', { class: 'band-value' });
+  const mode = h(
+    'select',
+    { attrs: { 'aria-label': 'Output protection', 'data-field': 'master-mode' } },
+    ...MASTER_MODES.map((m) => option(m, MASTER_MODE_LABELS[m])),
+  );
+  volume.oninput = () => master.setVolume(Number(volume.value));
+  mode.onchange = () => {
+    if (isMasterMode(mode.value)) master.setMode(mode.value);
+  };
+  const sync = (): void => {
+    const { volume: v, mode: m } = master.state;
+    if (document.activeElement !== volume) volume.value = String(v);
+    value.textContent = `${v}%`;
+    mode.value = m;
+  };
+  sync();
+  master.subscribe(sync);
+  return h(
+    'div',
+    { class: 'band-master' },
+    h('label', { class: 'band-slider' }, 'Volume ', volume, value),
+    h('label', {}, 'Protect ', mode),
+  );
+}
+
 export function mountBand(
   root: HTMLElement,
   store: Store,
   actions: Actions,
   storage: SongStorage | null = null,
   sound: SoundSettings | null = null,
+  master: MasterSettings | null = null,
 ): void {
   root.classList.add('panel', 'band');
   let open = loadBandOpen(storage);
@@ -355,6 +391,7 @@ export function mountBand(
     'div',
     { class: 'band-body', attrs: { id: 'band-body' } },
     ...(sound === null ? [] : [soundControls(sound)]),
+    ...(master === null ? [] : [masterControls(master)]),
     h(
       'div',
       { class: 'band-row band-labels', attrs: { 'aria-hidden': 'true' } },
