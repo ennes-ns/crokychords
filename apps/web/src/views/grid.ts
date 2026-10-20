@@ -49,6 +49,40 @@ export function beatToRowPosition(
   return { row, fraction: (beat - row * layout.rowBeats) / layout.rowBeats };
 }
 
+/** Last known content width of each track, kept current by one shared ResizeObserver. */
+const trackWidths = new WeakMap<Element, number>();
+let trackObserver: ResizeObserver | null | undefined;
+
+function trackWidth(track: HTMLElement): number {
+  const cached = trackWidths.get(track);
+  if (cached !== undefined) return cached;
+  if (trackObserver === undefined) {
+    trackObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver((entries) => {
+            for (const entry of entries) trackWidths.set(entry.target, entry.contentRect.width);
+          });
+  }
+  // Measured once per track (a new track, or no observer); later frames read the cache.
+  const width = track.clientWidth;
+  trackWidths.set(track, width);
+  trackObserver?.observe(track);
+  return width;
+}
+
+/**
+ * Put a playhead at `fraction` (0..1) of `track`. It moves by `transform` on its own composited
+ * layer, so playback never invalidates layout (issue #61). The Pixel theme snaps to whole pixels;
+ * other themes keep sub-pixel positions for smooth motion.
+ */
+export function placePlayhead(playhead: HTMLElement, track: HTMLElement, fraction: number): void {
+  if (playhead.parentElement !== track) track.append(playhead);
+  const x = fraction * trackWidth(track);
+  const snap = document.documentElement.dataset.theme === 'pixel';
+  playhead.style.transform = `translateX(${snap ? Math.round(x) : x}px)`;
+}
+
 export function beatToX(
   beat: number,
   layout: GridLayout,
@@ -369,8 +403,7 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
     const { row, fraction } = beatToRowPosition(state.cursor, layout);
     const track = tracks[Math.min(row, tracks.length - 1)];
     if (track === undefined) return;
-    if (playhead.parentElement !== track) track.append(playhead);
-    playhead.style.left = pct(row >= tracks.length ? 1 : fraction);
+    placePlayhead(playhead, track, row >= tracks.length ? 1 : fraction);
   };
 
   const render = (state: AppState): void => {

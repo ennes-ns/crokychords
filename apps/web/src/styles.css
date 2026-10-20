@@ -354,9 +354,12 @@ h2 {
 }
 
 .playhead {
+  /* Moved with transform: translateX() from the views (issue #61): composited, no layout per frame. */
   position: absolute;
   top: 0;
   bottom: 0;
+  left: 0;
+  will-change: transform;
   width: var(--playhead-w);
   margin-left: -1px;
   background: var(--accent);
