@@ -1,5 +1,15 @@
+import type { Melody, MelodyNote } from './melody';
+import {
+  MAX_MELODY_NOTES,
+  MELODY_ACCIDENTALS,
+  MELODY_OCTAVE_MAX,
+  MELODY_OCTAVE_MIN,
+  MELODY_STEP,
+  cloneMelody,
+  defaultMelody,
+} from './melody';
 import { DEFAULT_TRACKS } from './patterns';
-import type { Key, Mode } from './theory';
+import type { Degree, Key, Mode } from './theory';
 import { isMode, parseNoteName } from './theory';
 import { isRestToken, TokenError, parseToken } from './token';
 import type { NoteSelector, Pattern, PatternStep, Track } from './tracks';
@@ -13,8 +23,11 @@ export interface SongChord {
 }
 
 export interface Song {
-  /** 2 since tracks v1; schema-1 songs (no tracks) are migrated by validateSong. */
-  schema: 1 | 2;
+  /**
+   * 3 since melody v1 (2: tracks v1). validateSong migrates schema 1 (no tracks) and schema 2
+   * (no melody).
+   */
+  schema: 1 | 2 | 3;
   title: string;
   /** Tonic as a note name, e.g. 'C', 'F#', 'Bb'. */
   key: { tonic: string; mode: Mode };
@@ -25,6 +38,8 @@ export interface Song {
   chords: SongChord[];
   /** The band (schema 2). Undefined only for schema-1 song objects built by hand. */
   tracks?: Track[];
+  /** The melody lane (schema 3). Undefined only for schema-1/2 song objects built by hand. */
+  melody?: Melody;
 }
 
 /** Thrown by validateSong / deserializeSong; `path` points at the offending value. */
@@ -41,18 +56,19 @@ export class SongError extends Error {
 export const DEFAULT_SONG_TITLE = 'Untitled';
 
 /**
- * A new schema-2 song with defaults (C major, 120 BPM, 4/4, no chords, DEFAULT_TRACKS())
- * overridden by `partial` (deep-copied; `partial.schema` is ignored). Not validated.
+ * A new schema-3 song with defaults (C major, 120 BPM, 4/4, no chords, DEFAULT_TRACKS(), an
+ * empty melody) overridden by `partial` (deep-copied; `partial.schema` is ignored). Not validated.
  */
 export function createSong(partial: Partial<Song> = {}): Song {
   return {
-    schema: 2,
+    schema: 3,
     title: partial.title ?? DEFAULT_SONG_TITLE,
     key: partial.key ? { ...partial.key } : { tonic: 'C', mode: 'major' },
     tempo: partial.tempo ?? 120,
     meter: partial.meter ? { ...partial.meter } : { beats: 4, unit: 4 },
     chords: (partial.chords ?? []).map((c) => ({ token: c.token, beats: c.beats })),
     tracks: partial.tracks ? partial.tracks.map(cloneTrack) : DEFAULT_TRACKS(),
+    melody: partial.melody ? cloneMelody(partial.melody) : defaultMelody(),
   };
 }
 
@@ -203,16 +219,69 @@ function validateTracks(value: unknown): Track[] {
   });
 }
 
+const DEGREES: readonly Degree[] = [1, 2, 3, 4, 5, 6, 7];
+
+/** True when `n` is a whole number of melody steps (1/16 notes). */
+function onMelodyGrid(n: number): boolean {
+  return Number.isInteger(n / MELODY_STEP);
+}
+
+function validateMelodyNote(value: unknown, path: string): MelodyNote {
+  const obj = record(value, path);
+  const beat = numberField(obj, 'beat', path);
+  if (beat < 0 || !onMelodyGrid(beat)) {
+    throw new SongError(`${path}.beat`, `must be >= 0 and a multiple of ${MELODY_STEP}`);
+  }
+  const length = numberField(obj, 'length', path);
+  if (length <= 0 || !onMelodyGrid(length)) {
+    throw new SongError(`${path}.length`, `must be > 0 and a multiple of ${MELODY_STEP}`);
+  }
+  const rawDegree = obj['degree'];
+  const degree = DEGREES.find((d) => d === rawDegree);
+  if (degree === undefined) throw new SongError(`${path}.degree`, 'must be an integer in 1..7');
+  const octave = intField(obj, 'octave', path, MELODY_OCTAVE_MIN, MELODY_OCTAVE_MAX);
+  const rawAccidental = obj['accidental'];
+  const accidental = MELODY_ACCIDENTALS.find((a) => a === rawAccidental);
+  if (accidental === undefined) {
+    throw new SongError(`${path}.accidental`, 'expected one of -1, 0, 1');
+  }
+  return { beat, length, degree, octave, accidental };
+}
+
+function validateMelody(value: unknown): Melody {
+  const obj = record(value, 'melody');
+  const channel = intField(obj, 'channel', 'melody', 0, 15);
+  const muted = obj['muted'];
+  if (typeof muted !== 'boolean') throw new SongError('melody.muted', 'expected a boolean');
+  const rawNotes = obj['notes'];
+  if (!Array.isArray(rawNotes)) throw new SongError('melody.notes', 'expected an array');
+  if (rawNotes.length > MAX_MELODY_NOTES) {
+    throw new SongError('melody.notes', `at most ${MAX_MELODY_NOTES} notes`);
+  }
+  let end = 0;
+  const notes = rawNotes.map((item: unknown, i): MelodyNote => {
+    const path = `melody.notes[${i}]`;
+    const note = validateMelodyNote(item, path);
+    if (note.beat < end) throw new SongError(`${path}.beat`, 'overlaps the previous note');
+    end = note.beat + note.length;
+    return note;
+  });
+  return { channel, muted, notes };
+}
+
 /**
- * Check that `value` is a valid Song and return a normalised schema-2 copy (unknown fields
- * dropped). A schema-1 song is migrated: any `tracks` field is ignored and DEFAULT_TRACKS()
- * (fresh ids) is added. Throws SongError with a path such as 'chords[3].beats' or
- * 'tracks[1].pattern.steps[2].at'.
+ * Check that `value` is a valid Song and return a normalised schema-3 copy (unknown fields
+ * dropped). Older songs are migrated: schema 1 ignores any `tracks` field and gets
+ * DEFAULT_TRACKS() (fresh ids); schema 1 and 2 ignore any `melody` field and get an empty
+ * defaultMelody(). Throws SongError with a path such as 'chords[3].beats',
+ * 'tracks[1].pattern.steps[2].at' or 'melody.notes[0].degree'.
  */
 export function validateSong(value: unknown): Song {
   const root = record(value, '');
   const schema = root['schema'];
-  if (schema !== 1 && schema !== 2) throw new SongError('schema', 'expected 1 or 2');
+  if (schema !== 1 && schema !== 2 && schema !== 3) {
+    throw new SongError('schema', 'expected 1, 2 or 3');
+  }
   const title = stringField(root, 'title', '');
 
   const keyObj = record(root['key'], 'key');
@@ -260,13 +329,14 @@ export function validateSong(value: unknown): Song {
   });
 
   return {
-    schema: 2,
+    schema: 3,
     title,
     key: { tonic, mode },
     tempo,
     meter: { beats: meterBeats, unit },
     chords,
-    tracks: schema === 2 ? validateTracks(root['tracks']) : DEFAULT_TRACKS(),
+    tracks: schema === 1 ? DEFAULT_TRACKS() : validateTracks(root['tracks']),
+    melody: schema === 3 ? validateMelody(root['melody']) : defaultMelody(),
   };
 }
 
@@ -299,19 +369,23 @@ export function songTokens(song: Song): string[] {
 
 /**
  * JSON (2-space indented) with a stable key order; unknown fields are dropped. Writes
- * schema 2 with the tracks; a song object without `tracks` (a hand-built schema-1 song) is
- * written as schema 1, which validateSong migrates on load.
+ * schema 3 with the tracks and the melody (an empty default one when the object has none); a
+ * song object without `tracks` (a hand-built schema-1 song) is written as schema 1, which
+ * validateSong migrates on load.
  */
 export function serializeSong(song: Song): string {
   const ordered: Song = {
-    schema: song.tracks === undefined ? 1 : 2,
+    schema: song.tracks === undefined ? 1 : 3,
     title: song.title,
     key: { tonic: song.key.tonic, mode: song.key.mode },
     tempo: song.tempo,
     meter: { beats: song.meter.beats, unit: song.meter.unit },
     chords: song.chords.map((c) => ({ token: c.token, beats: c.beats })),
   };
-  if (song.tracks !== undefined) ordered.tracks = song.tracks.map(cloneTrack);
+  if (song.tracks !== undefined) {
+    ordered.tracks = song.tracks.map(cloneTrack);
+    ordered.melody = cloneMelody(song.melody ?? defaultMelody());
+  }
   return JSON.stringify(ordered, null, 2);
 }
 

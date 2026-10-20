@@ -1,7 +1,9 @@
 import type { Chord } from './chords';
 import { chordPitchClasses, chordRootPitchClass, voiceChord } from './chords';
+import type { MelodyNote } from './melody';
+import { MELODY_GATE, MELODY_TRACK_ID, MELODY_VELOCITY, melodyNotePitch } from './melody';
 import type { Song } from './progression';
-import { songKey } from './progression';
+import { chordAtBeat, songKey, totalBeats } from './progression';
 import type { Key } from './theory';
 import { midiNote, toPitchClass } from './theory';
 import { isRestToken, parseToken } from './token';
@@ -161,4 +163,49 @@ export function renderSong(
   opts: RenderOptions = {},
 ): NoteEvent[] {
   return tracks.flatMap((t) => renderTrack(song, t, opts)).sort(byStartChannelNote);
+}
+
+/**
+ * How a melody note relates to the chord under it (the chord sounding at `note.beat`):
+ * 'chord' when its pitch class is a chord tone, else 'scale' when it has no accidental, else
+ * 'outside'. Rests and beats after the last chord have no chord tones.
+ */
+export type MelodyHarmony = 'chord' | 'scale' | 'outside';
+
+export function melodyNoteHarmony(song: Song, note: MelodyNote): MelodyHarmony {
+  const key = songKey(song);
+  const token = chordAtBeat(song, note.beat)?.chord.token;
+  if (token !== undefined && !isRestToken(token)) {
+    const pc = toPitchClass(melodyNotePitch(note, key));
+    if (chordPitchClasses(parseToken(token), key).includes(pc)) return 'chord';
+  }
+  return note.accidental === 0 ? 'scale' : 'outside';
+}
+
+/**
+ * Note events of the melody (track id MELODY_TRACK_ID, the melody channel, MELODY_VELOCITY,
+ * `length * MELODY_GATE`). A muted melody renders nothing unless `opts.includeMuted`. Notes
+ * starting at or after the end of the chords are dropped and a note crossing it is cut, so the
+ * melody ends with the song. Sorted by start.
+ */
+export function renderMelody(song: Song, opts: RenderOptions = {}): NoteEvent[] {
+  const melody = song.melody;
+  if (melody === undefined || (melody.muted && opts.includeMuted !== true)) return [];
+  const key = songKey(song);
+  const end = totalBeats(song);
+  const events: NoteEvent[] = [];
+  for (const note of melody.notes) {
+    if (note.beat >= end) continue;
+    const pitch = melodyNotePitch(note, key);
+    if (pitch < 0 || pitch > 127) continue;
+    events.push({
+      trackId: MELODY_TRACK_ID,
+      channel: melody.channel,
+      note: pitch,
+      velocity: MELODY_VELOCITY,
+      start: note.beat,
+      duration: (Math.min(note.beat + note.length, end) - note.beat) * MELODY_GATE,
+    });
+  }
+  return events.sort(byStartChannelNote);
 }

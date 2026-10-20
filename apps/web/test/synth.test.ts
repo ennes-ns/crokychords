@@ -1,4 +1,4 @@
-import { TRACK_ROLES, createSong, createTrack } from '@crokychords/core';
+import { MELODY_TRACK_ID, TRACK_ROLES, createSong, createTrack } from '@crokychords/core';
 import { describe, expect, it } from 'vitest';
 import {
   COMPRESSOR,
@@ -19,6 +19,7 @@ import {
   drumHits,
   envelopeAt,
   instrumentFor,
+  leadFor,
   midiToFrequency,
   noteAmplitude,
   noteDecay,
@@ -98,6 +99,14 @@ describe('sound presets', () => {
     expect(instrumentFor('pad', 'chords')).toBe(INSTRUMENTS.pad);
     expect(soundPreset('band').drums).toBe('straight');
     expect(soundPreset('piano').drums).toBe('none');
+  });
+
+  it('names a lead instrument for the melody lane', () => {
+    for (const preset of SOUND_PRESETS) expect(INSTRUMENT_IDS).toContain(preset.lead);
+    expect(leadFor('band')).toBe(INSTRUMENTS.lead);
+    expect(leadFor('pad')).toBe(INSTRUMENTS.lead);
+    expect(leadFor('piano')).toBe(INSTRUMENTS.lead);
+    expect(new Synth(new FakeContext(), () => 'band').leadInstrument()).toBe(INSTRUMENTS.lead);
   });
 });
 
@@ -241,7 +250,8 @@ describe('Synth (fake context)', () => {
 describe('headroom', () => {
   /**
    * Sum of all voice amplitudes (as if every oscillator peaked at the same moment) of a full
-   * band (chords, bass, arp, pad all unmuted, four-note chords, straight drums) at 120 BPM,
+   * band (chords, bass, arp, pad all unmuted, four-note chords, straight drums) plus an
+   * eighth-note melody through the lead at 120 BPM,
    * sampled every 5 ms with the real envelopes, must stay below full scale before the
    * compressor does anything.
    */
@@ -255,11 +265,22 @@ describe('headroom', () => {
         createTrack('arp', { id: 'a', channel: 2 }),
         createTrack('pad', { id: 'p', channel: 3 }),
       ],
+      melody: {
+        channel: 4,
+        muted: false,
+        notes: Array.from({ length: 32 }, (_, i) => ({
+          beat: i / 2,
+          length: 0.5,
+          degree: ([5, 6, 7, 1] as const)[i % 4] ?? 5,
+          octave: i % 4 === 3 ? 1 : 0,
+          accidental: 0 as const,
+        })),
+      },
     });
     const spb = 60 / song.tempo;
     const roles = new Map((song.tracks ?? []).map((t) => [t.id, t.role]));
     const { events, total } = planSong(song);
-    expect(new Set(events.map((e) => e.trackId)).size).toBe(4);
+    expect(new Set(events.map((e) => e.trackId)).size).toBe(5);
     expect(events.filter((e) => e.trackId === 'c' && e.start === 0)).toHaveLength(4);
     const hits = drumHits('straight', song.meter.beats, 0, total);
     for (const preset of SOUND_PRESETS) {
@@ -267,7 +288,10 @@ describe('headroom', () => {
       for (let t = 0; t < total * spb; t += 0.005) {
         let sum = 0;
         for (const e of events) {
-          const inst = instrumentFor(preset.id, roles.get(e.trackId) ?? 'chords');
+          const inst =
+            e.trackId === MELODY_TRACK_ID
+              ? leadFor(preset.id)
+              : instrumentFor(preset.id, roles.get(e.trackId) ?? 'chords');
           const at = t - e.start * spb;
           if (at <= 0) continue;
           const env = envelopeAt(inst, midiToFrequency(e.note), at, e.duration * spb);

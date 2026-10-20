@@ -2,6 +2,8 @@ import type { NgramTable, Song } from '@crokychords/core';
 import { createSong, seedTable } from '@crokychords/core';
 import { clampSelection } from './edit';
 import type { LoopRange } from './loop';
+import type { MelodyGrid } from './melody';
+import type { Focus } from './melodyKeys';
 
 export interface MidiPortInfo {
   id: string;
@@ -57,6 +59,15 @@ export interface AppState {
   /** The AudioContext exists and is running (it needs a user gesture). */
   audioReady: boolean;
   fire: FireState;
+  /** Which lane the editing keys act on (docs/specs/melody-v1.md, B1). */
+  focus: Focus;
+  /** Melody entry position in beats. */
+  melodyCursor: number;
+  /** Melody grid in beats: 1/8 or 1/16 notes. */
+  melodyGrid: MelodyGrid;
+  /** Octave and length (beats) of new melody notes. */
+  melodyOctave: number;
+  melodyLength: number;
 }
 
 export function initialState(song: Song = createSong()): AppState {
@@ -80,6 +91,11 @@ export function initialState(song: Song = createSong()): AppState {
     placeMode: 'insert',
     audioReady: false,
     fire: { status: 'off', scroll: 0, cursor: 0 },
+    focus: 'chords',
+    melodyCursor: 0,
+    melodyGrid: 0.5,
+    melodyOctave: 0,
+    melodyLength: 0.5,
   };
 }
 
@@ -172,6 +188,7 @@ export class Store {
       selectedTrack: null,
       cursor: 0,
       loopRange: null,
+      melodyCursor: 0,
     });
   }
 

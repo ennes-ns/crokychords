@@ -1,5 +1,5 @@
 /**
- * Web Audio poly synth for the built-in instruments (piano, pad, bass) and the drum kit. The
+ * Web Audio poly synth for the built-in instruments (piano, pad, bass, lead) and the drum kit. The
  * current sound preset picks the instrument per track role; every track gets its own gain bus
  * into the master bus (mix → gentle compressor → master gain). Graph construction lives in
  * `graph.ts` and works on an injected `SynthContext`.
@@ -8,7 +8,7 @@ import type { TrackRole } from '@crokychords/core';
 import type { BufferLike, GainLike, MasterBus, SourceLike, SynthContext } from './graph';
 import { buildDrum, buildMasterBus, buildVoice, noiseBuffer } from './graph';
 import type { Drum, Instrument, SoundPresetId } from './instruments';
-import { DEFAULT_SOUND_PRESET, instrumentFor } from './instruments';
+import { DEFAULT_SOUND_PRESET, instrumentFor, leadFor } from './instruments';
 import type { SoundStorage } from './sound';
 import { SoundSettings } from './sound';
 
@@ -70,6 +70,11 @@ export class Synth {
   /** The instrument a track of `role` plays with the current preset. */
   instrumentFor(role: TrackRole): Instrument {
     return instrumentFor(this.#preset(), role);
+  }
+
+  /** The instrument of the melody lane with the current preset. */
+  leadInstrument(): Instrument {
+    return leadFor(this.#preset());
   }
 
   /** Play one MIDI note from `time` (AudioContext seconds) for `duration` seconds. */

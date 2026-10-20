@@ -300,7 +300,8 @@ describe('actions', () => {
     sent.length = 0;
     actions.stop();
     const ccs = sent.filter((m) => (m[0] ?? 0) >> 4 === 0xb && m[1] === 123).map((m) => m[0]);
-    expect(ccs).toEqual([0xb0, 0xb1, 0xb2]);
+    // Every track channel plus the melody's (channel 4).
+    expect(ccs).toEqual([0xb0, 0xb1, 0xb2, 0xb3]);
   });
 
   it('reports Web MIDI as unsupported', async () => {

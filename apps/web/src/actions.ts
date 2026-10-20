@@ -1,6 +1,16 @@
 /** Everything the views and the keyboard can do, wired to the store, audio and MIDI. */
-import type { Degree, Song, TrackRole } from '@crokychords/core';
-import { createSong, diatonicTriadToken, totalBeats } from '@crokychords/core';
+import type { Degree, MelodyNote, Song, TrackRole } from '@crokychords/core';
+import {
+  MELODY_OCTAVE_MAX,
+  MELODY_OCTAVE_MIN,
+  MELODY_TRACK_ID,
+  MELODY_VELOCITY,
+  createSong,
+  diatonicTriadToken,
+  melodyNotePitch,
+  songKey,
+  totalBeats,
+} from '@crokychords/core';
 import type { NoteSink } from './audio/scheduler';
 import { Scheduler } from './audio/scheduler';
 import type { AudioEngine, NoteHandle } from './audio/synth';
@@ -32,10 +42,26 @@ import {
 import type { KeyAction } from './keyboard';
 import type { LoopRange } from './loop';
 import { playStart, withLoopEnd, withLoopStart } from './loop';
+import type { MelodyGrid } from './melody';
+import {
+  noteIndexAt,
+  moveNote,
+  placeNote,
+  removeNote,
+  setMelodyChannel,
+  setNoteLength,
+  setNoteOctave,
+  songMelody,
+  stepNote,
+  toggleAccidental,
+  toggleMelodyMute,
+} from './melody';
+import type { Focus, MelodyKeyAction } from './melodyKeys';
 import { downloadMidi } from './midi/download';
 import type { MidiOut } from './midi/webmidi';
 import type { PlaceMode, Store } from './state';
 import { clampTrackSelection } from './state';
+import { melodyLaneBeats } from './views/melody';
 import { computeSuggestions } from './views/suggest';
 
 /** Delay before an audition starts, so its attack is not clipped (seconds). */
@@ -93,15 +119,36 @@ export interface Actions {
   /** Create/resume the AudioContext (call from a user gesture). */
   startAudio(): Promise<boolean>;
   key(action: KeyAction): void;
+  /** Which lane the editing keys act on. */
+  setFocus(focus: Focus): void;
+  setMelodyGrid(grid: MelodyGrid): void;
+  /** Move the melody cursor (clamped to the lane). */
+  setMelodyCursor(beat: number): void;
+  setMelodyChannel(channel: number): void;
+  toggleMelodyMute(): void;
+  /** Play one melody note through the lead instrument (and on the melody's MIDI channel). */
+  auditionNote(note: MelodyNote): void;
+  melodyKey(action: MelodyKeyAction): void;
 }
+
+/** Longest length the keyboard gives new melody notes, in beats. */
+const MAX_ENTRY_LENGTH = 16;
+/** Longest melody audition, in beats. */
+const NOTE_AUDITION_BEATS = 1;
 
 export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): Actions {
   const roleOf = (trackId: string): TrackRole =>
     findTrack(store.state.song, trackId)?.role ?? 'chords';
   const synthSink: NoteSink = {
     playNote: (event, time, duration) => {
-      audio.synth?.playNote(event.note, time, duration, {
-        role: roleOf(event.trackId),
+      const synth = audio.synth;
+      if (synth === null) return;
+      const voice =
+        event.trackId === MELODY_TRACK_ID
+          ? { instrument: synth.leadInstrument() }
+          : { role: roleOf(event.trackId) };
+      synth.playNote(event.note, time, duration, {
+        ...voice,
         velocity: event.velocity,
         track: event.trackId,
       });
@@ -118,9 +165,9 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
         audio.toPerformanceTime(time),
         duration * 1000,
       ),
-    stopAll: () => midi.allNotesOff(trackChannels(songTracks(store.state.song))),
+    stopAll: () => midi.allNotesOff(playingChannels(store.state.song)),
     loopWrap: (time) =>
-      midi.notesOffAt(trackChannels(songTracks(store.state.song)), audio.toPerformanceTime(time)),
+      midi.notesOffAt(playingChannels(store.state.song), audio.toPerformanceTime(time)),
   };
   const scheduler = new Scheduler(
     { now: () => audio.context?.currentTime ?? performance.now() / 1000 },
@@ -154,6 +201,7 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     }
     if (state.song === previous.song) return;
     scheduler.update(state.song);
+    silenceMelody(previous.song, state.song);
     const before = songTracks(previous.song);
     const after = songTracks(state.song);
     if (before === after) return;
@@ -162,8 +210,29 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     for (const channel of channelsToSilence(before, after)) midi.channelOff(channel);
   });
 
+  /** Muted or moved to another channel: cut what the melody still holds. */
+  const silenceMelody = (before: Song, after: Song): void => {
+    const old = songMelody(before);
+    const now = songMelody(after);
+    if (old.muted || (!now.muted && now.channel === old.channel)) return;
+    audio.synth?.stopTrack(MELODY_TRACK_ID);
+    const live = songTracks(after).some((t) => !t.muted && t.channel === old.channel);
+    if (!live) midi.channelOff(old.channel);
+  };
+
   const commit = (song: Song, selected: number | null): void => {
     store.commit(song, { selected });
+  };
+
+  const clampCursor = (beat: number, song: Song = store.state.song): number => {
+    const max = Math.max(0, melodyLaneBeats(song) - store.state.melodyGrid);
+    return Math.min(max, Math.max(0, beat));
+  };
+
+  /** Audition note `index` of `song` (after an edit), unless the song is playing. */
+  const hear = (song: Song, index: number | null): void => {
+    const note = index === null ? undefined : songMelody(song).notes[index];
+    if (note !== undefined && !store.state.playing) actions.auditionNote(note);
   };
 
   const actions: Actions = {
@@ -276,14 +345,15 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     newSong() {
       actions.stop();
       const { key, tempo, meter, tracks } = store.state.song;
-      // The band (and its DAW routing) carries over; only the chords start empty.
+      // The band and the melody's routing carry over; chords and melody notes start empty.
       const song = createSong({
         key: { ...key },
         tempo,
         meter: { ...meter },
         ...(tracks === undefined ? {} : { tracks }),
+        melody: { ...songMelody(store.state.song), notes: [] },
       });
-      store.commit(song, { selected: null, cursor: 0 });
+      store.commit(song, { selected: null, cursor: 0, melodyCursor: 0 });
     },
 
     undo() {
@@ -371,6 +441,133 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       return ok;
     },
 
+    setFocus(focus) {
+      if (store.state.focus !== focus) store.set({ focus });
+    },
+
+    setMelodyGrid(grid) {
+      if (store.state.melodyGrid !== grid) store.set({ melodyGrid: grid });
+    },
+
+    setMelodyCursor(beat) {
+      store.set({ melodyCursor: clampCursor(beat) });
+    },
+
+    setMelodyChannel(channel) {
+      store.commit(setMelodyChannel(store.state.song, channel));
+    },
+
+    toggleMelodyMute() {
+      store.commit(toggleMelodyMute(store.state.song));
+    },
+
+    auditionNote(note) {
+      const { song } = store.state;
+      const melody = songMelody(song);
+      const pitch = melodyNotePitch(note, songKey(song));
+      const seconds = (Math.min(note.length, NOTE_AUDITION_BEATS) * 60) / song.tempo;
+      const ctx = audio.context;
+      const synth = audio.synth;
+      if (audio.ready && ctx !== null && synth !== null) {
+        synth.playNote(pitch, ctx.currentTime + AUDITION_DELAY_S, seconds, {
+          instrument: synth.leadInstrument(),
+          velocity: MELODY_VELOCITY,
+          track: MELODY_TRACK_ID,
+        });
+      }
+      midi.playNote(melody.channel, pitch, MELODY_VELOCITY, performance.now(), seconds * 1000);
+    },
+
+    melodyKey(action) {
+      const state = store.state;
+      const { song, melodyCursor: cursor, melodyGrid: grid } = state;
+      const index = noteIndexAt(song, cursor);
+      const note = index === null ? undefined : songMelody(song).notes[index];
+      switch (action.type) {
+        case 'toggleFocus':
+          actions.setFocus(state.focus === 'melody' ? 'chords' : 'melody');
+          break;
+        case 'leave':
+          actions.setFocus('chords');
+          break;
+        case 'place': {
+          const placed = placeNote(song, {
+            beat: cursor,
+            length: state.melodyLength,
+            degree: action.degree,
+            octave: state.melodyOctave,
+            accidental: 0,
+          });
+          const next = cursor + state.melodyLength;
+          store.commit(placed.song, { melodyCursor: clampCursor(next, placed.song) });
+          hear(placed.song, placed.index);
+          break;
+        }
+        case 'cursor': {
+          const steps = cursor / grid;
+          const target = action.delta > 0 ? Math.floor(steps) + 1 : Math.ceil(steps) - 1;
+          actions.setMelodyCursor(target * grid);
+          break;
+        }
+        case 'home':
+          actions.setMelodyCursor(0);
+          break;
+        case 'move': {
+          if (index === null) break;
+          const moved = moveNote(song, index, action.delta * grid);
+          if (moved === song) break;
+          store.commit(moved, { melodyCursor: clampCursor(cursor + action.delta * grid, moved) });
+          hear(moved, index);
+          break;
+        }
+        case 'step': {
+          if (index === null) break;
+          const stepped = stepNote(song, index, action.delta);
+          store.commit(stepped);
+          if (stepped !== song) hear(stepped, index);
+          break;
+        }
+        case 'octave': {
+          if (index === null || note === undefined) {
+            const octave = state.melodyOctave + action.delta;
+            const clamped = Math.min(MELODY_OCTAVE_MAX, Math.max(MELODY_OCTAVE_MIN, octave));
+            store.set({ melodyOctave: clamped });
+            break;
+          }
+          const changed = setNoteOctave(song, index, note.octave + action.delta);
+          const octave = songMelody(changed).notes[index]?.octave ?? note.octave;
+          store.commit(changed, { melodyOctave: octave });
+          if (changed !== song) hear(changed, index);
+          break;
+        }
+        case 'length': {
+          if (index === null || note === undefined) {
+            const length = state.melodyLength + action.delta * grid;
+            store.set({ melodyLength: Math.min(MAX_ENTRY_LENGTH, Math.max(grid, length)) });
+            break;
+          }
+          const changed = setNoteLength(song, index, note.length + action.delta * grid);
+          const length = songMelody(changed).notes[index]?.length ?? note.length;
+          store.commit(changed, { melodyLength: length });
+          break;
+        }
+        case 'accidental': {
+          if (index === null) break;
+          const changed = toggleAccidental(song, index, action.accidental);
+          store.commit(changed);
+          hear(changed, index);
+          break;
+        }
+        case 'remove':
+          if (index === null || note === undefined) break;
+          store.commit(removeNote(song, index), { melodyCursor: note.beat });
+          break;
+        case 'grid':
+          actions.setMelodyGrid(grid === 0.5 ? 0.25 : 0.5);
+          break;
+      }
+    },
+
     key(action) {
       switch (action.type) {
         case 'degree':
@@ -430,6 +627,13 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       }
     },
   };
+
+  /** MIDI channels with sound: every track's and the melody's. */
+  function playingChannels(song: Song): number[] {
+    const channels = new Set(trackChannels(songTracks(song)));
+    channels.add(songMelody(song).channel);
+    return [...channels].sort((a, b) => a - b);
+  }
 
   async function play(fromSelection: boolean): Promise<void> {
     await actions.startAudio();

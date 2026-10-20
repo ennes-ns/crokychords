@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_MELODY_NOTES, defaultMelody } from '../src/melody';
+import type { MelodyNote } from '../src/melody';
 import { DEFAULT_TRACKS, createTrack, patternPreset } from '../src/patterns';
 import type { Song } from '../src/progression';
 import {
@@ -46,13 +48,14 @@ function withoutIds(s: Song): Song {
 describe('createSong', () => {
   it('has sensible defaults', () => {
     expect(withoutIds(createSong())).toEqual({
-      schema: 2,
+      schema: 3,
       title: DEFAULT_SONG_TITLE,
       key: { tonic: 'C', mode: 'major' },
       tempo: 120,
       meter: { beats: 4, unit: 4 },
       chords: [],
       tracks: DEFAULT_TRACKS().map((t) => ({ ...t, id: '' })),
+      melody: defaultMelody(),
     });
     const ids = (createSong().tracks ?? []).map((t) => t.id);
     expect(new Set(ids).size).toBe(3);
@@ -86,7 +89,7 @@ describe('validateSong', () => {
   it.each<[string, unknown]>([
     ['', null],
     ['', []],
-    ['schema', { ...song, schema: 3 }],
+    ['schema', { ...song, schema: 4 }],
     ['schema', { ...song, schema: '2' }],
     ['title', { ...song, title: 3 }],
     ['key', { ...song, key: 'C' }],
@@ -128,10 +131,11 @@ describe('validateSong', () => {
     expect(edge.meter.beats).toBe(MAX_METER_BEATS);
   });
 
-  it('migrates a schema-1 song to schema 2 with the default tracks', () => {
+  it('migrates a schema-1 song to schema 3 with the default tracks and melody', () => {
     const old = { schema: 1, title: song.title, key: song.key, tempo: 90, meter: song.meter };
     const migrated = validateSong({ ...old, chords: song.chords, tracks: 'ignored' });
-    expect(migrated.schema).toBe(2);
+    expect(migrated.schema).toBe(3);
+    expect(migrated.melody).toEqual(defaultMelody());
     expect(withoutIds(migrated)).toEqual(withoutIds({ ...song, tracks: DEFAULT_TRACKS() }));
     expect(migrated.tempo).toBe(90);
     expect(migrated.tracks?.map((t) => t.id).every((id) => /^trk-[0-9a-z]{8}$/.test(id))).toBe(
@@ -296,7 +300,7 @@ describe('serializeSong / deserializeSong', () => {
       tempo: 100,
       key: { mode: 'major', tonic: 'D' },
       title: 'x',
-      schema: 2,
+      schema: 3,
     };
     const json = serializeSong(shuffled);
     expect(json).toBe(
@@ -319,6 +323,7 @@ describe('serializeSong / deserializeSong', () => {
       'meter',
       'chords',
       'tracks',
+      'melody',
     ]);
     expect(json.indexOf('"token"')).toBeLessThan(json.indexOf('"beats": 2'));
     const trackJson = json.slice(json.indexOf('"tracks"'));
@@ -330,8 +335,12 @@ describe('serializeSong / deserializeSong', () => {
     expect(trackJson.indexOf('"at"')).toBeLessThan(trackJson.indexOf('"accent"'));
   });
 
-  it('writes schema 2 with tracks, and schema 1 for a song object without tracks', () => {
-    expect(JSON.parse(serializeSong(song))).toMatchObject({ schema: 2, tracks: song.tracks });
+  it('writes schema 3 with tracks and melody, and schema 1 for a song object without tracks', () => {
+    expect(JSON.parse(serializeSong(song))).toMatchObject({
+      schema: 3,
+      tracks: song.tracks,
+      melody: defaultMelody(),
+    });
     const old: Song = {
       schema: 1,
       title: 'old',
@@ -346,8 +355,95 @@ describe('serializeSong / deserializeSong', () => {
     expect(deserializeSong(json).tracks).toHaveLength(3);
   });
 
+  it('writes a default melody for a song object with tracks but no melody', () => {
+    const noMelody: Song = { ...song };
+    delete noMelody.melody;
+    expect(JSON.parse(serializeSong({ ...noMelody, schema: 2 }))).toMatchObject({
+      schema: 3,
+      melody: defaultMelody(),
+    });
+  });
+
+  it('round-trips a melody and writes note fields in a stable order', () => {
+    const notes: MelodyNote[] = [
+      { beat: 0, length: 0.5, degree: 1, octave: 0, accidental: 0 },
+      { beat: 0.5, length: 0.25, degree: 7, octave: -1, accidental: 1 },
+      { beat: 2, length: 1.75, degree: 3, octave: 1, accidental: -1 },
+    ];
+    const withMelody: Song = { ...song, melody: { channel: 9, muted: true, notes } };
+    const json = serializeSong(withMelody);
+    expect(deserializeSong(json)).toEqual(withMelody);
+    const melodyJson = json.slice(json.indexOf('"melody"'));
+    const order = ['"channel"', '"muted"', '"notes"', '"beat"', '"length"', '"degree"'];
+    const positions = order.map((k) => melodyJson.indexOf(k));
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(melodyJson.indexOf('"octave"')).toBeLessThan(melodyJson.indexOf('"accidental"'));
+  });
+
   it('throws SongError for invalid JSON or an invalid song', () => {
     expect(() => deserializeSong('{')).toThrow(SongError);
     expect(() => deserializeSong('{"schema":1}')).toThrow(SongError);
+  });
+});
+
+describe('validateSong: melody (schema 3)', () => {
+  const note: MelodyNote = { beat: 0, length: 1, degree: 1, octave: 0, accidental: 0 };
+  const withMelody = (melody: unknown): unknown => ({ ...song, melody });
+  const withNotes = (...notes: unknown[]): unknown =>
+    withMelody({ channel: 3, muted: false, notes });
+
+  it('migrates a schema-2 song: keeps the tracks, ignores any melody field', () => {
+    const old = { ...song, schema: 2, melody: 'ignored' };
+    const migrated = validateSong(old);
+    expect(migrated.schema).toBe(3);
+    expect(migrated.tracks).toEqual(song.tracks);
+    expect(migrated.melody).toEqual(defaultMelody());
+  });
+
+  it('drops unknown melody and note fields', () => {
+    const value = withMelody({
+      channel: 0,
+      muted: false,
+      extra: 1,
+      notes: [{ ...note, colour: 'red' }],
+    });
+    expect(validateSong(value).melody).toEqual({ channel: 0, muted: false, notes: [note] });
+  });
+
+  it('accepts touching notes, edge octaves and accidentals', () => {
+    const notes = [
+      { ...note, octave: -3, accidental: -1 },
+      { ...note, beat: 1, length: 0.25, octave: 3, accidental: 1, degree: 7 },
+    ];
+    expect(validateSong(withNotes(...notes)).melody?.notes).toEqual(notes);
+  });
+
+  it.each<[string, unknown]>([
+    ['melody', withMelody([])],
+    ['melody', withMelody(null)],
+    ['melody.channel', withMelody({ channel: 16, muted: false, notes: [] })],
+    ['melody.channel', withMelody({ channel: 1.5, muted: false, notes: [] })],
+    ['melody.muted', withMelody({ channel: 0, muted: 'no', notes: [] })],
+    ['melody.notes', withMelody({ channel: 0, muted: false, notes: {} })],
+    ['melody.notes[0]', withNotes('1')],
+    ['melody.notes[0].beat', withNotes({ ...note, beat: -0.25 })],
+    ['melody.notes[0].beat', withNotes({ ...note, beat: 0.3 })],
+    ['melody.notes[0].length', withNotes({ ...note, length: 0 })],
+    ['melody.notes[0].length', withNotes({ ...note, length: 0.125 })],
+    ['melody.notes[0].degree', withNotes({ ...note, degree: 0 })],
+    ['melody.notes[0].degree', withNotes({ ...note, degree: 8 })],
+    ['melody.notes[0].degree', withNotes({ ...note, degree: '1' })],
+    ['melody.notes[0].octave', withNotes({ ...note, octave: 4 })],
+    ['melody.notes[0].octave', withNotes({ ...note, octave: 0.5 })],
+    ['melody.notes[0].accidental', withNotes({ ...note, accidental: 2 })],
+    ['melody.notes[1].beat', withNotes(note, { ...note, beat: 0.75 })],
+    ['melody.notes[1].beat', withNotes({ ...note, beat: 2 }, note)],
+  ])('reports %j', (path, value) => {
+    expectSongError(value, path);
+  });
+
+  it('limits the number of notes', () => {
+    const notes = Array.from({ length: MAX_MELODY_NOTES + 1 }, (_, i) => ({ ...note, beat: i }));
+    expectSongError(withNotes(...notes), 'melody.notes');
   });
 });

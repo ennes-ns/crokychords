@@ -144,5 +144,12 @@ function noopActions(): Actions {
     exportMidi: noop,
     startAudio: () => Promise.resolve(false),
     key: noop,
+    setFocus: noop,
+    setMelodyGrid: noop,
+    setMelodyCursor: noop,
+    setMelodyChannel: noop,
+    toggleMelodyMute: noop,
+    auditionNote: noop,
+    melodyKey: noop,
   };
 }

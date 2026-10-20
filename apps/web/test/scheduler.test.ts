@@ -1,5 +1,13 @@
 import type { NoteEvent, Song, Track } from '@crokychords/core';
-import { createSong, createTrack, patternPreset, renderSong } from '@crokychords/core';
+import {
+  MELODY_TRACK_ID,
+  createSong,
+  createTrack,
+  defaultMelody,
+  patternPreset,
+  renderMelody,
+  renderSong,
+} from '@crokychords/core';
 import { describe, expect, it } from 'vitest';
 import type { DrumHit, DrumPatternId } from '../src/audio/instruments';
 import { drumHits } from '../src/audio/instruments';
@@ -86,6 +94,29 @@ describe('planSong', () => {
     expect(events).toEqual(renderSong(band, band.tracks ?? []));
     expect(events.some((e) => e.trackId === 'trk-arp')).toBe(false);
     expect(new Set(events.map((e) => e.channel))).toEqual(new Set([0, 1]));
+  });
+
+  it('merges the melody into the band events by start time', () => {
+    const notes = [0.5, 1, 3].map((beat) => ({
+      beat,
+      length: 0.5,
+      degree: 3 as const,
+      octave: 0,
+      accidental: 0 as const,
+    }));
+    const withMelody: Song = { ...band, melody: { ...defaultMelody(), notes } };
+    const { events } = planSong(withMelody);
+    const melody = events.filter((e) => e.trackId === MELODY_TRACK_ID);
+    expect(melody).toEqual(renderMelody(withMelody));
+    expect(melody.map((e) => [e.start, e.channel])).toEqual([
+      [0.5, 3],
+      [1, 3],
+      [3, 3],
+    ]);
+    const starts = events.map((e) => e.start);
+    expect(starts).toEqual([...starts].sort((a, b) => a - b));
+    const muted: Song = { ...withMelody, melody: { ...defaultMelody(), muted: true, notes } };
+    expect(planSong(muted).events.some((e) => e.trackId === MELODY_TRACK_ID)).toBe(false);
   });
 
   it('plays nothing for a song object without tracks', () => {
@@ -373,6 +404,36 @@ describe('Scheduler loop range', () => {
     h.advance(1.1);
     expect(h.played.filter((p) => p.event.note === 60)).toHaveLength(2);
     expect(h.wraps).toHaveLength(1);
+  });
+
+  it('loops the melody with the range and cuts it at the loop end', () => {
+    const melodic: Song = {
+      ...fourBars,
+      tracks: [],
+      melody: {
+        ...defaultMelody(),
+        notes: [1, 3, 5, 6].map((beat) => ({
+          beat,
+          length: 2,
+          degree: 1 as const,
+          octave: 0,
+          accidental: 0 as const,
+        })),
+      },
+    };
+    const h = loopHarness();
+    h.scheduler.start(melodic, { loop: true, range: { start: 0, end: 4 } });
+    h.advance(4.2); // two passes of the 2 s range
+    const notes = h.played.map((p) => [p.event.trackId, p.event.start]);
+    expect(notes).toEqual([
+      [MELODY_TRACK_ID, 1],
+      [MELODY_TRACK_ID, 3],
+      [MELODY_TRACK_ID, 1],
+      [MELODY_TRACK_ID, 3],
+    ]);
+    // The note at beat 3 crosses the loop end at 4: cut to one beat (0.5 s).
+    expect(h.played[1]?.duration).toBeCloseTo(0.5);
+    expect(h.wraps).toHaveLength(2);
   });
 
   it('starts at the loop start when started past the loop end', () => {

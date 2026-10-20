@@ -6,8 +6,16 @@ import { isEditableTarget, isTypingTarget } from './dom';
 import type { KeyAction } from './keyboard';
 import { isSpaceKey, keyAction } from './keyboard';
 
-/** Listen on `target` (the window) and pass every shortcut to `run`. Returns the unbind. */
-export function bindShortcuts(target: EventTarget, run: (action: KeyAction) => void): () => void {
+/**
+ * Listen on `target` (the window) and pass every shortcut to `run`. `first` sees every key
+ * outside form controls before the editor shortcuts (the melody lane); when it returns true the
+ * key is handled. Returns the unbind.
+ */
+export function bindShortcuts(
+  target: EventTarget,
+  run: (action: KeyAction) => void,
+  first: (e: KeyboardEvent) => boolean = () => false,
+): () => void {
   /** Space went to play/stop on a control that would also react to its keyup (button, checkbox). */
   let swallowSpaceUp = false;
   const down = (e: Event): void => {
@@ -22,6 +30,10 @@ export function bindShortcuts(target: EventTarget, run: (action: KeyAction) => v
     }
     if (isEditableTarget(e.target)) {
       if (e.key === 'Escape' && e.target instanceof HTMLElement) e.target.blur();
+      return;
+    }
+    if (first(e)) {
+      e.preventDefault();
       return;
     }
     const action = keyAction(e);

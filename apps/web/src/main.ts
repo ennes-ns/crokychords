@@ -7,6 +7,7 @@ import { h } from './dom';
 import { bindLoopPersistence } from './loop';
 import { FireController } from './midi/fire/controller';
 import { FireConnection, bindFirePageEvents, browserFireAccess } from './midi/fire/connect';
+import { melodyKeyAction } from './melodyKeys';
 import { MidiOut, browserMidiAccess } from './midi/webmidi';
 import { browserStorage } from './persist';
 import { bindShortcuts } from './shortcuts';
@@ -24,6 +25,7 @@ import { applyTheme, installThemes, loadThemeId } from './themes';
 import { mountBand } from './views/band';
 import { mountChordEditor } from './views/chordEditor';
 import { mountGrid } from './views/grid';
+import { mountMelody } from './views/melody';
 import { mountSaves } from './views/saves';
 import { mountSuggest } from './views/suggest';
 import { mountToolbar } from './views/toolbar';
@@ -78,6 +80,7 @@ async function boot(app: HTMLElement): Promise<void> {
 
   const toolbar = h('header');
   const grid = h('section');
+  const melody = h('section');
   const editor = h('section');
   const band = h('section');
   const savesPanel = h('section');
@@ -92,7 +95,7 @@ async function boot(app: HTMLElement): Promise<void> {
     h(
       'main',
       { class: 'workspace' },
-      h('div', { class: 'left' }, grid, editor, band, savesPanel),
+      h('div', { class: 'left' }, grid, melody, editor, band, savesPanel),
       suggest,
     ),
     overlay,
@@ -102,6 +105,9 @@ async function boot(app: HTMLElement): Promise<void> {
     fire: { connect: () => void fire.connect(), disconnect: () => fire.disconnect() },
   });
   mountGrid(grid, store, actions);
+  mountMelody(melody, store, actions);
+  // Working in the chord grid gives the editing keys back to the chords.
+  grid.addEventListener('pointerdown', () => actions.setFocus('chords'));
   mountChordEditor(editor, store, actions);
   mountBand(band, store, actions, storage, audio.sound);
   mountSuggest(suggest, store, actions);
@@ -120,7 +126,17 @@ async function boot(app: HTMLElement): Promise<void> {
   window.addEventListener('keydown', unlock, true);
   overlay.onclick = () => overlay.remove();
 
-  bindShortcuts(window, (action) => actions.key(action));
+  bindShortcuts(
+    window,
+    (action) => actions.key(action),
+    (event) => {
+      // The melody lane takes its keys first while it has focus (docs/specs/melody-v1.md, B3).
+      const melodyAction = melodyKeyAction(event, store.state.focus);
+      if (melodyAction === null) return false;
+      actions.melodyKey(melodyAction);
+      return true;
+    },
+  );
 
   void loadTables(store, (url, init) => fetch(url, init));
 }
