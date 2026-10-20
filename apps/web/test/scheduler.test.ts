@@ -406,6 +406,36 @@ describe('Scheduler loop range', () => {
     expect(h.wraps).toHaveLength(1);
   });
 
+  it('loops the melody with the range and cuts it at the loop end', () => {
+    const melodic: Song = {
+      ...fourBars,
+      tracks: [],
+      melody: {
+        ...defaultMelody(),
+        notes: [1, 3, 5, 6].map((beat) => ({
+          beat,
+          length: 2,
+          degree: 1 as const,
+          octave: 0,
+          accidental: 0 as const,
+        })),
+      },
+    };
+    const h = loopHarness();
+    h.scheduler.start(melodic, { loop: true, range: { start: 0, end: 4 } });
+    h.advance(4.2); // two passes of the 2 s range
+    const notes = h.played.map((p) => [p.event.trackId, p.event.start]);
+    expect(notes).toEqual([
+      [MELODY_TRACK_ID, 1],
+      [MELODY_TRACK_ID, 3],
+      [MELODY_TRACK_ID, 1],
+      [MELODY_TRACK_ID, 3],
+    ]);
+    // The note at beat 3 crosses the loop end at 4: cut to one beat (0.5 s).
+    expect(h.played[1]?.duration).toBeCloseTo(0.5);
+    expect(h.wraps).toHaveLength(2);
+  });
+
   it('starts at the loop start when started past the loop end', () => {
     const h = loopHarness();
     h.scheduler.start(fourBars, { loop: true, range: { start: 4, end: 8 }, fromBeat: 12 });
