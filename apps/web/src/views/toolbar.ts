@@ -8,6 +8,8 @@ import type { Actions } from '../actions';
 import { channelMap, channelMapLabel, songTracks } from '../band';
 import type { Child } from '../dom';
 import { h, option, replaceChildren } from '../dom';
+import { barLength } from '../edit';
+import { loopLabel } from '../loop';
 import { MODE_LABELS, TONICS } from '../music';
 import type { AppState, Store } from '../state';
 import { activeTable } from '../state';
@@ -171,10 +173,20 @@ export function mountToolbar(
   meterBeats.onchange = setMeter;
   meterUnit.onchange = setMeter;
 
-  const play = button('Play', 'Play / stop (Space)', () => actions.togglePlay());
+  const play = button(
+    'Play',
+    'Play / stop (Space): from the loop start when looping, else from the start',
+    () => actions.togglePlay(),
+  );
   play.classList.add('primary');
-  const loop = h('input', { props: { type: 'checkbox' } });
+  const loop = h('input', { props: { type: 'checkbox' }, attrs: { 'aria-label': 'Loop' } });
   loop.onchange = () => actions.setLoop(loop.checked);
+  const loopRange = h('span', { class: 'loop-range' });
+  const clearLoop = button('×', 'Clear the loop points (loop the whole song)', () =>
+    actions.setLoopRange(null),
+  );
+  clearLoop.classList.add('loop-clear');
+  clearLoop.setAttribute('aria-label', 'Clear the loop points');
   const undo = button('Undo', 'Undo (Ctrl/Cmd+Z)', () => actions.undo());
   const redo = button('Redo', 'Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)', () => actions.redo());
   const newSong = button('New', 'Start a new song (undoable)', () => actions.newSong());
@@ -209,7 +221,26 @@ export function mountToolbar(
     group('Key', tonic, mode),
     group('BPM', tempo),
     group('Meter', meterBeats, h('span', { class: 'slash' }, '/'), meterUnit),
-    h('span', { class: 'group' }, play, h('label', { class: 'check' }, loop, ' Loop')),
+    h(
+      'span',
+      { class: 'group' },
+      play,
+      h(
+        'label',
+        {
+          class: 'check',
+          attrs: {
+            title:
+              'Loop (L): the loop points when set, else the whole song. Set them by clicking or ' +
+              'dragging the bar numbers, Shift+click to extend, Alt+[ / Alt+] at the selection.',
+          },
+        },
+        loop,
+        ' Loop',
+      ),
+      loopRange,
+      clearLoop,
+    ),
     h('span', { class: 'group' }, undo, redo),
     h('span', { class: 'group' }, newSong, exportMidi),
     h('span', { class: 'group' }, midiBox, channelBox, fireButton),
@@ -282,6 +313,10 @@ export function mountToolbar(
     play.textContent = state.playing ? 'Stop' : 'Play';
     play.setAttribute('aria-pressed', String(state.playing));
     loop.checked = state.loop;
+    loopRange.textContent =
+      state.loopRange === null ? '' : loopLabel(state.loopRange, barLength(song));
+    loopRange.classList.toggle('off', !state.loop);
+    clearLoop.hidden = state.loopRange === null;
     undo.disabled = !store.canUndo;
     redo.disabled = !store.canRedo;
     renderMidi(state);
@@ -327,6 +362,7 @@ export function mountToolbar(
       state.song,
       state.playing,
       state.loop,
+      state.loopRange,
       state.midiStatus,
       state.midiOutputs,
       state.midiOut,

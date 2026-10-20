@@ -43,11 +43,19 @@ font (Departure Mono, SIL OFL 1.1) is bundled in `public/fonts/` with its licenc
 | `Backspace` / `Delete` | Remove the selected chord |
 | `[` / `]` | Shorten / lengthen the selected chord by one beat |
 | `Shift+[` / `Shift+]` | ... by a quarter beat |
-| `Space` | Play / stop (from the selected chord, or from the start) |
+| `Space` | Play / stop, from the start (the loop start when looping); works in selects and on buttons too, not while typing in the title or BPM |
+| `Shift+Space` | Play from the selected chord |
+| `L` | Loop on / off |
+| `Alt+[` / `Alt+]` | Set the loop start / end at the selected chord |
 | `Esc` | Deselect (or leave a text field) |
 | `M` | Mute / unmute the selected track (Band panel) |
 | `Ctrl/Cmd+Z` | Undo (50 steps, song edits only, including track edits) |
 | `Ctrl/Cmd+Shift+Z`, `Ctrl+Y` | Redo |
+
+Loop points: click a bar number to loop that bar, drag over the bar numbers to loop several,
+Shift+click a bar number to extend the loop to it. The range is shaded in the grid; the toolbar
+shows it next to the Loop checkbox, with × to clear it (then Loop loops the whole song). The loop
+is kept per saved progression on this device. See `docs/specs/loop-v1.md`.
 
 Mouse: click a chord to select it; drag the right edge of the selected chord to resize it (snaps
 to beats, hold `Shift` for quarter beats); click empty space after the last chord to append the

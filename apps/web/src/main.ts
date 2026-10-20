@@ -3,12 +3,13 @@ import { createSong } from '@crokychords/core';
 import { createActions } from './actions';
 import { AudioEngine } from './audio/synth';
 import { loadTables } from './data/tables';
-import { h, isEditableTarget } from './dom';
-import { keyAction } from './keyboard';
+import { h } from './dom';
+import { bindLoopPersistence } from './loop';
 import { FireController } from './midi/fire/controller';
 import { FireConnection, bindFirePageEvents, browserFireAccess } from './midi/fire/connect';
 import { MidiOut, browserMidiAccess } from './midi/webmidi';
 import { browserStorage } from './persist';
+import { bindShortcuts } from './shortcuts';
 import { Store, initialState } from './state';
 import { browserIndexedDb } from './store/indexedDb';
 import { browserLocalStorage, openSaveStore } from './store/open';
@@ -62,6 +63,7 @@ async function boot(app: HTMLElement): Promise<void> {
   const session = new SaveSession(store, { saves: engine?.wrap() ?? local, storage });
   engine?.onRemoteChange((id, copyId) => session.remoteChanged(id, copyId));
   await session.start();
+  bindLoopPersistence(store, session, storage);
   window.addEventListener('pagehide', () => void session.flush());
   if (engine !== null) {
     bindSyncEvents(engine, window);
@@ -118,17 +120,7 @@ async function boot(app: HTMLElement): Promise<void> {
   window.addEventListener('keydown', unlock, true);
   overlay.onclick = () => overlay.remove();
 
-  window.addEventListener('keydown', (event) => {
-    if (event.defaultPrevented || event.isComposing) return;
-    if (isEditableTarget(event.target)) {
-      if (event.key === 'Escape' && event.target instanceof HTMLElement) event.target.blur();
-      return;
-    }
-    const action = keyAction(event);
-    if (action === null) return;
-    event.preventDefault();
-    actions.key(action);
-  });
+  bindShortcuts(window, (action) => actions.key(action));
 
   void loadTables(store, (url, init) => fetch(url, init));
 }

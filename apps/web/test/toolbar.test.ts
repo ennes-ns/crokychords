@@ -148,3 +148,32 @@ describe('Connect Fire button', () => {
     expect(find()?.textContent).toBe('Fire: SysEx denied');
   });
 });
+
+describe('toolbar Loop control', () => {
+  it('shows the loop points, toggles looping and clears the range', () => {
+    const store = new Store(initialState());
+    const actions = createActions(store, new AudioEngine(), new MidiOut(null));
+    const toolbar = document.createElement('header');
+    mountToolbar(toolbar, store, actions);
+    const box = toolbar.querySelector<HTMLInputElement>('input[aria-label="Loop"]');
+    const range = toolbar.querySelector<HTMLElement>('.loop-range');
+    const clear = toolbar.querySelector<HTMLButtonElement>('.loop-clear');
+    if (box === null || range === null || clear === null) throw new Error('no loop control');
+    expect(clear.hidden).toBe(true);
+
+    actions.setLoopRange({ start: 4, end: 12 });
+    expect(box.checked).toBe(true);
+    expect(range.textContent).toBe('bars 2–3');
+    expect(clear.hidden).toBe(false);
+
+    box.checked = false;
+    box.dispatchEvent(new Event('change'));
+    expect(store.state.loop).toBe(false);
+    expect(range.classList.contains('off')).toBe(true);
+
+    clear.click();
+    expect(store.state.loopRange).toBeNull();
+    expect(range.textContent).toBe('');
+    expect(clear.hidden).toBe(true);
+  });
+});

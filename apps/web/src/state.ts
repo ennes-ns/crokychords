@@ -1,6 +1,7 @@
 import type { NgramTable, Song } from '@crokychords/core';
 import { createSong, seedTable } from '@crokychords/core';
 import { clampSelection } from './edit';
+import type { LoopRange } from './loop';
 
 export interface MidiPortInfo {
   id: string;
@@ -36,7 +37,10 @@ export interface AppState {
   /** Beat position of the playhead. */
   cursor: number;
   playing: boolean;
+  /** Loop playback: the loop range when one is set, else the whole song. */
   loop: boolean;
+  /** Loop points in beats (docs/specs/loop-v1.md); UI state, persisted per saved progression. */
+  loopRange: LoopRange | null;
   /** Web MIDI output id. */
   midiOut: string | null;
   midiStatus: MidiStatus;
@@ -63,6 +67,7 @@ export function initialState(song: Song = createSong()): AppState {
     cursor: 0,
     playing: false,
     loop: false,
+    loopRange: null,
     midiOut: null,
     midiStatus: 'off',
     midiOutputs: [],
@@ -153,11 +158,21 @@ export class Store {
     this.#emit({ ...this.#state, ...patch, song });
   }
 
-  /** Open another song (a saved progression): clears undo history, selection and playhead. */
+  /**
+   * Open another song (a saved progression): clears undo history, selection, playhead and loop
+   * range (the SaveSession binding restores the opened song's own loop, see loop.ts).
+   */
   load(song: Song): void {
     this.#past = [];
     this.#future = [];
-    this.#emit({ ...this.#state, song, selected: null, selectedTrack: null, cursor: 0 });
+    this.#emit({
+      ...this.#state,
+      song,
+      selected: null,
+      selectedTrack: null,
+      cursor: 0,
+      loopRange: null,
+    });
   }
 
   undo(): boolean {

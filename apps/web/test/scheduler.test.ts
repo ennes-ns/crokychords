@@ -3,6 +3,8 @@ import { createSong, createTrack, patternPreset, renderSong } from '@crokychords
 import { describe, expect, it } from 'vitest';
 import type { DrumHit, DrumPatternId } from '../src/audio/instruments';
 import { drumHits } from '../src/audio/instruments';
+import type { MidiAccessLike } from '../src/midi/webmidi';
+import { MidiOut } from '../src/midi/webmidi';
 import type { NoteSink, Timer } from '../src/audio/scheduler';
 import {
   LOOKAHEAD_S,
@@ -289,5 +291,169 @@ describe('Scheduler drums', () => {
     scheduler.start(bar);
     expect(played).toEqual([60, 64, 67]);
     expect(asked).toBe(0);
+  });
+});
+
+describe('Scheduler loop range', () => {
+  // Four one-bar chords at 120 BPM: bar n starts at n * 2 s.
+  const fourBars = createSong({
+    tempo: 120,
+    chords: ['I', 'IV', 'V', 'vi'].map((token) => ({ token, beats: 4 })),
+    tracks: [chordsTrack],
+  });
+
+  function loopHarness() {
+    const h = harness();
+    const wraps: number[] = [];
+    const sink: NoteSink = {
+      playNote: (event, time, duration) => h.played.push({ event, time, duration }),
+      stopAll: () => undefined,
+      loopWrap: (time) => wraps.push(time),
+    };
+    let now = 10;
+    const timer: Timer = { setInterval: () => 1, clearInterval: () => undefined };
+    const scheduler = new Scheduler({ now: () => now }, () => [sink], timer);
+    return {
+      scheduler,
+      played: h.played,
+      wraps,
+      advance(seconds: number) {
+        const end = now + seconds;
+        while (now < end - 1e-9) {
+          now = Math.min(end, now + 0.025);
+          scheduler.tick();
+        }
+      },
+    };
+  }
+
+  const t0 = 10 + START_DELAY_S;
+
+  it('wraps from the loop end to the loop start without a gap', () => {
+    const h = loopHarness();
+    h.scheduler.start(fourBars, { loop: true, range: { start: 4, end: 12 }, fromBeat: 4 });
+    h.advance(8.5); // two passes of the 4 s range, and a bit
+    const starts = [...new Set(h.played.map((p) => Math.round((p.time - t0) * 100) / 100))];
+    // IV at 0 s, V at 2 s, wrap: IV at 4 s, V at 6 s, IV at 8 s.
+    expect(starts).toEqual([0, 2, 4, 6, 8]);
+    const firstNotes = [...new Set(h.played.map((p) => p.event.start))];
+    expect(firstNotes).toEqual([4, 8]); // only IV and V, never I or vi
+    expect(h.wraps.map((t) => Math.round((t - t0) * 100) / 100)).toEqual([4, 8]);
+    const position = h.scheduler.position() ?? -1;
+    expect(position).toBeGreaterThanOrEqual(4);
+    expect(position).toBeLessThan(12);
+  });
+
+  it('plays into the range from an earlier beat, then loops the range', () => {
+    const h = loopHarness();
+    h.scheduler.start(fourBars, { loop: true, range: { start: 8, end: 12 }, fromBeat: 0 });
+    h.advance(8.2);
+    const firsts = h.played.filter(
+      (_, i, all) => all.findIndex((p) => p.time === all[i]?.time) === i,
+    );
+    expect(firsts.map((p) => [p.event.start, Math.round((p.time - t0) * 100) / 100])).toEqual([
+      [0, 0],
+      [4, 2],
+      [8, 4],
+      [8, 6], // wrapped: bar 3 again right after its end
+      [8, 8],
+    ]);
+    expect(h.wraps.map((t) => Math.round((t - t0) * 100) / 100)).toEqual([6, 8]);
+  });
+
+  it('cuts notes at the loop end', () => {
+    const long = createSong({
+      tempo: 120,
+      chords: [{ token: 'I', beats: 8 }],
+      tracks: [chordsTrack],
+    });
+    const h = loopHarness();
+    h.scheduler.start(long, { loop: true, range: { start: 0, end: 2 } });
+    expect(h.played[0]?.duration).toBeCloseTo(2 * 0.5); // a 3.6-beat note cut to 2 beats
+    h.advance(1.1);
+    expect(h.played.filter((p) => p.event.note === 60)).toHaveLength(2);
+    expect(h.wraps).toHaveLength(1);
+  });
+
+  it('starts at the loop start when started past the loop end', () => {
+    const h = loopHarness();
+    h.scheduler.start(fourBars, { loop: true, range: { start: 4, end: 8 }, fromBeat: 12 });
+    expect(h.played.length).toBeGreaterThan(0);
+    expect(new Set(h.played.map((p) => p.event.start))).toEqual(new Set([4]));
+  });
+
+  it('ignores a range outside the song and loops the whole song instead', () => {
+    const h = loopHarness();
+    h.scheduler.start(fourBars, { loop: true, range: { start: 20, end: 24 } });
+    h.advance(8.2);
+    expect(h.wraps.map((t) => Math.round((t - t0) * 100) / 100)).toEqual([8]);
+  });
+
+  it('applies a new range while playing, jumping when the playhead is past its end', () => {
+    const h = loopHarness();
+    h.scheduler.start(fourBars, { loop: true });
+    h.advance(5); // beat 10: bar 3
+    h.scheduler.setLoop(true, { start: 0, end: 4 });
+    const position = h.scheduler.position() ?? -1;
+    expect(position).toBeGreaterThanOrEqual(0);
+    expect(position).toBeLessThan(4);
+    h.played.length = 0;
+    h.advance(4);
+    expect(new Set(h.played.map((p) => p.event.start))).toEqual(new Set([0]));
+  });
+
+  it('stops looping when looping is turned off mid-pass', () => {
+    const h = loopHarness();
+    let ended = 0;
+    h.scheduler.onEnd = () => ended++;
+    h.scheduler.start(fourBars, { loop: true, range: { start: 0, end: 4 } });
+    h.advance(3); // second pass of bar 1
+    h.scheduler.setLoop(false);
+    h.advance(8);
+    expect(ended).toBe(1);
+    expect(h.wraps).toHaveLength(1);
+  });
+
+  it('sends MIDI all-notes-off at the wrap, before the next pass', () => {
+    const sent: { data: number[]; time: number | undefined }[] = [];
+    const access: MidiAccessLike = {
+      outputs: {
+        forEach: (fn) =>
+          fn({ id: 'p', name: 'p', send: (data, time) => sent.push({ data, time }) }),
+      },
+      addEventListener: () => undefined,
+    };
+    const midi = new MidiOut(() => Promise.resolve(access));
+    return midi.enable().then(() => {
+      midi.select('p');
+      let now = 10;
+      const sink: NoteSink = {
+        playNote: (e, time, duration) =>
+          midi.playNote(e.channel, e.note, e.velocity, time * 1000, duration * 1000),
+        stopAll: () => midi.allNotesOff(),
+        loopWrap: (time) => midi.notesOffAt([0], time * 1000),
+      };
+      const scheduler = new Scheduler({ now: () => now }, () => [sink], {
+        setInterval: () => 1,
+        clearInterval: () => undefined,
+      });
+      scheduler.start(fourBars, { loop: true, range: { start: 0, end: 4 } });
+      while (now < 12.1) {
+        now += 0.025;
+        scheduler.tick();
+      }
+      const wrapAt = (t0 + 2) * 1000;
+      const cc = sent.findIndex((m) => m.data[0] === 0xb0 && m.data[1] === 123);
+      expect(cc).toBeGreaterThan(0);
+      expect(sent[cc]?.time).toBeCloseTo(wrapAt);
+      // Note-offs for the held triad go out at the wrap, then the next pass's note-ons.
+      const offs = sent
+        .slice(0, cc)
+        .filter((m) => m.data[0] === 0x80 && Math.abs((m.time ?? 0) - wrapAt) < 1e-6);
+      expect(offs.length).toBeGreaterThanOrEqual(3);
+      const after = sent.slice(cc + 1).filter((m) => m.data[0] === 0x90);
+      expect(after.map((m) => m.data[1])).toEqual([60, 64, 67]);
+      expect(after[0]?.time).toBeCloseTo(wrapAt);
+    });
   });
 });
