@@ -85,7 +85,8 @@ is a separate, explicit action.
 - Every edit is one undo step.
 - Each block shows the token (e.g. `IV`) and the lead-sheet name (e.g. `F`) from `chordName`.
 - Color per degree (7 fixed hues, same for all qualities), lighter when selected.
-- Playhead line during playback; `chordAtBeat` drives highlighting.
+- Playhead line during playback, one for the timeline, spanning the chord blocks and the melody
+  strip of the playing row (`melody-v1.md` §B2); `chordAtBeat` drives highlighting.
 
 ## 4. Next chord panel
 
@@ -154,9 +155,10 @@ Single-screen shell (issue #59). The whole editor fits one screen without page s
 ```
 ┌──────────────────────── toolbar (transport, key, MIDI, theme) ────────────────────────┐
 ├──────────────────────────────────────────────────────────────┬────────────────────────┤
-│ stage: chord grid (≤ 50 % of the stage, then scrolls)        │ side (320 px):         │
-│        melody lane (takes the rest, scrolls its rows)        │  Next chord (list      │
-│                                                              │   scrolls, ≥ 240 px)   │
+│ stage: timeline bar (melody grid, chord tones, 7 rows, …)    │ side (320 px):         │
+│        timeline (scrolls): row 1 chords                      │  Next chord (list      │
+│                                  melody strip                │   scrolls, ≥ 240 px)   │
+│                            row 2 chords …                    │                        │
 ├──────────────────────────────────────────────────────────────┤  Chord editor          │
 │ Band panel (collapsible, ≤ 42 % of the height, body scrolls; │  Saved progressions    │
 │   the pattern editor opens inside it)                        │   (list scrolls)       │
@@ -165,22 +167,32 @@ Single-screen shell (issue #59). The whole editor fits one screen without page s
 
 - CSS grid inside a `100dvh` flex column: the toolbar row takes its natural height (one row from
   1366 px wide, see "Toolbar" below; it wraps on narrower screens), the workspace takes the rest. `html` and `body` get `overflow: hidden`; only
-  the panels scroll (`overflow-y: auto`, `overscroll-behavior: contain`): grid rows, melody rows,
-  the Band body, the suggestion list, the saves list.
+  the panels scroll (`overflow-y: auto`, `overscroll-behavior: contain`): the timeline, the Band
+  body, the suggestion list, the saves list.
+- **Stage = one timeline** (issue #105, `melody-v1.md` §B2): a slim timeline bar on top (the
+  melody controls and the status hint, one line) and below it the rows, in one scroll container.
+  Every row is the bar numbers, the chord blocks and directly beneath them the melody strip of the
+  same bars, in one bordered box with one x-scale and one playhead; the bar lines run through both
+  halves. The row after an exactly full song only holds the "+" slot and has no strip. An 8-bar
+  song (two full rows plus the "+" row) fits the stage at 1920×1080 with the Band panel open
+  without scrolling; longer songs scroll the timeline. Sizes: chord area 56 px over a strip of
+  15 × 11 px (165 px); folded strip 7 × 14 px (98 px); a row without a strip keeps the 68 px chord
+  area.
 - Side column: Next chord, the chord editor (fields in three columns) and the saved
   progressions. The chord editor keeps its full height while Next chord (min. 240 px) and the
   saves (min. 96 px) can still give way; only below that does the editor scroll. The editor
   sits with Next chord because both act on the selected chord, and the stage keeps its height
-  for the melody lane.
+  for the timeline.
 - Band panel: below the stage, as wide as the stage. Its open/closed state is stored
   (`crokychords.bandOpen`); with nothing stored it starts open, except in compact mode.
 - **Compact mode** under 960 px viewport height (`COMPACT_QUERY = (max-height: 959px)`; the shell
   sets `.shell.compact` and follows resizes): tighter gaps and padding (a narrower title field and
-  less toolbar padding), chord cells 48 px instead of 68 px with smaller text, melody rows 180 px
-  instead of 210 px (12 px per pitch row), side-column minimums of 212 px (Next chord) and 88 px
-  (saves), and the Band panel collapsed by default.
-- Pixel theme: every size in the shell is a whole pixel value (melody rows 210 / 180 px over 15
-  pitch rows), so the theme keeps its integer scaling.
+  less toolbar padding), chord areas 44 px over a strip (48 px without one) with smaller text, the
+  melody strip always folded to 7 rows of 12 px (84 px), side-column minimums of 212 px (Next
+  chord) and 88 px (saves), and the Band panel collapsed by default.
+- Pixel theme: every size in the shell is a whole pixel value (strips of 15 × 11, 7 × 14 and
+  7 × 12 px; the separator between chords and strip is the chord area's bottom border, so the
+  strip's pitch rows stay whole pixels), so the theme keeps its integer scaling.
 - Fallback: on 1366×768 with a chord selected, Next chord sits at its minimum (about two
   suggestions visible, the list scrolls). Should even the minimums not fit, the chord editor, then
   the stage or side column, scrolls inside itself; the page still never does.
