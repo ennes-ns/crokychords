@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Melody, MelodyNote, Mode, Song } from '../src';
 import {
   ImportError,
+  barPosition,
   createSong,
   encodeVlq,
   formatToken,
@@ -159,6 +160,27 @@ describe('round trip through our own MIDI writer', () => {
       ),
       true,
     );
+  });
+
+  it('a regular arpeggio line is not taken for the melody', () => {
+    const original = song(
+      'C',
+      'major',
+      [
+        ['I', 4],
+        ['IV', 4],
+        ['V', 4],
+        ['I', 4],
+      ],
+      [n(0, 16, 3)],
+    );
+    const { report } = importMidi(songToMidi(original, { includeMuted: true }));
+    expect(report.parts.map((p) => [p.name, p.role])).toEqual([
+      ['Chords', 'chords'],
+      ['Bass', 'unused'],
+      ['Arp', 'unused'],
+      ['Melody', 'melody'],
+    ]);
   });
 
   it('an empty song and a song with only a melody', () => {
@@ -602,6 +624,12 @@ describe('importFile', () => {
     ]);
   });
 
+  it('report positions as bar and beat', () => {
+    expect(barPosition(0, { beats: 4, unit: 4 })).toBe('bar 1, beat 1');
+    expect(barPosition(7.5, { beats: 3, unit: 4 })).toBe('bar 3, beat 2.50');
+    expect(barPosition(3, { beats: 6, unit: 8 })).toBe('bar 2, beat 1');
+  });
+
   it('file names and titles', () => {
     expect(isImportFileName('a.MID')).toBe(true);
     expect(isImportFileName('a.musicxml')).toBe(true);
@@ -705,5 +733,47 @@ describe('robustness', () => {
       }
       expectSafe(() => importMusicXml(chars.join('')));
     }
+  });
+});
+
+describe('large files', () => {
+  it('a dense 40 000-note chord part imports in reasonable time', () => {
+    const body: number[] = [];
+    // Two-note pairs and triads every 1/8 beat over ~1600 beats (ppq 96: 12 ticks per 1/8).
+    for (let i = 0; i < 13_000; i++) {
+      const root = 48 + ((i * 7) % 12);
+      body.push(0, 0x90, root, 80, 0, 0x90, root + 4, 80, 0, 0x90, root + 7, 80);
+      body.push(12, 0x80, root, 0, 0, 0x80, root + 4, 0, 0, 0x80, root + 7, 0);
+    }
+    body.push(0, 0xff, 0x2f, 0);
+    const bytes = Uint8Array.from([
+      0x4d,
+      0x54,
+      0x68,
+      0x64,
+      0,
+      0,
+      0,
+      6,
+      0,
+      0,
+      0,
+      1,
+      0,
+      96,
+      0x4d,
+      0x54,
+      0x72,
+      0x6b,
+      (body.length >>> 24) & 0xff,
+      (body.length >>> 16) & 0xff,
+      (body.length >>> 8) & 0xff,
+      body.length & 0xff,
+      ...body,
+    ]);
+    const started = Date.now();
+    const { song: s } = importMidi(bytes);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(s.chords.length).toBeGreaterThan(100);
   });
 });

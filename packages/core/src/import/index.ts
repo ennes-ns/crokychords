@@ -10,7 +10,7 @@ import type { Key, Mode } from '../theory';
 import { isMode, keyPrefersFlats, keySignature, noteName, parseNoteName } from '../theory';
 import { REST_TOKEN, parseToken } from '../token';
 import { readMusicXml } from './musicxml';
-import type { ChordMatch, Segment } from './recognize';
+import type { Segment } from './recognize';
 import {
   chordiness,
   detectKey,
@@ -26,17 +26,10 @@ import {
   segmentChords,
 } from './recognize';
 import type { ImportDrop, ImportScore, ScoreNote, ScorePart } from './score';
-import {
-  IMPORT_STEP,
-  ImportError,
-  MAX_IMPORT_BEATS,
-  MAX_IMPORT_CHORDS,
-  position,
-  quantize,
-} from './score';
+import { IMPORT_STEP, ImportError, MAX_IMPORT_BEATS, MAX_IMPORT_CHORDS, quantize } from './score';
 import { decodeText, readSmf } from './smf';
 
-export { ImportError } from './score';
+export { ImportError, barPosition } from './score';
 export type { ImportDrop } from './score';
 
 export interface ImportOptions {
@@ -75,6 +68,8 @@ export interface ImportResult {
   report: ImportReport;
 }
 
+/** Longest title (the command contract's and the save store's limit). */
+const MAX_IMPORT_TITLE = 200;
 const TEMPO_MIN = 20;
 const TEMPO_MAX = 300;
 const METER_UNITS = [1, 2, 4, 8, 16, 32];
@@ -159,7 +154,7 @@ export function scoreToSong(score: ImportScore, options: ImportOptions = {}): Im
     notes.reduce((a, n) => Math.max(a, n.end), 0);
   let end: number;
   if (useSymbols) {
-    const allNotes = Math.max(0, ...pitched.map((p) => lastEnd(p.notes)));
+    const allNotes = pitched.reduce((a, p) => Math.max(a, lastEnd(p.notes)), 0);
     const lastSymbol = score.harmonies.at(-1)?.start ?? 0;
     end = score.length ?? Math.max(allNotes, lastSymbol + barBeats);
   } else if (chordPart !== null) {
@@ -185,7 +180,7 @@ export function scoreToSong(score: ImportScore, options: ImportOptions = {}): Im
   if (useSymbols) {
     for (const s of segments) {
       if (!s.silent && s.match === null) {
-        log.drop('chord', s.start, `${position(s.start, barBeats)}: chord symbol ${s.notes}`);
+        log.drop('chord', s.start, `chord symbol ${s.notes} not recognised`);
       }
     }
   }
@@ -218,19 +213,15 @@ export function scoreToSong(score: ImportScore, options: ImportOptions = {}): Im
     if (beats < IMPORT_STEP) return;
     let token = REST_TOKEN;
     if (seg.match !== null) {
-      const next = segments.slice(i + 1).find((s) => s.match !== null)?.match ?? null;
-      const placed = placeChord(seg.match, key, nextIfAdjacent(segments, i, next));
+      // A secondary dominant needs its target right after it (no rest between).
+      const placed = placeChord(seg.match, key, segments[i + 1]?.match ?? null);
       if (placed === null) {
-        log.drop('chord', seg.start, `${position(seg.start, barBeats)}: ${seg.notes}`);
+        log.drop('chord', seg.start, `no token for ${seg.notes}`);
       } else {
         token = placed.token;
         counts[placed.kind]++;
         if (placed.bassIgnored) {
-          log.drop(
-            'note',
-            seg.start,
-            `${position(seg.start, barBeats)}: bass note under ${placed.token} is no chord tone`,
-          );
+          log.drop('note', seg.start, `bass note under ${placed.token} is no chord tone`);
         }
       }
     }
@@ -290,11 +281,7 @@ export function scoreToSong(score: ImportScore, options: ImportOptions = {}): Im
       }
       const spelled = melodyDegree(line.pitch, key, chordAt(line.start));
       if (spelled === null) {
-        log.drop(
-          'note',
-          line.start,
-          `${position(line.start, barBeats)}: melody note ${line.pitch} out of range`,
-        );
+        log.drop('note', line.start, `melody note ${line.pitch} out of range`);
         continue;
       }
       notes.push({
@@ -318,7 +305,7 @@ export function scoreToSong(score: ImportScore, options: ImportOptions = {}): Im
       log.warn('No single-voice part above the bass was found for the melody.');
   }
 
-  const title = score.title || options.title || 'Imported';
+  const title = (score.title || options.title || 'Imported').slice(0, MAX_IMPORT_TITLE);
   const melody: Melody = { ...defaultMelody(), notes };
   let song: Song;
   try {
@@ -363,16 +350,6 @@ export function scoreToSong(score: ImportScore, options: ImportOptions = {}): Im
     warnings: log.warnings,
   };
   return { song, report };
-}
-
-/** The next chord only counts for a secondary dominant when no rest lies between them. */
-function nextIfAdjacent(
-  segments: readonly Segment[],
-  index: number,
-  next: ChordMatch | null,
-): ChordMatch | null {
-  const following = segments[index + 1];
-  return following !== undefined && following.match !== null ? next : null;
 }
 
 /** Import a Standard MIDI File. */

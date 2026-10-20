@@ -105,8 +105,9 @@ export function quantize(beat: number): number {
   return Math.round(beat / IMPORT_STEP) * IMPORT_STEP;
 }
 
-/** "bar 3 beat 2" style position for the report (1-based). */
-export function position(beat: number, beatsPerBar: number): string {
+/** "bar 3, beat 2" (1-based) for a beat of a song in `meter`, for showing report entries. */
+export function barPosition(beat: number, meter: { beats: number; unit: number }): string {
+  const beatsPerBar = (meter.beats * 4) / meter.unit;
   const bar = Math.floor(beat / beatsPerBar) + 1;
   const inBar = beat - (bar - 1) * beatsPerBar + 1;
   return `bar ${bar}, beat ${Number.isInteger(inBar) ? inBar : inBar.toFixed(2)}`;

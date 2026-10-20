@@ -12,7 +12,7 @@ import type { Degree, Key, Mode, PitchClass } from '../theory';
 import { MODES, SCALES, degreePitch, keySignature, midiNote, toPitchClass } from '../theory';
 import { formatToken, tryParseToken } from '../token';
 import type { KeyHint, ReportLog, ScoreHarmony, ScoreNote, ScorePart } from './score';
-import { IMPORT_STEP, position, quantize } from './score';
+import { IMPORT_STEP, quantize } from './score';
 
 /** A chord shape the token format spells: everything of a Chord but its place in the key. */
 export type ShapeChord = Pick<Chord, 'quality' | 'extension' | 'sus' | 'adds' | 'alterations'>;
@@ -148,14 +148,23 @@ function quantizeNotes(notes: readonly ScoreNote[]): QNote[] {
 
 /** Beats where three or more pitch classes sound together (the chord-part score). */
 export function chordiness(notes: readonly ScoreNote[]): number {
-  const q = quantizeNotes(notes);
-  const times = [...new Set(q.flatMap((n) => [n.start, n.end]))].sort((a, b) => a - b);
+  // Sweep over note starts and ends, counting the notes per pitch class that sound.
+  const events: [number, number, number][] = [];
+  for (const n of quantizeNotes(notes)) {
+    events.push([n.start, 1, n.pitch % 12], [n.end, -1, n.pitch % 12]);
+  }
+  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const counts = Array.from({ length: 12 }, () => 0);
+  let distinct = 0;
   let beats = 0;
-  for (let i = 0; i + 1 < times.length; i++) {
-    const a = times[i] ?? 0;
-    const b = times[i + 1] ?? a;
-    const pcs = new Set(q.filter((n) => n.start <= a && n.end >= b).map((n) => n.pitch % 12));
-    if (pcs.size >= 3) beats += b - a;
+  let last = 0;
+  for (const [time, delta, pc] of events) {
+    if (distinct >= 3) beats += time - last;
+    last = time;
+    const before = counts[pc] ?? 0;
+    counts[pc] = before + delta;
+    if (before === 0 && delta > 0) distinct++;
+    else if (before === 1 && delta < 0) distinct--;
   }
   return beats;
 }
@@ -198,7 +207,7 @@ export function isRegularLine(notes: readonly ScoreNote[]): boolean {
     const gap = Math.round((b.start - a.start) * 64);
     gaps.set(gap, (gaps.get(gap) ?? 0) + 1);
   }
-  const common = Math.max(...gaps.values());
+  const common = [...gaps.values()].reduce((a, b) => Math.max(a, b), 0);
   return common >= 0.9 * (sorted.length - 1) && lengths.size === 1;
 }
 
@@ -224,7 +233,7 @@ export function segmentChords(
   const attacks = [...starts].filter(([, count]) => count >= 2).map(([t]) => t);
   const inAttacks = notes.filter((n) => (starts.get(n.start) ?? 0) >= 2).length;
   const bounds = new Set<number>(attacks);
-  const first = Math.min(...notes.map((n) => n.start));
+  const first = notes.reduce((a, n) => Math.min(a, n.start), Infinity);
   bounds.add(first);
   if (inAttacks < notes.length / 2) {
     for (let t = Math.ceil(first / barBeats) * barBeats; t < end; t += barBeats) bounds.add(t);
@@ -232,18 +241,42 @@ export function segmentChords(
   const times = [...bounds].filter((t) => t < end).sort((a, b) => a - b);
   times.push(end);
 
+  // Notes by bar, so a segment only looks at the notes near it (long notes are always checked).
+  const byBar = new Map<number, QNote[]>();
+  const long: QNote[] = [];
+  for (const note of notes) {
+    const from = Math.floor(note.start / barBeats);
+    const to = Math.floor((note.end - 1e-9) / barBeats);
+    if (to - from > 8) {
+      long.push(note);
+      continue;
+    }
+    for (let bar = from; bar <= to; bar++) {
+      const list = byBar.get(bar) ?? [];
+      list.push(note);
+      byBar.set(bar, list);
+    }
+  }
+  const near = (a: number, b: number): QNote[] => {
+    const found = new Set<QNote>(long);
+    for (let bar = Math.floor(a / barBeats); bar <= Math.floor((b - 1e-9) / barBeats); bar++) {
+      for (const note of byBar.get(bar) ?? []) found.add(note);
+    }
+    return [...found];
+  };
+
   const raw: Segment[] = [];
   if (first > 0) raw.push({ start: 0, end: first, match: null, silent: true, notes: '' });
   for (let i = 0; i + 1 < times.length; i++) {
     const a = times[i] ?? 0;
     const b = times[i + 1] ?? a;
     if (b <= a) continue;
-    const inside = notes.filter((n) => n.start < b && n.end > a);
+    const inside = near(a, b).filter((n) => n.start < b && n.end > a);
     if (inside.length === 0) {
       raw.push({ start: a, end: b, match: null, silent: true, notes: '' });
       continue;
     }
-    const sounding = Math.max(...inside.map((n) => Math.min(n.end, b)));
+    const sounding = inside.reduce((acc, n) => Math.max(acc, Math.min(n.end, b)), a);
     let chordEnd = b;
     // A long silence after the notes is a rest: the chord ends at its last note, on a whole beat.
     const silence = b - sounding;
@@ -257,7 +290,10 @@ export function segmentChords(
       weights[pc] = (weights[pc] ?? 0) + Math.min(n.end, chordEnd) - Math.max(n.start, a);
     }
     const atStart = inside.filter((n) => n.start <= a && n.end > a);
-    const low = Math.min(...(atStart.length > 0 ? atStart : inside).map((n) => n.pitch));
+    const low = (atStart.length > 0 ? atStart : inside).reduce(
+      (acc, n) => Math.min(acc, n.pitch),
+      127,
+    );
     const match = matchChord(weights, toPitchClass(low));
     const names = noteList(inside.map((n) => n.pitch % 12));
     raw.push({ start: a, end: chordEnd, match, silent: false, notes: names });
@@ -284,7 +320,7 @@ export function segmentChords(
   }
   for (const seg of merged) {
     if (!seg.silent && seg.match === null) {
-      log.drop('chord', seg.start, `${position(seg.start, barBeats)}: no chord in ${seg.notes}`);
+      log.drop('chord', seg.start, `no chord in ${seg.notes}`);
     }
   }
   return merged;
