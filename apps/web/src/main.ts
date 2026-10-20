@@ -36,13 +36,12 @@ import { syncStatusView } from './sync/statusView';
 import { applyTheme, installThemes, loadThemeId } from './themes';
 import { mountBand } from './views/band';
 import { mountChordEditor } from './views/chordEditor';
-import { mountGrid } from './views/grid';
 import { bindImportDrop, mountImporter } from './views/importer';
-import { mountMelody } from './views/melody';
 import { patternEditorKey } from './views/pattern';
 import { mountSaves } from './views/saves';
 import { browserCompactMedia, mountShell } from './views/shell';
 import { mountSuggest } from './views/suggest';
+import { mountTimeline } from './views/timeline';
 import { mountToolbar } from './views/toolbar';
 
 /** How long `play` waits for the browser to let audio start (ms). */
@@ -159,9 +158,10 @@ async function boot(app: HTMLElement): Promise<void> {
   );
   bindFirePageEvents(fire, window);
 
-  const { toolbar, grid, melody, editor, band, suggest, saves, compact } = mountShell(
+  const compactMedia = browserCompactMedia();
+  const { toolbar, timelineBar, timeline, editor, band, suggest, saves, compact } = mountShell(
     app,
-    browserCompactMedia(),
+    compactMedia,
   );
   const overlay = h(
     'button',
@@ -185,7 +185,7 @@ async function boot(app: HTMLElement): Promise<void> {
   // Hidden entirely until enabled (issue #100); the command API stays regardless.
   void assistantVisible(import.meta.env, assistantBackend).then(assistant.setEnabled);
   // Over the side column; the stage keeps its size (docs/specs/assistant-v1.md §B1).
-  grid.closest('.workspace')?.append(assistant.element);
+  timeline.closest('.workspace')?.append(assistant.element);
   bindAssistantKey(window, assistant);
   // MIDI/MusicXML import: More panel, drop on the grid, preview (docs/specs/import-v1.md §B).
   const importer = mountImporter(app, {
@@ -194,7 +194,7 @@ async function boot(app: HTMLElement): Promise<void> {
       await session.importSongs(songs);
     },
   });
-  bindImportDrop(grid, importer);
+  bindImportDrop(timeline, importer);
   mountToolbar(toolbar, store, actions, {
     storage,
     importer,
@@ -202,10 +202,11 @@ async function boot(app: HTMLElement): Promise<void> {
     fire: { connect: () => void fire.connect(), disconnect: () => fire.disconnect() },
     breakcore,
   });
-  mountGrid(grid, store, actions);
-  const melodyLane = mountMelody(melody, store, actions, storage);
-  // Working in the chord grid gives the editing keys back to the chords.
-  grid.addEventListener('pointerdown', () => actions.setFocus('chords'));
+  // One timeline: chord rows with their melody strips beneath (docs/specs/melody-v1.md §B2).
+  const melodyLane = mountTimeline(timelineBar, timeline, store, actions, {
+    storage,
+    compact: compactMedia,
+  });
   mountChordEditor(editor, store, actions);
   // Short screens start with the Band panel collapsed until the user opens it once.
   mountBand(band, store, actions, storage, audio.sound, audio.master, {

@@ -1,9 +1,10 @@
 /**
  * App shell (docs/specs/web-v1.md, "Layout"): the containers every view mounts into, laid out so
  * the whole editor fits one screen without page scrolling. Toolbar on top; below it the stage
- * (chord grid, melody lane), the Band panel at the bottom of the stage column, and the side column
- * for the selected chord and the song list (Next chord, chord editor, saved progressions). The CSS grid lives in styles.css; this file
- * owns the DOM structure and the compact flag for short screens.
+ * (the timeline bar and the timeline: chord rows, each with its melody strip beneath), the Band
+ * panel at the bottom of the stage column, and the side column for the selected chord and the
+ * song list (Next chord, chord editor, saved progressions). The CSS grid lives in styles.css;
+ * this file owns the DOM structure and the compact flag for short screens.
  */
 import { h } from '../dom';
 
@@ -19,8 +20,10 @@ export interface CompactMedia {
 
 export interface Shell {
   toolbar: HTMLElement;
-  grid: HTMLElement;
-  melody: HTMLElement;
+  /** The slim bar above the rows: the melody controls (docs/specs/melody-v1.md §B2). */
+  timelineBar: HTMLElement;
+  /** The rows (chords with the melody strip beneath), the stage's one scroll container. */
+  timeline: HTMLElement;
   editor: HTMLElement;
   band: HTMLElement;
   suggest: HTMLElement;
@@ -40,8 +43,8 @@ export function browserCompactMedia(): CompactMedia | null {
  */
 export function mountShell(app: HTMLElement, media: CompactMedia | null): Shell {
   const toolbar = h('header');
-  const grid = h('section');
-  const melody = h('section');
+  const timelineBar = h('div');
+  const timeline = h('section');
   const editor = h('section');
   const band = h('section');
   const suggest = h('aside');
@@ -52,7 +55,7 @@ export function mountShell(app: HTMLElement, media: CompactMedia | null): Shell 
     h(
       'main',
       { class: 'workspace' },
-      h('div', { class: 'stage' }, grid, melody),
+      h('div', { class: 'stage' }, timelineBar, timeline),
       band,
       h('div', { class: 'side' }, suggest, editor, saves),
     ),
@@ -64,8 +67,8 @@ export function mountShell(app: HTMLElement, media: CompactMedia | null): Shell 
   media?.addEventListener('change', sync);
   return {
     toolbar,
-    grid,
-    melody,
+    timelineBar,
+    timeline,
     editor,
     band,
     suggest,

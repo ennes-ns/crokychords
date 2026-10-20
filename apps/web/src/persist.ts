@@ -92,6 +92,27 @@ export function saveMelodyTones(storage: SongStorage | null, on: boolean): void 
   }
 }
 
+export const MELODY_FOLDED_KEY = 'crokychords.melodyFolded';
+
+/** Whether the melody strip is folded to one row per degree (default: off, 15 rows). */
+export function loadMelodyFolded(storage: SongStorage | null): boolean {
+  if (storage === null) return false;
+  try {
+    return storage.getItem(MELODY_FOLDED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function saveMelodyFolded(storage: SongStorage | null, on: boolean): void {
+  if (storage === null) return;
+  try {
+    storage.setItem(MELODY_FOLDED_KEY, String(on));
+  } catch {
+    // A view preference: the strip just shows in its default height next time.
+  }
+}
+
 export const MASTER_KEY = 'crokychords.master';
 
 /** Master section: output protection and volume. A local listening setting, never in the song. */

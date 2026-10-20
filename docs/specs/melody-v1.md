@@ -1,6 +1,6 @@
 # Spec: Melody v1 — a scale-degree melody lane under the chord grid
 
-Status: implemented (issue #45). Owner: main session. One PR touching `packages/core` (model,
+Status: implemented (issue #45); §B2 revised for the integrated timeline (issue #105). Owner: main session. One PR touching `packages/core` (model,
 migration, rendering, MIDI) and `apps/web` (lane view, keyboard, lead instrument).
 
 ## Goal
@@ -116,15 +116,43 @@ Pure song edits live in `src/melody.ts` (`placeNote`, `removeNote`, `noteIndexAt
 `toggleMelodyMute`). `placeNote` keeps the lane monophonic: notes starting inside the new note
 are removed and a note running into it is shortened.
 
-### B2. The lane (`src/views/melody.ts`)
+### B2. The strip in the timeline (`src/views/melody.ts`, `src/views/timeline.ts`)
 
-A panel directly under the chord grid (above the chord editor). The head holds the title, the
-grid toggle (`1/8 | 1/16`), a Chord tones checkbox (B4), a Mute checkbox and the channel select
-(1–16). The body mirrors the
-grid's rows (same bars per row, same beat → x mapping as `views/grid.ts`), each row a small
-piano roll of 15 degree rows, from degree 5 one octave down to degree 5 one octave up; notes
-outside that range sit on the top or bottom row with a dotted edge. Rows on degree 1 are shaded so the
-tonic is easy to find. Each note shows its degree with accidental (`♭3`, `5`, `♯4`).
+Revised by issue #105: melody and chords are one timeline, not two panels with their own rows.
+
+- **Row = chord blocks + melody strip.** The stage shows one list of rows (`views/timeline.ts`),
+  in one scroll container. Each row holds the bar numbers, the chord blocks of its bars
+  (`views/grid.ts`) and directly under them, in the same bordered box, the melody strip of the
+  same bars (`views/melody.ts`), like a lead sheet with the chords above the notes. Both halves
+  use the same beat → x mapping (`gridLayout`, `beatToRowPosition`), so the bar and beat lines
+  run through both halves and a chord's tone tint (B4) sits exactly under that chord.
+- **Rows.** The timeline has as many rows as the chord grid (the song plus at least one empty
+  bar), more when the melody runs past it. A row gets a strip when chords or notes reach into it,
+  when it is the first row (a song without chords still gets one row with an empty chord area,
+  the "+" slot and a strip), or when the melody cursor is in it. The row after an exactly full
+  song, which only holds the "+" slot, has no strip until one of those applies.
+- **Strip.** 15 degree rows as before, from degree 5 one octave down to degree 5 one octave up;
+  notes outside that range sit on the top or bottom row with a dotted edge. Rows on degree 1 are
+  shaded so the tonic is easy to find. Each note shows its degree with accidental (`♭3`, `5`,
+  `♯4`).
+- **Folded strip (7 rows).** A per-device setting ("7 rows" in the timeline bar, stored as
+  `crokychords.melodyFolded`) folds the strip to one row per degree, 1 at the bottom to 7 at the
+  top, every octave on its degree's row. A note above the home octave gets a dotted top edge, one
+  below it a dotted bottom edge (the same mark as a clamped note in the full strip). Clicking a
+  row places that degree in the octave for new notes (`melodyOctave`); dragging a note up or down
+  moves it by scale steps, as in the full strip. Compact mode (`web-v1.md` §9) always folds.
+- **One playhead** per timeline: a single element in the playing row's box, spanning the chord
+  blocks and the strip, moved by `transform` and gliding as one Web Animation per leg
+  (`placePlayhead`/`anchorPlayhead`, issue #82). When it moves to another row while playing, that
+  row is scrolled into view inside the timeline (`block: 'nearest'`, once per row change).
+- **Focus.** `N` still switches which half the editing keys act on, clicking a chord or the chord
+  area focuses the chords, clicking the strip focuses the melody. The focused half is marked in
+  every row (an accent edge on its left side), and the melody cursor is drawn only while the
+  melody has focus.
+- **Timeline bar.** The former lane header is a slim one-line bar above the stage's rows: the
+  title, the grid toggle (`1/8 | 1/16`), the Chord tones checkbox (B4), the 7-rows checkbox, Mute
+  and the channel select (1–16; both also in the Band panel's melody row), and the status hint,
+  which shortens with an ellipsis rather than wrapping.
 
 Mouse:
 
@@ -176,13 +204,16 @@ both themes stay consistent without new note tokens:
 | flat (`.flat`) | `--suggestion-hover` (one step darker) | `--chord-edge` | `--chord-ink` |
 | selected (cursor) | `--chord-selected` | `--chord-ring` | `--chord-ink`, plus the `--focus-w` ring in `--text` |
 
+Notes take the thin `--border-w` edge rather than the chord blocks' `--chord-border-w`, since a
+pitch row is only 11–14 px high (B2).
+
 `melodyNoteHarmony` no longer colours the note; it is kept as `data-harmony` and in the
 tooltip (`chord tone`, `passing tone`, `outside the key`), so the relation is not shown by
 colour alone.
 
-**Chord-tone tint.** Under every chord segment of the grid, the lane rows whose degree carries one
-of the chord's `chordTones` (root, third or sus, fifth, seventh; in every octave the lane shows)
-get a faint tint over the chord's span: a note on a tinted row is a chord tone, one on a plain
+**Chord-tone tint.** Under every chord segment of the grid, the strip rows whose degree carries one
+of the chord's `chordTones` (root, third or sus, fifth, seventh; in every octave the strip shows,
+or the one degree row of a folded strip) get a faint tint over the chord's span: a note on a tinted row is a chord tone, one on a plain
 row a passing tone. A chromatic chord tone tints the row of the degree it is spelled on (`bVII`
 tints the 7 rows), where the note with its accidental goes. Rests tint nothing.
 
@@ -193,9 +224,9 @@ tints the 7 rows), where the note with its accidental goes. Rests tint nothing.
   playhead.
 - The spans are recomputed only when the chords, the key or the row length change, not when
   only the melody, the cursor or the playhead moves (no per-frame DOM work, issue #61).
-- Toggle: the "Chord tones" checkbox in the lane header or `H` (melody focus), default on,
+- Toggle: the "Chord tones" checkbox in the timeline bar (B2) or `H` (melody focus), default on,
   stored per device in `localStorage` under `crokychords.melodyChordTones`. Toggling only flips
-  a class on the lane (`hide-tones`), so it costs no re-render.
+  a class on the timeline (`hide-tones`), so it costs no re-render.
 
 ### B5. Playback, MIDI out, export
 
@@ -214,8 +245,9 @@ Core: schema-3 round-trip, schema 1 and 2 migration, every melody validation err
 pitch per mode and octave, harmony classes (chord tone, scale tone, outside, rest), rendering
 (mute, cut at the end), MIDI melody track (name, channel, notes, skipped when empty or muted).
 Web: pure melody edits, melody key map (including the keys it must leave alone), actions
-(place/move/step/octave/length/accidental/delete, focus, grid toggle, undo), the lane view
+(place/move/step/octave/length/accidental/delete, focus, grid toggle, undo), the strip view
 (rows, notes with degree hues and accidental classes, chord-tone spans and their toggle, click
-to add, drag, double-click), `chordTones` (triads, sevenths, borrowed and applied chords, sus,
+to add, drag, double-click, the folded strip), the timeline (row composition, one playhead
+spanning both halves, the tint aligned to its chord's x-range, focus marking, compact folding), `chordTones` (triads, sevenths, borrowed and applied chords, sus,
 altered fifths, inversions), scheduler with melody events, lead
 instrument headroom.

@@ -1,16 +1,17 @@
 /**
- * Melody lane under the chord grid (docs/specs/melody-v1.md, B2): the grid's rows as small
- * piano rolls of scale-degree rows. Notes carry their degree's hue (the chord blocks' colours);
- * rows holding a tone of the chord above them are tinted (B4).
+ * Melody strip of every timeline row (docs/specs/melody-v1.md, B2; `timeline.ts`): directly under
+ * the row's chords, a small piano roll of scale-degree rows (15, or 7 when folded), plus the
+ * timeline bar with the melody controls. Notes carry their degree's hue (the chord blocks'
+ * colours); rows holding a tone of the chord above them are tinted (B4).
  */
-import type { MelodyNote, Song } from '@crokychords/core';
+import type { Degree, MelodyNote, Song } from '@crokychords/core';
 import { chordTones, melodyNoteHarmony, songKey, tryParseToken } from '@crokychords/core';
 import type { MelodyHarmony } from '@crokychords/core';
 import type { Actions } from '../actions';
-import { h, option, replaceChildren } from '../dom';
+import { h, option } from '../dom';
 import { degreeHue } from '../music';
 import type { SongStorage } from '../persist';
-import { loadMelodyTones, saveMelodyTones } from '../persist';
+import { loadMelodyFolded, loadMelodyTones, saveMelodyFolded, saveMelodyTones } from '../persist';
 import {
   MELODY_GRIDS,
   MELODY_GRID_LABELS,
@@ -27,14 +28,9 @@ import {
 } from '../melody';
 import type { AppState, Store } from '../state';
 import type { GridLayout } from './grid';
-import {
-  anchorPlayhead,
-  beatToRowPosition,
-  chordSegments,
-  gridLayout,
-  removePlayhead,
-  xToBeat,
-} from './grid';
+import { beatToRowPosition, chordSegments, gridLayout, xToBeat } from './grid';
+import type { CompactMedia } from './shell';
+import type { RowHost } from './timeline';
 
 /** How a note's tooltip names its relation to the chord under it. */
 export const HARMONY_LABELS: Record<MelodyHarmony, string> = {
@@ -49,6 +45,33 @@ export const ACCIDENTAL_CLASSES: Record<MelodyNote['accidental'], string | null>
   0: null,
   1: 'sharp',
 };
+
+/** Rows of a folded strip: one per degree, every octave on its degree's row. */
+export const FOLDED_ROWS = 7;
+
+/** How many pitch rows a strip has: 15, or 7 when folded. */
+export function stripRows(folded: boolean): number {
+  return folded ? FOLDED_ROWS : PITCH_ROWS;
+}
+
+/** The degree strip row `lane` (0 = bottom) stands for. */
+export function laneDegree(lane: number, folded: boolean): Degree {
+  return folded ? ((lane + 1) as Degree) : rowPitch(lane + PITCH_ROW_MIN).degree;
+}
+
+/** Strip row of a note (0 = bottom) and whether it lies outside the rows (octaves) shown. */
+export function noteLane(
+  note: MelodyNote,
+  folded: boolean,
+): { lane: number; clamped: 'up' | 'down' | null } {
+  if (folded) {
+    const clamped = note.octave > 0 ? 'up' : note.octave < 0 ? 'down' : null;
+    return { lane: note.degree - 1, clamped };
+  }
+  const pitch = pitchRow(note);
+  const clamped = pitch > PITCH_ROW_MAX ? 'up' : pitch < PITCH_ROW_MIN ? 'down' : null;
+  return { lane: Math.min(PITCH_ROW_MAX, Math.max(PITCH_ROW_MIN, pitch)) - PITCH_ROW_MIN, clamped };
+}
 
 /** The chord grid's layout, with extra rows when the melody runs past it. */
 export function melodyLayout(song: Song): GridLayout {
@@ -72,9 +95,9 @@ export interface NoteSegment {
   width: number;
   first: boolean;
   last: boolean;
-  /** Pitch row inside the lane, 0 = bottom (clamped). */
+  /** Pitch row inside the strip, 0 = bottom (clamped; the degree's row when folded). */
   lane: number;
-  /** The note lies above or below the rows the lane shows. */
+  /** The note lies above or below the rows (folded: the home octave) the strip shows. */
   clamped: 'up' | 'down' | null;
   harmony: MelodyHarmony;
   /** Hue of the note's degree, the same as a chord on that degree (`DEGREE_HUES`). */
@@ -82,12 +105,10 @@ export interface NoteSegment {
 }
 
 /** Note blocks per row; a note crossing a row boundary is split. */
-export function noteSegments(song: Song, layout: GridLayout): NoteSegment[] {
+export function noteSegments(song: Song, layout: GridLayout, folded = false): NoteSegment[] {
   const segments: NoteSegment[] = [];
   songMelody(song).notes.forEach((note, index) => {
-    const pitch = pitchRow(note);
-    const clamped = pitch > PITCH_ROW_MAX ? 'up' : pitch < PITCH_ROW_MIN ? 'down' : null;
-    const lane = Math.min(PITCH_ROW_MAX, Math.max(PITCH_ROW_MIN, pitch)) - PITCH_ROW_MIN;
+    const { lane, clamped } = noteLane(note, folded);
     const harmony = melodyNoteHarmony(song, note);
     const hue = degreeHue(note.degree);
     const end = note.beat + note.length;
@@ -127,11 +148,12 @@ export interface ToneSpan {
 }
 
 /**
- * Chord-tone tint of the lane: for every chord segment, the lane rows whose degree carries one
+ * Chord-tone tint of the strip: for every chord segment, the strip rows whose degree carries one
  * of the chord's core tones (`chordTones`: root, third or sus, fifth, seventh; natural or
- * altered), in every octave the lane shows. Rests and unparseable tokens tint nothing.
+ * altered), in every octave the strip shows (folded: the degree's one row). Rests and
+ * unparseable tokens tint nothing.
  */
-export function chordToneSpans(song: Song, layout: GridLayout): ToneSpan[] {
+export function chordToneSpans(song: Song, layout: GridLayout, folded = false): ToneSpan[] {
   const key = songKey(song);
   const spans: ToneSpan[] = [];
   const tonesByToken = new Map<string, ReturnType<typeof chordTones>>();
@@ -143,8 +165,8 @@ export function chordToneSpans(song: Song, layout: GridLayout): ToneSpan[] {
       tonesByToken.set(seg.token, tones);
     }
     if (tones.length === 0) continue;
-    for (let lane = 0; lane < PITCH_ROWS; lane++) {
-      const { degree } = rowPitch(lane + PITCH_ROW_MIN);
+    for (let lane = 0; lane < stripRows(folded); lane++) {
+      const degree = laneDegree(lane, folded);
       const onRow = tones.filter((t) => t.degree === degree);
       if (onRow.length === 0) continue;
       const root = onRow.some((t) => t.role === 'root');
@@ -154,14 +176,20 @@ export function chordToneSpans(song: Song, layout: GridLayout): ToneSpan[] {
   return spans;
 }
 
-/** Pitch (degree, octave) of the lane row under `y` px from the top of a `height` px track. */
+/**
+ * Pitch (degree, octave) of the strip row under `y` px from the top of a `height` px strip. A
+ * folded strip's rows are degrees; they take `octave` (the octave for new notes).
+ */
 export function yToPitch(
   y: number,
   height: number,
+  folded = false,
+  octave = 0,
 ): { degree: MelodyNote['degree']; octave: number } {
+  const rows = stripRows(folded);
   const fromBottom = height > 0 ? (height - y) / height : 0;
-  const lane = Math.min(PITCH_ROWS - 1, Math.max(0, Math.floor(fromBottom * PITCH_ROWS)));
-  return rowPitch(lane + PITCH_ROW_MIN);
+  const lane = Math.min(rows - 1, Math.max(0, Math.floor(fromBottom * rows)));
+  return folded ? { degree: laneDegree(lane, true), octave } : rowPitch(lane + PITCH_ROW_MIN);
 }
 
 function pct(fraction: number): string {
@@ -173,14 +201,22 @@ export interface MelodyLane {
   toggleChordTones(): void;
 }
 
+/**
+ * Mount the melody strips into the timeline rows of `host` and the melody controls into `bar`
+ * (the timeline bar above the rows). `compact` folds the strip while it matches.
+ */
 export function mountMelody(
-  root: HTMLElement,
+  bar: HTMLElement,
+  host: RowHost,
   store: Store,
   actions: Actions,
   storage: SongStorage | null = null,
+  compact: CompactMedia | null = null,
 ): MelodyLane {
-  root.classList.add('panel', 'melody');
-  root.setAttribute('aria-label', 'Melody lane');
+  const root = host.root;
+  bar.classList.add('timeline-bar');
+  bar.setAttribute('role', 'group');
+  bar.setAttribute('aria-label', 'Melody');
 
   const gridButtons = MELODY_GRIDS.map((grid) => {
     const button = h(
@@ -214,10 +250,27 @@ export function mountMelody(
     saveMelodyTones(storage, on);
   };
   tones.onchange = () => setTones(tones.checked);
+
+  // The 7-row strip: a per-device choice, always on in compact density.
+  const fold = h('input', {
+    props: { type: 'checkbox' },
+    attrs: { 'data-field': 'melody-folded' },
+  });
+  const foldLabel = h('label', { class: 'check' }, fold, '7 rows');
+  let userFolded = loadMelodyFolded(storage);
+  const isCompact = (): boolean => compact?.matches === true;
+  const folded = (): boolean => userFolded || isCompact();
+  const showFold = (): void => {
+    fold.checked = folded();
+    fold.disabled = isCompact();
+    foldLabel.title = isCompact()
+      ? 'Short screens always fold the melody strip to one row per degree'
+      : 'Fold the melody strip to one row per degree, every octave on its row';
+  };
+  showFold();
+
   const status = h('span', { class: 'hint melody-status' });
-  const head = h(
-    'div',
-    { class: 'panel-head' },
+  bar.append(
     h('h2', {}, 'Melody'),
     h(
       'div',
@@ -233,29 +286,39 @@ export function mountMelody(
         tones,
         'Chord tones',
       ),
+      foldLabel,
       h('label', { class: 'check' }, mute, 'Mute'),
       h('label', {}, 'Ch ', channel),
     ),
+    status,
   );
-  const body = h('div', { class: 'melody-rows' });
-  const playhead = h('div', { class: 'playhead', attrs: { 'aria-hidden': 'true' } });
-  root.append(head, body, status);
 
-  let layout = melodyLayout(store.state.song);
+  let layout = host.plan(store.state).layout;
   let tracks: HTMLElement[] = [];
   let last: unknown[] = [];
   let lastHead: unknown[] = [];
-  let lastPlayhead: unknown[] = [];
-  /** Tint spans, recomputed only when the chords, the key or the row length change. */
+  /** Tint spans, recomputed only when the chords, the key, the row length or the fold change. */
   let toneSpans: ToneSpan[] = [];
   let toneInputs: unknown[] = [];
-  const spansFor = (song: Song): ToneSpan[] => {
-    const inputs = [song.chords, song.key.tonic, song.key.mode, layout.rowBeats];
+  const spansFor = (song: Song, isFolded: boolean): ToneSpan[] => {
+    const inputs = [song.chords, song.key.tonic, song.key.mode, layout.rowBeats, isFolded];
     if (!inputs.every((value, i) => value === toneInputs[i])) {
       toneInputs = inputs;
-      toneSpans = chordToneSpans(song, layout);
+      toneSpans = chordToneSpans(song, layout, isFolded);
     }
     return toneSpans;
+  };
+
+  /** The strip under (or nearest above) the pointer. */
+  const trackAt = (e: MouseEvent): HTMLElement | undefined =>
+    tracks.find((t) => e.clientY < t.getBoundingClientRect().bottom) ?? tracks.at(-1);
+
+  /** Pitch under the pointer within the strip it is over. */
+  const yToPitchAt = (e: MouseEvent): { degree: MelodyNote['degree']; octave: number } => {
+    const rect = trackAt(e)?.getBoundingClientRect();
+    return rect === undefined
+      ? rowPitch(0)
+      : yToPitch(e.clientY - rect.top, rect.height, folded(), store.state.melodyOctave);
   };
 
   /** Beat and pitch under a pointer, snapped to the grid ('floor': the cell; 'round': a line). */
@@ -263,16 +326,16 @@ export function mountMelody(
     e: MouseEvent,
     rounding: 'floor' | 'round',
   ): { beat: number; degree: MelodyNote['degree']; octave: number; row: number } | null => {
-    const track = tracks.find((t) => e.clientY < t.getBoundingClientRect().bottom) ?? tracks.at(-1);
+    const track = trackAt(e);
     if (track === undefined) return null;
     const rect = track.getBoundingClientRect();
-    const row = tracks.indexOf(track);
+    const row = Number(track.dataset['row']);
     const beat = xToBeat(row, e.clientX - rect.left, rect.width, layout, {
       snap: store.state.melodyGrid,
       rounding,
       clamp: rounding === 'floor',
     });
-    return { beat, row, ...yToPitch(e.clientY - rect.top, rect.height) };
+    return { beat, row, ...yToPitchAt(e) };
   };
 
   /** Run a pointer drag: `move` previews, the song is committed (one undo step) on release. */
@@ -339,6 +402,7 @@ export function mountMelody(
     actions.setFocus('melody');
     const base = store.state.song;
     const startPitch = pitchRow(note);
+    // Strip rows are scale steps in both views, so the row offset is the pitch offset.
     const startLane = pitchRow(yToPitchAt(e));
     let lastKey = '';
     drag(
@@ -382,49 +446,50 @@ export function mountMelody(
     );
   };
 
-  /** Pitch under the pointer within the track it is over. */
-  const yToPitchAt = (e: MouseEvent): { degree: MelodyNote['degree']; octave: number } => {
-    const track = tracks.find((t) => e.clientY < t.getBoundingClientRect().bottom) ?? tracks.at(-1);
-    const rect = track?.getBoundingClientRect();
-    return rect === undefined ? rowPitch(0) : yToPitch(e.clientY - rect.top, rect.height);
-  };
-
-  const renderLane = (state: AppState): void => {
+  const renderStrips = (state: AppState, isFolded: boolean): void => {
     const { song } = state;
-    layout = melodyLayout(song);
+    const plan = host.plan(state);
+    layout = plan.layout;
+    const lanes = stripRows(isFolded);
+    const lanePct = (lane: number): string => pct(lane / lanes);
+    const laneHeight = pct(1 / lanes);
     tracks = [];
-    for (let row = 0; row < layout.rows; row++) {
-      const track = h('div', { class: 'melody-track', attrs: { 'data-row': String(row) } });
-      for (let lane = 0; lane < PITCH_ROWS; lane++) {
-        const pitch = lane + PITCH_ROW_MIN;
-        const tonic = ((pitch % 7) + 7) % 7 === 0;
+    const byRow: (HTMLElement | null)[] = plan.strips.map((hasStrip, row) => {
+      if (!hasStrip) return null;
+      const track = h('div', {
+        class: isFolded ? 'melody-track folded' : 'melody-track',
+        attrs: { 'data-row': String(row) },
+      });
+      for (let lane = 0; lane < lanes; lane++) {
+        const tonic = laneDegree(lane, isFolded) === 1;
         track.append(
           h('div', {
             class: tonic ? 'melody-pitch tonic' : 'melody-pitch',
-            style: { bottom: pct(lane / PITCH_ROWS), height: pct(1 / PITCH_ROWS) },
+            style: { bottom: lanePct(lane), height: laneHeight },
           }),
         );
       }
       tracks.push(track);
-    }
-    for (const span of spansFor(song)) {
-      tracks[span.row]?.append(
+      return track;
+    });
+    for (const span of spansFor(song, isFolded)) {
+      byRow[span.row]?.append(
         h('div', {
           class: span.root ? 'melody-tone root' : 'melody-tone',
           style: {
             left: pct(span.left),
             width: pct(span.width),
-            bottom: pct(span.lane / PITCH_ROWS),
-            height: pct(1 / PITCH_ROWS),
+            bottom: lanePct(span.lane),
+            height: laneHeight,
           },
         }),
       );
     }
     for (const track of tracks) {
       for (let b = 0; b < layout.barsPerRow; b++) {
-        const bar = h('div', { class: 'bar' });
-        for (let t = 0; t < layout.ticksPerBar; t++) bar.append(h('span', { class: 'tick' }));
-        track.append(bar);
+        const cell = h('div', { class: 'bar' });
+        for (let t = 0; t < layout.ticksPerBar; t++) cell.append(h('span', { class: 'tick' }));
+        track.append(cell);
       }
       track.addEventListener('pointerdown', (e) => startCreate(e));
     }
@@ -435,9 +500,9 @@ export function mountMelody(
             (n) => n.beat <= state.melodyCursor && state.melodyCursor < n.beat + n.length,
           )
         : -1;
-    for (const seg of noteSegments(song, layout)) {
-      const track = tracks[seg.row];
-      if (track === undefined) continue;
+    for (const seg of noteSegments(song, layout, isFolded)) {
+      const track = byRow[seg.row];
+      if (track === undefined || track === null) continue;
       const classes = ['mnote'];
       const accidental = ACCIDENTAL_CLASSES[seg.note.accidental];
       if (accidental !== null) classes.push(accidental);
@@ -453,8 +518,8 @@ export function mountMelody(
           style: {
             left: pct(seg.left),
             width: pct(seg.width),
-            bottom: pct(seg.lane / PITCH_ROWS),
-            height: pct(1 / PITCH_ROWS),
+            bottom: lanePct(seg.lane),
+            height: laneHeight,
             '--hue': String(seg.hue),
           },
           attrs: {
@@ -484,7 +549,7 @@ export function mountMelody(
 
     if (state.focus === 'melody') {
       const { row, fraction } = beatToRowPosition(state.melodyCursor, layout);
-      tracks[row]?.append(
+      byRow[row]?.append(
         h('div', {
           class: 'melody-cursor',
           style: { left: pct(fraction), width: pct(state.melodyGrid / layout.rowBeats) },
@@ -492,13 +557,12 @@ export function mountMelody(
         }),
       );
     }
-    replaceChildren(body, ...tracks);
+    host.setStrips(byRow);
   };
 
   const renderHead = (state: AppState): void => {
     const melody = songMelody(state.song);
-    root.classList.toggle('focused', state.focus === 'melody');
-    root.classList.toggle('muted', melody.muted);
+    root.classList.toggle('melody-muted', melody.muted);
     for (const button of gridButtons) {
       const active = Number(button.dataset['grid']) === state.melodyGrid;
       button.classList.toggle('active', active);
@@ -510,26 +574,15 @@ export function mountMelody(
       state.focus === 'melody'
         ? `Editing melody · new notes: octave ${state.melodyOctave}, ${state.melodyLength} beats · N or Esc: back to chords`
         : 'N: edit the melody with the keyboard · click to add a note · double-click to delete';
-  };
-
-  /** Re-anchored only when the cursor, the timing or the rows change (issue #82). */
-  const renderPlayhead = (state: AppState): void => {
-    if (!state.playing) {
-      lastPlayhead = [];
-      removePlayhead(playhead);
-      return;
-    }
-    const inputs = [state.cursor, state.song, state.loop, state.loopRange, tracks];
-    if (inputs.every((value, i) => value === lastPlayhead[i])) return;
-    lastPlayhead = inputs;
-    anchorPlayhead(playhead, tracks, layout, state, actions.playhead());
+    status.title = status.textContent;
   };
 
   const render = (state: AppState): void => {
-    const inputs = [state.song, state.focus, state.melodyCursor, state.melodyGrid];
+    const isFolded = folded();
+    const inputs = [state.song, state.focus, state.melodyCursor, state.melodyGrid, isFolded];
     if (!inputs.every((value, i) => value === last[i])) {
       last = inputs;
-      renderLane(state);
+      renderStrips(state, isFolded);
     }
     // The head only changes with these inputs; skipping it keeps playback frames free of
     // DOM writes that would force a layout (issue #61).
@@ -544,8 +597,20 @@ export function mountMelody(
       lastHead = headInputs;
       renderHead(state);
     }
-    renderPlayhead(state);
   };
+
+  /** Re-render the strips outside a store update (the fold changed) and recompose the rows. */
+  const refold = (): void => {
+    showFold();
+    render(store.state);
+    host.refresh();
+  };
+  fold.onchange = () => {
+    userFolded = fold.checked;
+    saveMelodyFolded(storage, userFolded);
+    refold();
+  };
+  compact?.addEventListener('change', refold);
 
   render(store.state);
   store.subscribe(render);

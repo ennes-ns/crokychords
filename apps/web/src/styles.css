@@ -26,7 +26,7 @@ body {
 }
 
 /* Single-screen shell (docs/specs/web-v1.md, "Layout"): the page never scrolls; panels whose
-   content is unbounded (grid rows, melody rows, band, suggestions, saves) scroll inside. */
+   content is unbounded (the timeline, band, suggestions, saves) scroll inside. */
 
 html:has(> body > .shell),
 html:has(> body > .shell) body {
@@ -361,32 +361,21 @@ h2 {
   overflow-y: auto;
 }
 
-/* Grid rows grow with the song: up to half the stage, then the grid scrolls. */
-.stage > .grid {
+/* One timeline (docs/specs/melody-v1.md §B2): the slim bar on top, the rows below grow with the
+   song and scroll inside the stage. */
+.stage > .timeline-bar {
+  flex: none;
+}
+
+.stage > .timeline {
   flex: 0 1 auto;
   min-height: 96px;
-  max-height: 50%;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.stage > .melody {
-  flex: 1 1 0;
-  min-height: 150px;
-  display: flex;
-  flex-direction: column;
-}
-
-.stage > .melody .melody-rows {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-/* Rows keep their height inside the scrolling containers. */
-.stage > .grid > *,
-.stage > .melody .melody-rows > * {
+/* Rows keep their height inside the scrolling container. */
+.stage > .timeline > * {
   flex: none;
 }
 
@@ -489,12 +478,12 @@ h2 {
   padding: 8px;
 }
 
-.shell.compact .grid {
+.shell.compact .timeline {
   gap: 6px;
 }
 
 .shell.compact .track {
-  height: 48px;
+  height: 44px;
 }
 
 .shell.compact .chord .token {
@@ -505,16 +494,13 @@ h2 {
   font-size: var(--font-size-xs);
 }
 
+/* Compact density always folds the strip: 7 rows of 12 px. */
 .shell.compact .melody-track {
-  height: 180px;
+  height: 84px;
 }
 
-.shell.compact .stage > .grid {
+.shell.compact .stage > .timeline {
   min-height: 72px;
-}
-
-.shell.compact .stage > .melody {
-  min-height: 120px;
 }
 
 .shell.compact .panel-head {
@@ -554,10 +540,6 @@ h2 {
   padding-bottom: 3px;
 }
 
-.shell.compact .melody-status {
-  margin-top: 2px;
-}
-
 .panel {
   background: var(--panel);
   border: var(--border-w) solid var(--line);
@@ -573,13 +555,40 @@ h2 {
   margin-bottom: 10px;
 }
 
-/* Grid */
+/* Timeline: rows of chord blocks with the melody strip of the same bars beneath, in one box. */
 
-.grid {
+.timeline {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   user-select: none;
+}
+
+.timeline-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.row-body {
+  position: relative;
+  background: var(--panel);
+  border: var(--border-w) solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* The focused half (N, or a click on it) gets an accent edge in every row. */
+.timeline.focus-chords .row-body > .track::after,
+.timeline.focus-melody .melody-track::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--row-marker-w);
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .bar-labels {
@@ -593,12 +602,15 @@ h2 {
 .track {
   position: relative;
   display: flex;
-  height: 68px;
-  background: var(--panel);
-  border: var(--border-w) solid var(--line);
-  border-radius: var(--radius);
+  height: 52px;
   cursor: copy;
   overflow: hidden;
+}
+
+/* The chord area's bottom border separates it from the strip, so the strip's pitch rows stay
+   whole pixels. */
+.row-body > .track:not(:last-child) {
+  border-bottom: var(--grid-line-w) solid var(--line-strong);
 }
 
 .bar {
@@ -752,45 +764,42 @@ h2 {
   z-index: 2;
 }
 
-/* Melody lane (docs/specs/melody-v1.md, B4): notes take their degree's hue with the chord
+/* Melody strip (docs/specs/melody-v1.md, B2/B4): notes take their degree's hue with the chord
    blocks' saturation/lightness pairs; rows holding a tone of the chord above are tinted. */
 
-.melody .panel-head h2 {
-  margin: 0;
+/* The timeline bar: the melody controls and the status hint on one line. */
+.timeline-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .melody-controls {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 12px;
   font-size: var(--font-size-sm);
 }
 
-.melody-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  user-select: none;
-}
-
-.melody.focused .melody-track {
-  border-color: var(--accent);
-}
-
-.melody.muted .mnote {
+.timeline.melody-muted .mnote {
   opacity: 0.45;
 }
 
+/* 15 pitch rows of 11 px; folded, 7 rows of 14 px (compact: 7 of 12 px, above). */
 .melody-track {
   position: relative;
   display: flex;
-  height: 210px;
-  background: var(--panel);
-  border: var(--border-w) solid var(--line);
-  border-radius: var(--radius);
+  height: 165px;
   cursor: crosshair;
   overflow: hidden;
   touch-action: none;
+}
+
+.melody-track.folded {
+  height: 98px;
 }
 
 .melody-pitch {
@@ -818,7 +827,7 @@ h2 {
   background: var(--melody-chord-root);
 }
 
-.melody.hide-tones .melody-tone {
+.timeline.hide-tones .melody-tone {
   display: none;
 }
 
@@ -840,7 +849,8 @@ h2 {
   --hue: 220;
   color: hsl(var(--hue) var(--chord-ink));
   background: hsl(var(--hue) var(--chord-fill));
-  border: var(--chord-border-w) solid hsl(var(--hue) var(--chord-edge));
+  /* The thin panel border, not the chord blocks' edge: a pitch row is only 11-14 px high. */
+  border: var(--border-w) solid hsl(var(--hue) var(--chord-edge));
   border-radius: var(--radius);
   cursor: grab;
   z-index: 1;
@@ -895,9 +905,13 @@ h2 {
   pointer-events: none;
 }
 
-.melody-status {
-  display: block;
-  margin-top: 6px;
+.timeline-bar .melody-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
 }
 
 /* Chord editor */
@@ -2047,7 +2061,7 @@ button.icon.danger:hover:not(:disabled) {
 
 /* MIDI/MusicXML import (docs/specs/import-v1.md §B) */
 
-.grid.drop-target {
+.timeline.drop-target {
   outline: var(--focus-w) dashed var(--accent);
   outline-offset: -2px;
 }
@@ -2251,16 +2265,11 @@ button.icon.danger:hover:not(:disabled) {
       'side';
   }
 
-  .stage > .grid,
-  .stage > .melody,
+  .stage > .timeline,
   .workspace > .band,
   .side > .saves {
     max-height: none;
     min-height: 0;
-  }
-
-  .stage > .melody {
-    flex: none;
   }
 
   .table-status {

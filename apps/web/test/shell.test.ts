@@ -62,7 +62,8 @@ describe('mountShell', () => {
     expect(workspace?.previousElementSibling).toBe(shell.toolbar);
     const [stage, band, side] = [...(workspace?.children ?? [])];
     expect(stage?.className).toBe('stage');
-    expect([...(stage?.children ?? [])]).toEqual([shell.grid, shell.melody]);
+    // One timeline: the slim bar, then the rows (docs/specs/melody-v1.md §B2).
+    expect([...(stage?.children ?? [])]).toEqual([shell.timelineBar, shell.timeline]);
     expect(band).toBe(shell.band);
     expect(side?.className).toBe('side');
     expect([...(side?.children ?? [])]).toEqual([shell.suggest, shell.editor, shell.saves]);
@@ -121,8 +122,14 @@ describe('shell CSS', () => {
       /html:has\(> body > \.shell\),\s*html:has\(> body > \.shell\) body \{[^}]*overflow: hidden;/,
     );
     expect(css).toMatch(/\.shell \{[^}]*height: 100dvh;/);
-    for (const panel of ['.stage > .grid', '.side .suggestions', '.workspace > .band .band-body']) {
-      const rule = css.slice(css.indexOf(`${panel}`));
+    for (const panel of [
+      '.stage > .timeline',
+      '.side .suggestions',
+      '.workspace > .band .band-body',
+    ]) {
+      // The selector itself, not a longer one it is a prefix of (`.timeline` vs `.timeline-bar`).
+      const at = css.search(new RegExp(`${panel.replace(/[.>]/g, '\\$&')}(?![\\w-])`));
+      const rule = css.slice(at);
       expect(rule.slice(0, rule.indexOf('}')), panel).toMatch(/overflow-y: auto;/);
     }
   });
