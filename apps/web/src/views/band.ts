@@ -403,9 +403,10 @@ export function mountBand(
   storage: SongStorage | null = null,
   sound: SoundSettings | null = null,
   master: MasterSettings | null = null,
+  options: { defaultOpen?: boolean } = {},
 ): void {
   root.classList.add('panel', 'band');
-  let open = loadBandOpen(storage);
+  let open = loadBandOpen(storage, options.defaultOpen);
   const ctx: RowContext = { store, actions, pendingRole: new Map() };
 
   const toggle = h(

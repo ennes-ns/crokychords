@@ -139,3 +139,45 @@ valid token. Invalid combinations are simply not offered (e.g. sus + quality).
   `apps/web/dist`.
 - `apps/web/README.md`: run, keyboard shortcuts, MIDI routing to a DAW on Linux/macOS/Windows,
   how to drop in `ngrams.json`.
+
+## 9. Layout
+
+Single-screen shell (issue #59). The whole editor fits one screen without page scrolling at
+1920×1080, 1440×900 and 1366×768, in both themes. `views/shell.ts` builds the containers,
+`styles.css` lays them out.
+
+```
+┌──────────────────────── toolbar (transport, key, MIDI, theme) ────────────────────────┐
+├──────────────────────────────────────────────────────────────┬────────────────────────┤
+│ stage: chord grid (≤ 50 % of the stage, then scrolls)        │ side (320 px):         │
+│        melody lane (takes the rest, scrolls its rows)        │  Next chord (list      │
+│                                                              │   scrolls, ≥ 240 px)   │
+├──────────────────────────────────────────────────────────────┤  Chord editor          │
+│ Band panel (collapsible, ≤ 42 % of the height, body scrolls; │  Saved progressions    │
+│   the pattern editor opens inside it)                        │   (list scrolls)       │
+└──────────────────────────────────────────────────────────────┴────────────────────────┘
+```
+
+- CSS grid inside a `100dvh` flex column: the toolbar row takes its natural height (it wraps on
+  narrow screens), the workspace takes the rest. `html` and `body` get `overflow: hidden`; only
+  the panels scroll (`overflow-y: auto`, `overscroll-behavior: contain`): grid rows, melody rows,
+  the Band body, the suggestion list, the saves list.
+- Side column: Next chord, the chord editor (fields in three columns) and the saved
+  progressions. The chord editor keeps its full height while Next chord (min. 240 px) and the
+  saves (min. 96 px) can still give way; only below that does the editor scroll. The editor
+  sits with Next chord because both act on the selected chord, and the stage keeps its height
+  for the melody lane.
+- Band panel: below the stage, as wide as the stage. Its open/closed state is stored
+  (`crokychords.bandOpen`); with nothing stored it starts open, except in compact mode.
+- **Compact mode** under 960 px viewport height (`COMPACT_QUERY = (max-height: 959px)`; the shell
+  sets `.shell.compact` and follows resizes): tighter gaps and padding (the toolbar stays at two
+  rows on laptop widths), chord cells 48 px instead of 68 px with smaller text, melody rows 180 px
+  instead of 210 px (12 px per pitch row), side-column minimums of 212 px (Next chord) and 88 px
+  (saves), and the Band panel collapsed by default.
+- Pixel theme: every size in the shell is a whole pixel value (melody rows 210 / 180 px over 15
+  pitch rows), so the theme keeps its integer scaling.
+- Fallback: on 1366×768 with a chord selected, Next chord sits at its minimum (about two
+  suggestions visible, the list scrolls). Should even the minimums not fit, the chord editor, then
+  the stage or side column, scrolls inside itself; the page still never does.
+- Below 900 px width the old stacked layout applies and the page scrolls. Mobile and touch are
+  out of scope (later issue).

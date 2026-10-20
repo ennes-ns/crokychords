@@ -48,13 +48,17 @@ export function browserStorage(): SongStorage | null {
 
 export const BAND_OPEN_KEY = 'crokychords.bandOpen';
 
-/** Whether the Band panel is expanded (default: open). */
-export function loadBandOpen(storage: SongStorage | null): boolean {
-  if (storage === null) return true;
+/**
+ * Whether the Band panel is expanded: the stored choice, else `fallback` (open, except on compact
+ * screens; docs/specs/web-v1.md, "Layout").
+ */
+export function loadBandOpen(storage: SongStorage | null, fallback = true): boolean {
+  if (storage === null) return fallback;
   try {
-    return storage.getItem(BAND_OPEN_KEY) !== 'false';
+    const stored = storage.getItem(BAND_OPEN_KEY);
+    return stored === null ? fallback : stored !== 'false';
   } catch {
-    return true;
+    return fallback;
   }
 }
 
