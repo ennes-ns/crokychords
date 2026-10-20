@@ -187,6 +187,32 @@ describe('SyncEngine: conflicts', () => {
     expect(api.saves.size).toBe(2);
   });
 
+  it('keeps one copy when editor saves win the conflict write twice in a row', async () => {
+    const { api, a } = await diverged();
+    const put = a.local.put.bind(a.local);
+    let races = 0;
+    vi.spyOn(a.local, 'put').mockImplementation(async (record) => {
+      if (record.id === 's1' && record.title === 'theirs' && races < 2) {
+        races++;
+        // An autosave lands first, so storing the remote version loses the local race.
+        await put(rec('s1', record.version, `mine ${races}`, 2 + races));
+      }
+      return put(record);
+    });
+    await a.engine.sync('push');
+    await a.engine.sync('push');
+    expect(races).toBe(2);
+    expect((await a.local.list()).map((r) => r.id).sort()).toEqual(['a-copy1', 's1']);
+    expect(await a.local.get('s1')).toMatchObject({ title: 'theirs' });
+    const copy = await a.local.get('a-copy1');
+    expect(copy).toMatchObject({ title: 'mine 2 (copy)', version: 3 });
+    expect(copy?.song.tempo).toBe(104);
+    expect(a.changes).toEqual([['s1', 'a-copy1']]);
+    expect([...api.saves.keys()].sort()).toEqual(['a-copy1', 's1']);
+    expect(api.saves.get('a-copy1')?.title).toBe('mine 2 (copy)');
+    expect(a.engine.status.state).toBe('synced');
+  });
+
   it('recreates a save that was deleted elsewhere while it was edited here', async () => {
     const { api, a } = await diverged();
     api.saves.delete('s1');

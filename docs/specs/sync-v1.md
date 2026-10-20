@@ -129,6 +129,11 @@ copy rule, applied to the record that lost the race:
    title changes in place, undo history is kept, pending edits autosave into the copy).
 4. The copy has no entry, so the same cycle pushes it as a new save.
 
+When an editor save wins the local write in step 2 (the record changed under the sync), the engine
+remembers the copy id for the original id until step 2 succeeds; the retried conflict then updates
+that copy with the newer local version instead of creating another one, so a repeated race leaves
+exactly one copy and one notification.
+
 When the save is gone remotely (`current: null`) there is nothing to lose: `entry.remote = 0` and
 the local record is pushed as a new save. A local write that races with the sync (the user saves
 while a cycle writes the same id) fails the sync's version check; the cycle leaves that id for the
