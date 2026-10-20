@@ -28,13 +28,17 @@ who does what and how work moves.
 
 ## Who builds and who reviews
 
-One label per issue says how much effort it needs; builders are Claude Code sessions (cloud or local).
+Coding is done by **Opus 5.5** (Claude Code cloud sessions or local agents); the main session plans
+and never builds features itself. One label per issue sets the effort:
 
-| Label    | Builder              | Model and effort                                       |
-| -------- | -------------------- | ------------------------------------------------------ |
-| `size:S` | Claude cloud session | Haiku 5.5 or Sonnet 5.5, low effort: docs, renames, one-file fixes |
-| `size:M` | Claude cloud session | Sonnet 5.5, normal effort: one package, spec exists    |
-| `size:L` | Claude cloud session | Opus 5.5, high effort: several packages or design work |
+| Label    | Effort                                                   |
+| -------- | -------------------------------------------------------- |
+| `size:S` | low: docs, renames, one-file fixes                       |
+| `size:M` | normal: one package, spec exists                         |
+| `size:L` | high: several packages or design work, spec required     |
+
+Every issue carries a "Setup for the agent" section (see the issue template), so a session can start from
+the issue alone.
 
 Review on every PR, in this order:
 
