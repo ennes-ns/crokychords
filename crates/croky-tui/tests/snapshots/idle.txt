@@ -1,0 +1,24 @@
+ Croky Chords   Axis · C major · 120 BPM · 4/4 · 4 chords · 16 beats
+┌ Progression ─────────────────────────────────────────────────────────────────────────────────────┐
+│ I         │ V         │ vi        │›IV        │                                                  │
+│ C         │ G         │ Am        │ F         │                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Next chord after IV ───────────────────────────────────────────┐┌ MIDI ──────────────────────────┐
+│ 1 I        C         66.7% ██████████████████████████████      ││ out  croky-tui:out (virtual)   │
+│ 2 V        G         25.3% ███████████                         ││ now  ○ stopped                 │
+│ 3 vi       Am         3.5% ██                                  ││ loop on                        │
+│ 4 ii       Dm         2.3% █                                   ││ late –                         │
+│ 5 iii      Em         0.8%                                     ││ data default.json              │
+│ 6 I/1      C/E        0.6%                                     ││                                │
+│ 7 iv       Fm         0.4%                                     ││                                │
+│ 8 II       D          0.3%                                     ││                                │
+│ matched context: V vi IV                                       ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+└────────────────────────────────────────────────────────────────┘└────────────────────────────────┘
+ ←/→ move  Enter insert top  1-8 insert nth  x delete  Space play/stop  r loop  w save  q quit
+ q stops playback and exits; the song is only written with w

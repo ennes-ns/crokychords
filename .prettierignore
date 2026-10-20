@@ -6,3 +6,6 @@ packages/data
 mise.toml
 apps/web/public/data
 apps/web/test/fixtures/*.json
+target
+crates/*/tests/golden
+crates/*/tests/snapshots

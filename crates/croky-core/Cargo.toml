@@ -1,0 +1,12 @@
+[package]
+name = "croky-core"
+version = "0.0.1"
+description = "Partial Rust port of @crokychords/core: tokens, chords, voicing, n-gram suggestions, song JSON."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

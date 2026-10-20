@@ -1,0 +1,172 @@
+{
+  "schema": 2,
+  "title": "Demo",
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "tempo": 96,
+  "meter": {
+    "beats": 4,
+    "unit": 4
+  },
+  "chords": [
+    {
+      "token": "i",
+      "beats": 4
+    },
+    {
+      "token": "VI",
+      "beats": 4
+    },
+    {
+      "token": "III",
+      "beats": 4
+    },
+    {
+      "token": "VII",
+      "beats": 4
+    }
+  ],
+  "tracks": [
+    {
+      "id": "trk-9aaovy27",
+      "name": "Chords",
+      "role": "chords",
+      "channel": 0,
+      "octave": 4,
+      "voicing": "close",
+      "pattern": {
+        "id": "sustain",
+        "name": "Sustain",
+        "length": 4,
+        "steps": [
+          {
+            "at": 0,
+            "length": 4,
+            "notes": "chord"
+          }
+        ],
+        "tail": "sustain"
+      },
+      "velocity": 96,
+      "gate": 0.9,
+      "muted": false,
+      "transpose": 0
+    },
+    {
+      "id": "trk-hq1lcs1m",
+      "name": "Bass",
+      "role": "bass",
+      "channel": 1,
+      "octave": 2,
+      "voicing": "close",
+      "pattern": {
+        "id": "bass-quarters",
+        "name": "Bass quarters",
+        "length": 4,
+        "steps": [
+          {
+            "at": 0,
+            "length": 0.9,
+            "notes": "bass"
+          },
+          {
+            "at": 1,
+            "length": 0.9,
+            "notes": "bass"
+          },
+          {
+            "at": 2,
+            "length": 0.9,
+            "notes": "bass"
+          },
+          {
+            "at": 3,
+            "length": 0.9,
+            "notes": "bass"
+          }
+        ]
+      },
+      "velocity": 100,
+      "gate": 0.9,
+      "muted": false,
+      "transpose": 0
+    },
+    {
+      "id": "trk-yliq1uec",
+      "name": "Arp",
+      "role": "arp",
+      "channel": 2,
+      "octave": 4,
+      "voicing": "close",
+      "pattern": {
+        "id": "arp-up-8",
+        "name": "Arp up 1/8",
+        "length": 4,
+        "steps": [
+          {
+            "at": 0,
+            "length": 0.45,
+            "notes": {
+              "index": 0
+            }
+          },
+          {
+            "at": 0.5,
+            "length": 0.45,
+            "notes": {
+              "index": 1
+            }
+          },
+          {
+            "at": 1,
+            "length": 0.45,
+            "notes": {
+              "index": 2
+            }
+          },
+          {
+            "at": 1.5,
+            "length": 0.45,
+            "notes": {
+              "index": 3
+            }
+          },
+          {
+            "at": 2,
+            "length": 0.45,
+            "notes": {
+              "index": 4
+            }
+          },
+          {
+            "at": 2.5,
+            "length": 0.45,
+            "notes": {
+              "index": 5
+            }
+          },
+          {
+            "at": 3,
+            "length": 0.45,
+            "notes": {
+              "index": 6
+            }
+          },
+          {
+            "at": 3.5,
+            "length": 0.45,
+            "notes": {
+              "index": 7
+            }
+          }
+        ]
+      },
+      "velocity": 96,
+      "gate": 0.9,
+      "muted": true,
+      "transpose": 0
+    }
+  ]
+}

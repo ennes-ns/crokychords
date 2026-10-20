@@ -28,3 +28,7 @@ apps/web/public/data/*.json
 .dev.vars.*
 !.dev.vars.example
 !apps/web/public/data/default.json
+
+# Rust (crates/)
+target/
+crates/croky-core/tools/.gen.mjs
