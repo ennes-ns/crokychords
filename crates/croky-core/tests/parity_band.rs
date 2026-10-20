@@ -6,9 +6,10 @@ mod common;
 use common::{events_json, f64_of, golden, js, read_bytes, replay, str_of, usize_of};
 use croky_core::patterns::{create_track, role_defaults, TrackOverrides, DEFAULT_GATE};
 use croky_core::{
-    default_tracks, layout_pattern, melody_note_harmony, new_track_id, pattern_preset,
-    pattern_presets, pattern_roles, render_melody, render_song, render_track, song_to_midi,
-    validate_song, MidiOptions, Pattern, RenderOptions, Song, Track, TrackRole, TrackVoicing,
+    default_tracks, layout_pattern, melody_note_harmony, new_pattern_id, new_track_id,
+    pattern_description, pattern_preset, pattern_presets, pattern_roles, render_melody,
+    render_song, render_track, song_to_midi, validate_song, MidiOptions, Pattern, RenderOptions,
+    Song, Track, TrackRole, TrackVoicing,
 };
 use serde_json::{json, Value};
 
@@ -47,10 +48,11 @@ fn tracks_and_presets_match_typescript() {
         match str_of(&line, "kind") {
             "preset" => {
                 let want = &line["pattern"];
-                let got = &pattern_presets()[presets];
+                let got = pattern_presets()[presets];
                 assert_eq!(js(&got.to_json()), js(want));
                 assert_eq!(&pattern_preset(&got.id).unwrap(), got);
                 assert_eq!(roles_json(pattern_roles(&got.id)), line["roles"]);
+                assert_eq!(pattern_description(&got.id), str_of(&line, "description"));
                 presets += 1;
             }
             "presetRoles" => {
@@ -71,6 +73,9 @@ fn tracks_and_presets_match_typescript() {
             }
             "newTrackId" => {
                 assert_eq!(new_track_id(&mut replay(&line)), str_of(&line, "id"));
+            }
+            "newPatternId" => {
+                assert_eq!(new_pattern_id(&mut replay(&line)), str_of(&line, "id"));
             }
             "createTrack" => {
                 let track = create_track(

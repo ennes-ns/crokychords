@@ -18,12 +18,14 @@ pub enum NoteSelector {
     Fifth,
     /// The highest voiced tone.
     Top,
+    /// The bass note one octave up (song schema 4).
+    Octave,
     /// The n-th upper tone from the bottom; wraps up an octave (arpeggios).
     Index(u64),
 }
 
 /// The named selectors in the TS order (`NOTE_SELECTOR_NAMES`).
-pub const NOTE_SELECTOR_NAMES: [&str; 5] = ["chord", "bass", "root", "fifth", "top"];
+pub const NOTE_SELECTOR_NAMES: [&str; 6] = ["chord", "bass", "root", "fifth", "top", "octave"];
 
 impl NoteSelector {
     pub fn from_name(name: &str) -> Option<NoteSelector> {
@@ -33,6 +35,7 @@ impl NoteSelector {
             "root" => NoteSelector::Root,
             "fifth" => NoteSelector::Fifth,
             "top" => NoteSelector::Top,
+            "octave" => NoteSelector::Octave,
             _ => return None,
         })
     }
@@ -44,6 +47,7 @@ impl NoteSelector {
             NoteSelector::Root => json!("root"),
             NoteSelector::Fifth => json!("fifth"),
             NoteSelector::Top => json!("top"),
+            NoteSelector::Octave => json!("octave"),
             // Indices above 2^53 are not exact in JS either.
             NoteSelector::Index(i) => json!({ "index": num(i as f64) }),
         }
@@ -234,7 +238,19 @@ const ID_LENGTH: usize = 8;
 /// A new track id: 'trk-' followed by 8 base36 characters drawn with `random` (values in
 /// [0, 1), as `Math.random`). Pass `default_random()` for non-deterministic ids.
 pub fn new_track_id(random: &mut dyn FnMut() -> f64) -> String {
-    let mut id = String::from("trk-");
+    random_id("trk-", random)
+}
+
+/// Every song preset id starts with this, so it never collides with a built-in preset id.
+pub const USER_PATTERN_PREFIX: &str = "user-";
+
+/// A new song preset id: 'user-' followed by 8 base36 characters (see `new_track_id`).
+pub fn new_pattern_id(random: &mut dyn FnMut() -> f64) -> String {
+    random_id(USER_PATTERN_PREFIX, random)
+}
+
+fn random_id(prefix: &str, random: &mut dyn FnMut() -> f64) -> String {
+    let mut id = String::from(prefix);
     for _ in 0..ID_LENGTH {
         let r = random() * ID_CHARS.len() as f64;
         let index = if r.is_nan() {

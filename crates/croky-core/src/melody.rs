@@ -85,7 +85,8 @@ pub fn default_melody() -> Melody {
     }
 }
 
-/// MIDI note number of a melody note in `key`.
+/// MIDI note number of a melody note in `key`. Panics on a degree outside 1..7, which
+/// `validate_song` rejects (TS throws a `RangeError` there).
 pub fn melody_note_pitch(note: &MelodyNote, key: Key) -> i32 {
     midi_note(key.tonic, MELODY_HOME_OCTAVE + note.octave)
         + degree_pitch(key.mode, note.degree)

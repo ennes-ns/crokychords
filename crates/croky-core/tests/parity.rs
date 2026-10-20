@@ -7,11 +7,14 @@ use std::path::PathBuf;
 
 use croky_core::theory::parse_note_name;
 use croky_core::{
-    chord_name, diatonic_quality, diatonic_triad_token, format_token, is_diatonic_token,
-    parse_token, popular_chords, seed_table, suggest_next, voice_chord, Key, Mode, NgramTable,
-    PopularOptions, SuggestOptions,
+    chord_name, chord_tones, diatonic_quality, diatonic_triad_token, format_token,
+    is_diatonic_token, parse_token, popular_chords, seed_table, suggest_next, voice_chord, Key,
+    Mode, NgramTable, PopularOptions, SuggestOptions,
 };
 use serde_json::Value;
+
+mod common;
+use common::set_path;
 
 fn repo(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -185,4 +188,54 @@ fn the_seed_table_is_the_typescript_one() {
     let seed = seed_table();
     assert_eq!(seed.source.name, "seed");
     assert!(seed.mode(Mode::Major).is_some() && seed.mode(Mode::Minor).is_some());
+}
+
+#[test]
+fn chord_tones_match_typescript() {
+    let lines = golden_lines("tones.jsonl");
+    assert!(lines.len() > 1000);
+    for g in lines {
+        let token = g["token"].as_str().unwrap();
+        let key = Key {
+            tonic: parse_note_name(g["tonic"].as_str().unwrap()).unwrap(),
+            mode: Mode::from_name(g["mode"].as_str().unwrap()).unwrap(),
+        };
+        let got: Vec<Value> = chord_tones(&parse_token(token).unwrap(), key)
+            .iter()
+            .map(|t| {
+                serde_json::json!([
+                    t.role.name(),
+                    t.interval,
+                    t.pitch_class,
+                    t.degree,
+                    t.accidental
+                ])
+            })
+            .collect();
+        assert_eq!(Value::Array(got), g["tones"], "{token}");
+    }
+}
+
+#[test]
+fn ngram_table_errors_match_typescript() {
+    let seed: Value =
+        serde_json::from_str(&read("packages/core/src/data/seed-ngrams.json")).unwrap();
+    let lines = golden_lines("table-errors.jsonl");
+    assert!(lines.len() > 40);
+    for g in lines {
+        let m = g["mutation"].as_array().unwrap();
+        let mut input = seed.clone();
+        set_path(&mut input, m[0].as_str().unwrap(), m.get(1).cloned());
+        let got = NgramTable::from_value(&input);
+        match g.get("message") {
+            Some(message) => {
+                assert_eq!(
+                    got.unwrap_err().to_string(),
+                    message.as_str().unwrap(),
+                    "{g}"
+                )
+            }
+            None => assert!(got.is_ok(), "{g}: {:?}", got.err()),
+        }
+    }
 }

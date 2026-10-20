@@ -1,5 +1,5 @@
-//! The song record (port of `progression.ts`): schema 3 with tracks and the melody lane,
-//! `validateSong` with the same error paths and messages (migrating schema 1 and 2),
+//! The song record (port of `progression.ts`): schema 4 with tracks, the melody lane and song
+//! presets, `validateSong` with the same error paths and messages (migrating schema 1 to 3),
 //! `serializeSong` output byte for byte, and the small helpers (`chordAtBeat`, ...).
 
 use serde_json::{json, Map, Value};
@@ -13,7 +13,8 @@ use crate::patterns::default_tracks;
 use crate::theory::{parse_note_name, Key, Mode};
 use crate::token::{is_rest_token, parse_token};
 use crate::tracks::{
-    default_random, NoteSelector, Pattern, PatternStep, PatternTail, Track, TrackRole, TrackVoicing,
+    default_random, NoteSelector, Pattern, PatternStep, PatternTail, Track, TrackRole,
+    TrackVoicing, USER_PATTERN_PREFIX,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,7 +40,7 @@ pub struct SongChord {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Song {
-    /// 3 since melody v1 (2: tracks v1). `validate_song` always returns 3.
+    /// 4 since the pattern editor (3: melody v1, 2: tracks v1). `validate_song` always returns 4.
     pub schema: u32,
     pub title: String,
     pub key: SongKey,
@@ -51,6 +52,9 @@ pub struct Song {
     pub tracks: Option<Vec<Track>>,
     /// The melody lane (schema 3). `None` only for hand-built schema-1/2 songs.
     pub melody: Option<Melody>,
+    /// Song presets (schema 4): patterns saved in the pattern editor, ids starting with
+    /// `USER_PATTERN_PREFIX`. `None` only for hand-built schema-1..3 songs.
+    pub patterns: Option<Vec<Pattern>>,
 }
 
 /// `SongError` of `validateSong` / `deserializeSong`: `path` points at the offending value.
@@ -87,10 +91,13 @@ pub const DEFAULT_SONG_TITLE: &str = "Untitled";
 pub const MAX_TEMPO: f64 = 1000.0;
 /// Most beats per bar a song may have.
 pub const MAX_METER_BEATS: u32 = 32;
+/// Most song presets a song may hold.
+pub const MAX_SONG_PATTERNS: usize = 64;
 const METER_UNITS: [u32; 6] = [1, 2, 4, 8, 16, 32];
 
-/// A new schema-3 song with the defaults of `createSong` (C major, 120 BPM, 4/4, no chords,
-/// `default_tracks`, an empty melody). Override fields with struct update syntax.
+/// A new schema-4 song with the defaults of `createSong` (C major, 120 BPM, 4/4, no chords,
+/// `default_tracks`, an empty melody, no song presets). Override fields with struct update
+/// syntax.
 pub fn create_song() -> Song {
     create_song_with(&mut default_random())
 }
@@ -98,7 +105,7 @@ pub fn create_song() -> Song {
 /// `create_song` with the random source for the track ids.
 pub fn create_song_with(random: &mut dyn FnMut() -> f64) -> Song {
     Song {
-        schema: 3,
+        schema: 4,
         title: DEFAULT_SONG_TITLE.into(),
         key: SongKey {
             tonic: "C".into(),
@@ -109,6 +116,7 @@ pub fn create_song_with(random: &mut dyn FnMut() -> f64) -> Song {
         chords: Vec::new(),
         tracks: Some(default_tracks(random)),
         melody: Some(default_melody()),
+        patterns: Some(Vec::new()),
     }
 }
 
@@ -329,6 +337,54 @@ fn validate_tracks(value: Option<&Value>) -> Res<Vec<Track>> {
     Ok(tracks)
 }
 
+/// `String#trim` whitespace: Unicode `Zs`, the line terminators, TAB, VT, FF and BOM (unlike
+/// `char::is_whitespace`, it includes U+FEFF and leaves out U+0085).
+fn is_js_space(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
+    )
+}
+
+fn validate_song_patterns(value: Option<&Value>) -> Res<Vec<Pattern>> {
+    let items = array(value, "patterns")?;
+    if items.len() > MAX_SONG_PATTERNS {
+        return Err(SongError::new(
+            "patterns",
+            format!("at most {MAX_SONG_PATTERNS} song presets"),
+        ));
+    }
+    let mut patterns: Vec<Pattern> = Vec::with_capacity(items.len());
+    for (i, item) in items.iter().enumerate() {
+        let path = format!("patterns[{i}]");
+        let pattern = validate_pattern(Some(item), &path)?;
+        if !pattern.id.starts_with(USER_PATTERN_PREFIX) || pattern.id == USER_PATTERN_PREFIX {
+            return Err(SongError::new(
+                format!("{path}.id"),
+                format!("must start with \"{USER_PATTERN_PREFIX}\""),
+            ));
+        }
+        if patterns.iter().any(|p| p.id == pattern.id) {
+            return Err(SongError::new(
+                format!("{path}.id"),
+                format!("duplicate id \"{}\"", pattern.id),
+            ));
+        }
+        if pattern.name.chars().all(is_js_space) {
+            return Err(SongError::new(format!("{path}.name"), "must not be empty"));
+        }
+        patterns.push(pattern);
+    }
+    Ok(patterns)
+}
+
 fn validate_melody_note(value: &Value, path: &str) -> Res<MelodyNote> {
     let obj = record(Some(value), path)?;
     let beat = number_field(obj, "beat", path)?;
@@ -397,9 +453,9 @@ fn validate_melody(value: Option<&Value>) -> Res<Melody> {
     })
 }
 
-/// `validateSong`: check that `value` is a valid song and return a normalised schema-3 copy
+/// `validateSong`: check that `value` is a valid song and return a normalised schema-4 copy
 /// (unknown fields dropped). Schema 1 gets `default_tracks` (fresh ids), schema 1 and 2 get an
-/// empty default melody. Errors carry the TS path and message.
+/// empty default melody, schema 1-3 get no song presets. Errors carry the TS path and message.
 pub fn validate_song(value: &Value) -> Result<Song, SongError> {
     validate_song_with(value, &mut default_random())
 }
@@ -411,8 +467,8 @@ pub fn validate_song_with(
 ) -> Result<Song, SongError> {
     let root = record(Some(value), "")?;
     let schema = match root.get("schema").and_then(Value::as_f64) {
-        Some(s) if s == 1.0 || s == 2.0 || s == 3.0 => s as u32,
-        _ => return Err(SongError::new("schema", "expected 1, 2 or 3")),
+        Some(s) if s == 1.0 || s == 2.0 || s == 3.0 || s == 4.0 => s as u32,
+        _ => return Err(SongError::new("schema", "expected 1, 2, 3 or 4")),
     };
     let title = string_field(root, "title", "")?;
 
@@ -476,13 +532,18 @@ pub fn validate_song_with(
     } else {
         validate_tracks(root.get("tracks"))?
     };
-    let melody = if schema == 3 {
+    let melody = if schema >= 3 {
         validate_melody(root.get("melody"))?
     } else {
         default_melody()
     };
+    let patterns = if schema == 4 {
+        validate_song_patterns(root.get("patterns"))?
+    } else {
+        Vec::new()
+    };
     Ok(Song {
-        schema: 3,
+        schema: 4,
         title,
         key: SongKey { tonic, mode },
         tempo,
@@ -493,6 +554,7 @@ pub fn validate_song_with(
         chords,
         tracks: Some(tracks),
         melody: Some(melody),
+        patterns: Some(patterns),
     })
 }
 
@@ -504,12 +566,13 @@ pub fn deserialize_song(json: &str) -> Result<Song, SongError> {
     validate_song(&value)
 }
 
-/// `serializeSong`: JSON (2-space indented) with the stable key order. Writes schema 3 with
-/// the tracks and the melody (an empty default one when the song has none); a song without
-/// tracks (a hand-built schema-1 song) is written as schema 1.
+/// `serializeSong`: JSON (2-space indented) with the stable key order. Writes schema 4 with
+/// the tracks, the melody (an empty default one when the song has none) and the song presets
+/// (none when the song has none); a song without tracks (a hand-built schema-1 song) is
+/// written as schema 1.
 pub fn serialize_song(song: &Song) -> String {
     let mut obj = Map::new();
-    let schema = if song.tracks.is_none() { 1 } else { 3 };
+    let schema = if song.tracks.is_none() { 1 } else { 4 };
     obj.insert("schema".into(), json!(schema));
     obj.insert("title".into(), json!(song.title));
     obj.insert(
@@ -535,6 +598,13 @@ pub fn serialize_song(song: &Song) -> String {
             .as_ref()
             .map_or_else(|| default_melody().to_json(), Melody::to_json);
         obj.insert("melody".into(), melody);
+        let patterns = song
+            .patterns
+            .iter()
+            .flatten()
+            .map(Pattern::to_json)
+            .collect();
+        obj.insert("patterns".into(), Value::Array(patterns));
     }
     to_js_json(&Value::Object(obj), true)
 }
@@ -627,7 +697,7 @@ mod tests {
     #[test]
     fn reads_a_schema_1_song_and_migrates_it() {
         let song = Song::from_json(SONG).unwrap();
-        assert_eq!(song.schema, 3);
+        assert_eq!(song.schema, 4);
         assert_eq!(song.key().tonic, 3);
         assert_eq!(song.tokens(), vec!["i", "bVI"]);
         assert_eq!(song.total_beats(), 8.0);
@@ -654,6 +724,7 @@ mod tests {
         let song = Song {
             tracks: None,
             melody: None,
+            patterns: None,
             ..create_song()
         };
         assert!(song.to_json().starts_with("{\n  \"schema\": 1,"));

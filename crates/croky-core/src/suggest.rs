@@ -21,14 +21,12 @@ pub struct NgramSource {
     pub exported_at: Option<String>,
 }
 
-/// Per-chord statistics of a mode; fields other than the counts are kept as JSON.
+/// Per-chord statistics of a mode (other fields of the JSON are not kept).
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NgramChordInfo {
     pub count: f64,
     pub song_count: Option<f64>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -42,9 +40,11 @@ pub struct NgramMode {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NgramTable {
+    #[serde(deserialize_with = "whole_number")]
     pub schema: u32,
     pub source: NgramSource,
     pub generated_at: String,
+    #[serde(deserialize_with = "whole_number")]
     pub max_context: usize,
     pub token_format: String,
     pub modes: HashMap<String, NgramMode>,
@@ -61,48 +61,109 @@ impl std::fmt::Display for TableError {
 
 impl std::error::Error for TableError {}
 
+/// A whole number that JSON may write as `2` or `2.0` (both are 2 in JS); checked before.
+fn whole_number<'de, D: serde::Deserializer<'de>, T: TryFrom<u64>>(d: D) -> Result<T, D::Error> {
+    let x = f64::deserialize(d)?;
+    T::try_from(x as u64).map_err(|_| serde::de::Error::custom("number out of range"))
+}
+
+type Checked = Result<(), TableError>;
+
+fn table_error(path: &str, reason: &str) -> TableError {
+    TableError(if path.is_empty() {
+        reason.to_string()
+    } else {
+        format!("{path}: {reason}")
+    })
+}
+
+fn record<'a>(value: Option<&'a Value>, path: &str) -> Result<&'a Map<String, Value>, TableError> {
+    value
+        .and_then(Value::as_object)
+        .ok_or_else(|| table_error(path, "expected an object"))
+}
+
+fn count(value: Option<&Value>, path: &str) -> Checked {
+    match value.and_then(Value::as_f64) {
+        Some(c) if c.is_finite() && c >= 0.0 => Ok(()),
+        _ => Err(table_error(path, "expected a non-negative number")),
+    }
+}
+
+fn string(value: Option<&Value>, path: &str) -> Checked {
+    match value {
+        Some(Value::String(_)) => Ok(()),
+        _ => Err(table_error(path, "expected a string")),
+    }
+}
+
+/// `parseMode`: the checks in document order, with the TS paths.
+fn check_mode(value: &Value, path: &str) -> Checked {
+    let obj = record(Some(value), path)?;
+    count(obj.get("sections"), &format!("{path}.sections"))?;
+    for (token, raw) in record(obj.get("chords"), &format!("{path}.chords"))? {
+        let p = format!("{path}.chords.{token}");
+        let info = record(Some(raw), &p)?;
+        count(info.get("count"), &format!("{p}.count"))?;
+        if let Some(song_count) = info.get("songCount") {
+            count(Some(song_count), &format!("{p}.songCount"))?;
+        }
+    }
+    for (context, raw) in record(obj.get("ngrams"), &format!("{path}.ngrams"))? {
+        let shown = if context.is_empty() { "\"\"" } else { context };
+        let p = format!("{path}.ngrams.{shown}");
+        for (next, c) in record(Some(raw), &p)? {
+            count(Some(c), &format!("{p}.{next}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// `parseNgramTable`'s checks in its order, so errors carry the same path and message.
+fn check_table(value: &Value) -> Checked {
+    let obj = record(Some(value), "")?;
+    if obj.get("schema").and_then(Value::as_f64) != Some(1.0) {
+        return Err(table_error("schema", "expected 1"));
+    }
+    if obj.get("tokenFormat").and_then(Value::as_str) != Some("roman-numeral-v1") {
+        return Err(table_error("tokenFormat", "expected \"roman-numeral-v1\""));
+    }
+    count(obj.get("maxContext"), "maxContext")?;
+    if !obj["maxContext"]
+        .as_f64()
+        .is_some_and(crate::json::is_integer)
+    {
+        return Err(table_error("maxContext", "expected an integer"));
+    }
+    for (name, raw) in record(obj.get("modes"), "modes")? {
+        if Mode::from_name(name).is_none() {
+            return Err(table_error(&format!("modes.{name}"), "unknown mode"));
+        }
+        check_mode(raw, &format!("modes.{name}"))?;
+    }
+    let source = record(obj.get("source"), "source")?;
+    string(source.get("name"), "source.name")?;
+    for field in ["description", "license", "exportedAt"] {
+        if let Some(v) = source.get(field) {
+            string(Some(v), &format!("source.{field}"))?;
+        }
+    }
+    string(obj.get("generatedAt"), "generatedAt")
+}
+
 impl NgramTable {
-    /// Parse and check the header fields (schema, token format, mode names).
+    /// Parse an `ngrams.json` (schema 1). A JSON syntax error is reported as
+    /// `ngram table: <serde_json message>`.
     pub fn from_json(json: &str) -> Result<NgramTable, TableError> {
-        let table: NgramTable =
+        let value: Value =
             serde_json::from_str(json).map_err(|e| TableError(format!("ngram table: {e}")))?;
-        if table.schema != 1 {
-            return Err(TableError("schema: expected 1".into()));
-        }
-        if table.token_format != "roman-numeral-v1" {
-            return Err(TableError(
-                "tokenFormat: expected \"roman-numeral-v1\"".into(),
-            ));
-        }
-        if let Some(bad) = table.modes.keys().find(|m| Mode::from_name(m).is_none()) {
-            return Err(TableError(format!("modes.{bad}: unknown mode")));
-        }
-        // Counts are non-negative (TS `count`); the path names one offending value.
-        let bad = |x: f64| !x.is_finite() || x < 0.0;
-        for (name, m) in &table.modes {
-            let p = format!("modes.{name}");
-            if bad(m.sections) {
-                return Err(TableError(format!(
-                    "{p}.sections: expected a non-negative number"
-                )));
-            }
-            for (token, info) in &m.chords {
-                if bad(info.count) || info.song_count.is_some_and(bad) {
-                    return Err(TableError(format!(
-                        "{p}.chords.{token}: expected a non-negative number"
-                    )));
-                }
-            }
-            for (context, row) in &m.ngrams {
-                if let Some((next, _)) = row.iter().find(|(_, &c)| bad(c)) {
-                    let context = if context.is_empty() { "\"\"" } else { context };
-                    return Err(TableError(format!(
-                        "{p}.ngrams.{context}.{next}: expected a non-negative number"
-                    )));
-                }
-            }
-        }
-        Ok(table)
+        NgramTable::from_value(&value)
+    }
+
+    /// `parseNgramTable`: validate a parsed table with the same error paths and messages.
+    pub fn from_value(value: &Value) -> Result<NgramTable, TableError> {
+        check_table(value)?;
+        NgramTable::deserialize(value).map_err(|e| TableError(format!("ngram table: {e}")))
     }
 
     pub fn mode(&self, mode: Mode) -> Option<&NgramMode> {

@@ -107,8 +107,8 @@ back to the `--song` file, `q` quit (stops playback; nothing is written unless `
 is in `docs/readme/tui.txt`.
 
 Playback: every chord as bass (octave 2) plus close voicing from octave 4 (`voiceChord` defaults),
-channel 1, velocity 90, gate 0.95, loops by default. Tracks and the melody are read and validated
-(older songs migrate to schema 3, as in the web app) and written back with `w`, but not played. Without a MIDI port (e.g. `--port rtpmidid` while rtpmidid is down) the TUI
+channel 1, velocity 90, gate 0.95, loops by default. Tracks, the melody and song presets are read and validated
+(older songs migrate to schema 4, as in the web app) and written back with `w`, but not played. Without a MIDI port (e.g. `--port rtpmidid` while rtpmidid is down) the TUI
 still runs and shows the reason in red.
 
 Not done in the prototype: SaveStore records (it reads and writes the bare `serializeSong` JSON),
@@ -122,13 +122,13 @@ Complete since issue #65 (Phase 1); the TS file is the reference for every modul
 | ----------- | ------------------------ | ------------------------------------------------------------------------------------- |
 | `theory`    | `theory.ts`              | modes, scales, pitch classes, key signature, note names                               |
 | `token`     | `token.ts`, `chords.ts`  | `Chord` model, `parse_token`, `format_token` (error positions in UTF-16 units, as TS)  |
-| `chords`    | `chords.ts`              | intervals, root/bass, `voice_chord`, `chord_name`                                     |
+| `chords`    | `chords.ts`              | intervals, root/bass, `voice_chord`, `chord_name`, `chord_tones`                      |
 | `diatonic`  | `diatonic.ts`            | `diatonic_quality`, `diatonic_triad_token`, `is_diatonic`                              |
-| `suggest`   | `suggest.ts`             | `NgramTable` (schema 1, incl. `chords` info), `suggest_next` and `popular_chords` with `filter`, `seed_table` |
-| `tracks`    | `tracks.ts`              | `Track`, `Pattern`, `NoteSelector`, `new_track_id` (random source passed in)          |
-| `patterns`  | `patterns.ts`            | the 15 presets, `pattern_roles`, `role_defaults`, `create_track`, `default_tracks`    |
+| `suggest`   | `suggest.ts`             | `NgramTable` (schema 1, incl. `chords` info, `parseNgramTable` error paths), `suggest_next` and `popular_chords` with `filter`, `seed_table` |
+| `tracks`    | `tracks.ts`              | `Track`, `Pattern`, `NoteSelector` (incl. `octave`), `new_track_id`, `new_pattern_id` (random source passed in) |
+| `patterns`  | `patterns.ts`            | the 24 presets, `pattern_roles`, `pattern_description`, `role_defaults`, `create_track`, `default_tracks` |
 | `melody`    | `melody.ts`              | the melody lane model and constants, `melody_note_pitch`                              |
-| `song`      | `progression.ts`         | song schema 3, full `validate_song` (same error paths and messages, schema 1/2 migration), `serialize_song` byte for byte, `create_song`, `chord_at_beat`, tokens, total beats |
+| `song`      | `progression.ts`         | song schema 4 (song presets), full `validate_song` (same error paths and messages, schema 1–3 migration), `serialize_song` byte for byte, `create_song`, `chord_at_beat`, tokens, total beats |
 | `render`    | `render.ts`              | `layout_pattern`, `render_track`, `render_song`, `render_melody`, `melody_note_harmony` |
 | `midi`      | `midi.ts`                | `song_to_midi`: format 0 and format 1 (band tracks + melody), byte-identical; same `RangeError` messages |
 | `json`      | (JS runtime)             | `Math.round`, `Number#toString` and `JSON.stringify` semantics, so numbers and text match |
@@ -138,21 +138,25 @@ Parity tests (`crates/croky-core/tests/parity*.rs`) against goldens generated fr
 - every token in `packages/core/test/fixtures/tokens-roman-v1.json` (all nine modes) parses and
   formats back byte for byte; `token-errors.jsonl`: parse errors with the same message;
 - `chords.jsonl`: chord name and voicing of every fixture token in a rotating key;
+  `tones.jsonl`: `chordTones` of every other fixture token;
 - `suggest.jsonl`, `popular.jsonl`: suggestions for 70 contexts on `default.json`, plus
   `popularChords` and the `filter` option on the default and the seed table;
+  `table-errors.jsonl`: `parseNgramTable` errors for ~60 mutations of the seed table;
 - `diatonic.jsonl`: triads per mode and `isDiatonic` for a sample of fixture tokens;
-- `tracks.jsonl`: presets, roles, role defaults, ids from recorded random values,
+- `tracks.jsonl`: presets, roles, descriptions, role defaults, track and pattern ids from
+  recorded random values,
   `createTrack`, `DEFAULT_TRACKS`;
 - `render.jsonl`: `layoutPattern` of every preset and five edge-case patterns over 13 chord
   lengths; `renderTrack` of each pattern with four track settings (voicing, octave,
   transpose out of range, velocity, gate, channel, muted) on three songs; `renderSong` of the
   default band; the melody (harmony class, events, mute, cut at the end);
-- `songs.jsonl`: `validateSong` on a schema-3 base song and ~250 mutations of it (every
-  error path, plus valid edge values), schema 1/2 migration, unknown fields and string escapes;
+- `songs.jsonl`: `validateSong` on a schema-4 base song and ~280 mutations of it (every
+  error path incl. song presets, plus valid edge values), schema 1–3 migration, unknown fields,
+  string escapes and `packages/core/test/fixtures/song-v4.json`;
   the normalised `serializeSong` text must match byte for byte;
-- `midi.jsonl` + `midi/*.mid`: 15 `.mid` files (format 0 with options, format 1 with band,
-  presets, coarse ppq, melody, mute, empty songs) must be byte-identical, and 13 error cases
-  must give the same message.
+- `midi.jsonl` + `midi/*.mid`: 17 `.mid` files (format 0 with options, format 1 with band,
+  all presets, coarse ppq, melody, mute, empty songs, the schema-4 fixture) must be
+  byte-identical, and 13 error cases must give the same message.
 
 The golden files are generated from `packages/core` with `scripts/gen-rust-golden.sh` (bundles
 `crates/croky-core/tools/gen-golden.ts` with the esbuild already in `node_modules`). Rerun it after a
@@ -164,10 +168,9 @@ Known differences (none reachable from a song that passes `validate_song`):
   `invalid JSON: ` comes from serde_json, not from `JSON.parse`. A number literal outside the
   `f64` range (`1e400`) is a syntax error in Rust, `Infinity` (→ "expected a finite number")
   in TS.
-- `NgramTable::from_json` checks the schema, token format, mode names and that counts are
-  non-negative, but does not reproduce every `parseNgramTable` error path; with several bad
-  values it may name a different one.
-- `create_song` takes no `partial`; set fields with struct update syntax.
+- `NgramTable` keeps only the fields the port uses (`chords` info: `count`, `songCount`).
+- `create_song` takes no `partial`; set fields with struct update syntax. Functions that TS
+  lets throw a `RangeError` on a degree outside 1..7 (`degreePitch`, `diatonicQuality`) panic.
 - A hand-built song (not validated) with an unparsable token renders and exports nothing for
   that chord instead of throwing; `format_token` errors describe the chord with its Rust
   `Debug` form instead of the TS `describe`.

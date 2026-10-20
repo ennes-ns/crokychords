@@ -56,7 +56,7 @@ fn validate_and_serialize_match_typescript() {
             continue;
         }
         let mut song = result.unwrap_or_else(|e| panic!("{label}: {e}"));
-        assert_eq!(song.schema, 3, "{label}");
+        assert_eq!(song.schema, 4, "{label}");
         if line["masked"] == json!(true) {
             for (n, t) in song.tracks.iter_mut().flatten().enumerate() {
                 assert!(t.id.len() == 12 && t.id.starts_with("trk-"), "{label}");

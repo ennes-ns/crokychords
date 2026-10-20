@@ -10,8 +10,10 @@ fn step(mode: Mode, index: usize) -> i32 {
 }
 
 /// Quality of the diatonic triad on `degree` (1-7) of `mode` (stacked thirds of the scale).
+/// Panics on another degree (TS throws a `RangeError`).
 pub fn diatonic_quality(degree: u8, mode: Mode) -> Quality {
-    let d = usize::from(degree.clamp(1, 7));
+    assert!((1..=7).contains(&degree), "Invalid scale degree {degree}");
+    let d = usize::from(degree);
     let root = step(mode, d - 1);
     let third = step(mode, d + 1) - root;
     let fifth = step(mode, d + 3) - root;
@@ -24,6 +26,7 @@ pub fn diatonic_quality(degree: u8, mode: Mode) -> Quality {
 }
 
 /// Token of the diatonic triad on `degree`, e.g. 'ii' in major, 'III' in minor, 'vii°'.
+/// Panics on a degree outside 1..7, as `diatonic_quality`.
 pub fn diatonic_triad_token(degree: u8, mode: Mode) -> String {
     let chord = Chord {
         degree,

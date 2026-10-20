@@ -21,12 +21,14 @@ pub fn is_integer(x: f64) -> bool {
     x.is_finite() && x.fract() == 0.0
 }
 
-/// `String(x)` for a finite number: shortest round-trip digits, decimal notation for
-/// exponents -7 < e < 21, otherwise `1.5e+21` / `1e-7`. `-0` is written as `0`.
-/// Non-finite numbers are written as `null`, as `JSON.stringify` does.
+/// `String(x)`: shortest round-trip digits, decimal notation for exponents -7 < e < 21,
+/// otherwise `1.5e+21` / `1e-7`; `-0` is written as `0`, and `NaN`, `Infinity`, `-Infinity`.
 pub fn js_number(x: f64) -> String {
-    if !x.is_finite() {
-        return "null".into();
+    if x.is_nan() {
+        return "NaN".into();
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { "Infinity" } else { "-Infinity" }.into();
     }
     if x == 0.0 {
         return "0".into();
@@ -68,7 +70,11 @@ fn write_value(out: &mut String, value: &Value, pretty: bool, depth: usize) {
     match value {
         Value::Null => out.push_str("null"),
         Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-        Value::Number(n) => out.push_str(&js_number(n.as_f64().unwrap_or(f64::NAN))),
+        // JSON.stringify writes non-finite numbers as null.
+        Value::Number(n) => match n.as_f64().filter(|x| x.is_finite()) {
+            Some(x) => out.push_str(&js_number(x)),
+            None => out.push_str("null"),
+        },
         Value::String(s) => write_string(out, s),
         Value::Array(items) => {
             if items.is_empty() {
@@ -138,6 +144,8 @@ mod tests {
             (1e-6, "0.000001"),
             (1e-7, "1e-7"),
             (-2.5e-8, "-2.5e-8"),
+            (f64::NAN, "NaN"),
+            (f64::NEG_INFINITY, "-Infinity"),
         ];
         for (x, want) in cases {
             assert_eq!(js_number(x), want, "{x}");

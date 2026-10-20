@@ -10,17 +10,20 @@ import {
   TRACK_ROLES,
   chordAtBeat,
   chordName,
+  chordTones,
   createTrack,
   diatonicQuality,
   diatonicTriadToken,
   isDiatonic,
   layoutPattern,
   melodyNoteHarmony,
+  newPatternId,
   newTrackId,
   parseNgramTable,
   parseNoteName,
   parseToken,
   patternPreset,
+  patternDescription,
   patternRoles,
   popularChords,
   renderMelody,
@@ -100,6 +103,28 @@ for (const [mode, tokens] of Object.entries(fixture) as [Mode, string[]][]) {
   }
 }
 writeFileSync(new URL('chords.jsonl', out), chordLines.join('\n') + '\n');
+
+// Core chord tones spelled as degrees (chordTones) for every other fixture token, in a rotating
+// key; each tone is [role, interval, pitch class, degree, accidental].
+const toneLines: unknown[] = [];
+let toneIndex = 0;
+for (const [mode, tokens] of Object.entries(fixture) as [Mode, string[]][]) {
+  for (const token of tokens.filter((_, n) => n % 2 === 0)) {
+    const tonic = TONICS[toneIndex % TONICS.length] ?? 'C';
+    toneIndex++;
+    const tones = chordTones(parseToken(token), { tonic: parseNoteName(tonic), mode });
+    toneLines.push({
+      mode,
+      tonic,
+      token,
+      tones: tones.map((t) => [t.role, t.interval, t.pitchClass, t.degree, t.accidental]),
+    });
+  }
+}
+writeFileSync(
+  new URL('tones.jsonl', out),
+  toneLines.map((l) => JSON.stringify(l)).join('\n') + '\n',
+);
 
 // Suggestions for a sample of contexts in the default table plus a few that need backoff.
 const table = parseNgramTable(
@@ -235,7 +260,12 @@ writeLines('token-errors.jsonl', tokenErrorLines);
 // Tracks: presets, role defaults, ids from a recorded random sequence, createTrack, the band.
 const trackLines: unknown[] = [];
 for (const pattern of PATTERN_PRESETS) {
-  trackLines.push({ kind: 'preset', pattern, roles: patternRoles(pattern.id) });
+  trackLines.push({
+    kind: 'preset',
+    pattern,
+    roles: patternRoles(pattern.id),
+    description: patternDescription(pattern.id),
+  });
 }
 trackLines.push({ kind: 'presetRoles', id: 'custom', roles: patternRoles('custom') });
 for (const role of TRACK_ROLES) {
@@ -253,6 +283,7 @@ const idRandoms = [
 ];
 for (const values of idRandoms) {
   trackLines.push({ kind: 'newTrackId', randoms: values, id: newTrackId(replay(values)) });
+  trackLines.push({ kind: 'newPatternId', randoms: values, id: newPatternId(replay(values)) });
 }
 const customPattern: Pattern = {
   id: 'custom',
@@ -509,8 +540,17 @@ writeLines('render.jsonl', renderLines);
 // The song record: valid inputs (normalised output and the helpers) and invalid ones (path and
 // message of the SongError).
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+const userPreset: Pattern = {
+  id: 'user-k3x9p0aa',
+  name: 'My walk',
+  length: 2,
+  steps: [
+    { at: 0, length: 0.5, notes: 'octave', accent: 0.9 },
+    { at: 1, length: 0.5, notes: { index: 1 } },
+  ],
+};
 const base = {
-  schema: 3,
+  schema: 4,
   title: 'Base',
   key: { tonic: 'Eb', mode: 'minor' },
   tempo: 96,
@@ -544,6 +584,7 @@ const base = {
       { beat: 4.5, length: 2, degree: 3, octave: 2, accidental: -1 },
     ],
   },
+  patterns: [userPreset, { ...userPreset, id: 'user-2', name: ' Second ', tail: 'sustain' }],
 };
 const clone = (): Record<string, Json> => JSON.parse(JSON.stringify(base)) as Record<string, Json>;
 
@@ -614,6 +655,24 @@ const mutations: [string, (Json | undefined)[]][] = [
   ['melody.notes.1.octave', [X, -4, 4, 0.5, -3, 3]],
   ['melody.notes.1.accidental', [X, 2, -2, 0.5, '1', null, -1]],
   ['melody.notes.2.beat', [0.5, 1, 1.25]],
+  [
+    'patterns',
+    [
+      X,
+      {},
+      null,
+      [],
+      Array.from({ length: 64 }, (_, n) => ({ ...userPreset, id: `user-${String(n)}` })),
+      Array.from({ length: 65 }, () => 0),
+    ],
+  ],
+  ['patterns.0', [null, 'user-x']],
+  ['patterns.0.id', [X, 5, 'pad', 'user-', 'User-x', 'user-2', ' user-x', 'user-♫']],
+  ['patterns.0.name', [X, '', '   ', '\u00a0\ufeff\u2028\t', '\u0085', '\u200b', 'x']],
+  ['patterns.0.length', [0, 0.3, 1.5]],
+  ['patterns.0.steps.0.notes', ['octave', 'Octave', { index: 0 }]],
+  ['patterns.0.steps.1.at', [2, 1.875]],
+  ['patterns.1.tail', [X, 'hold']],
 ];
 const songLines: unknown[] = [{ kind: 'base', base }];
 /** `mutation` is [path, value] (value omitted: the field is removed) applied to `base`. */
@@ -642,7 +701,7 @@ function songCase(label: string, input: Json, mutation?: [string, Json?]): void 
     songLines.push({ label, ...given, path, message: (e as Error).message });
   }
 }
-songCase('base', clone(), ['schema', 3]);
+songCase('base', clone(), ['schema', 4]);
 for (const [path, values] of mutations) {
   for (const value of values) {
     const shown = value === undefined ? '(missing)' : JSON.stringify(value);
@@ -650,15 +709,17 @@ for (const [path, values] of mutations) {
     songCase(`${path} = ${shown}`, setPath(clone(), path, value), mutation);
   }
 }
-for (const schema of [1, 2]) {
+for (const schema of [1, 2, 3]) {
   for (const drop of [false, true]) {
     const s = clone();
     s['schema'] = schema;
     if (drop) {
-      delete s['melody'];
+      delete s['patterns'];
+      if (schema <= 2) delete s['melody'];
       if (schema === 1) delete s['tracks'];
     } else {
-      s['melody'] = 'ignored';
+      s['patterns'] = 'ignored';
+      if (schema <= 2) s['melody'] = 'ignored';
       if (schema === 1) s['tracks'] = 'ignored';
     }
     songCase(`schema ${String(schema)}${drop ? ' without' : ' with junk in'} later fields`, s);
@@ -680,6 +741,10 @@ songCase(
   'croky-tui demo song',
   JSON.parse(readFileSync(new URL('crates/croky-tui/songs/demo.json', root), 'utf8')) as Json,
 );
+const fixtureV4 = JSON.parse(
+  readFileSync(new URL('packages/core/test/fixtures/song-v4.json', root), 'utf8'),
+) as Json;
+songCase('fixture song-v4.json', fixtureV4);
 writeLines('songs.jsonl', songLines);
 
 // The SMF writer: .mid files written by songToMidi, and its RangeErrors.
@@ -733,7 +798,7 @@ const allPresets = PATTERN_PRESETS.map((pattern, n) =>
   createTrack(patternRoles(pattern.id)[0] ?? 'custom', {
     id: `trk-${pattern.id}`,
     name: pattern.name,
-    channel: n,
+    channel: n % 16,
     pattern,
     gate: n % 2 === 0 ? 0.9 : 1,
     transpose: n === 5 ? 60 : 0,
@@ -801,12 +866,58 @@ midiCase('error-tempo-slow', { ...axis, tempo: 3 }, {});
 midiCase('error-tempo-slow-band', banded({ ...spec, tempo: 3 }, band), {});
 midiCase('error-track-channel', banded(spec, band), {}, 'track0Channel16');
 midiCase('format1-velocity-clamped', banded(spec, band), {}, 'track0Velocity0');
+midiCase('format1-fixture-v4', fixtureV4, {});
+midiCase('format1-fixture-v4-all', fixtureV4, { includeMuted: true, ppq: 240 });
 writeLines('midi.jsonl', midiLines);
+
+// parseNgramTable errors: mutations of the seed table.
+const seedJson = JSON.parse(
+  readFileSync(new URL('packages/core/src/data/seed-ngrams.json', root), 'utf8'),
+) as Json;
+const tableMutations: [string, (Json | undefined)[]][] = [
+  ['', [null, [], 3]],
+  ['schema', [X, 2, '1']],
+  ['tokenFormat', [X, 'roman', 1]],
+  ['maxContext', [X, -1, 1.5, '2', 0, 2.0]],
+  ['modes', [X, [], {}]],
+  ['modes.aeolian', [{}]],
+  ['modes.major', [null, 1]],
+  ['modes.major.sections', [X, -1, '1', 0]],
+  ['modes.major.chords', [X, []]],
+  ['modes.major.chords.V', [null, 2, {}]],
+  ['modes.major.chords.V.count', [X, -1, null, '3', 0]],
+  ['modes.major.chords.V.songCount', [null, -2, 'x', 7]],
+  ['modes.major.ngrams', [X, null]],
+  ['modes.major.ngrams.', [null, { I: -1 }, { I: '1' }]],
+  ['modes.major.ngrams.I', [[], { V: null }, { 'V,IV': 1 }]],
+  ['modes.minor.sections', [-3]],
+  ['source', [X, 'seed']],
+  ['source.name', [X, 5]],
+  ['source.description', [3, null]],
+  ['source.license', [false]],
+  ['source.exportedAt', [1]],
+  ['generatedAt', [X, 0]],
+];
+const tableLines: unknown[] = [];
+for (const [path, values] of tableMutations) {
+  for (const value of values) {
+    const input = setPath(JSON.parse(JSON.stringify(seedJson)) as Json, path, value);
+    const mutation: [string, Json?] = value === undefined ? [path] : [path, value];
+    try {
+      parseNgramTable(input);
+      tableLines.push({ mutation, ok: true });
+    } catch (e) {
+      tableLines.push({ mutation, message: (e as Error).message });
+    }
+  }
+}
+writeLines('table-errors.jsonl', tableLines);
 
 console.log(
   `wrote ${String(chordLines.length)} chord, ${String(suggestLines.length)} suggestion, ` +
     `${String(popularLines.length)} popular, ${String(diatonicLines.length)} diatonic, ` +
     `${String(tokenErrorLines.length)} token error, ${String(trackLines.length)} track, ` +
     `${String(renderLines.length)} render, ${String(songLines.length)} song and ` +
-    `${String(midiLines.length)} midi lines`,
+    `${String(midiLines.length)} midi lines, ${String(toneLines.length)} chord tones and ` +
+    `${String(tableLines.length)} table cases`,
 );

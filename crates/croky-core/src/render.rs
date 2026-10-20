@@ -148,6 +148,7 @@ fn resolve_selector(
             }
         }
         NoteSelector::Top => voicing.notes.last().map_or_else(Vec::new, |&t| vec![t]),
+        NoteSelector::Octave => vec![bass + 12],
     }
 }
 

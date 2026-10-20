@@ -33,202 +33,286 @@ fn no_accent(_: usize) -> Option<f64> {
     None
 }
 
-/// 0, every, 2 * every, ... below 4 beats.
-fn grid(every: f64) -> Vec<f64> {
+/// 0, every, 2 * every, ... below `length` beats.
+fn grid_of(every: f64, length: f64) -> Vec<f64> {
     let mut out = Vec::new();
     let mut i = 0.0;
-    while i * every < 4.0 {
+    while i * every < length {
         out.push(i * every);
         i += 1.0;
     }
     out
 }
 
-const ARP_UP_DOWN: [u64; 8] = [0, 1, 2, 3, 2, 1, 0, 1];
+/// 0, every, 2 * every, ... below 4 beats.
+fn grid(every: f64) -> Vec<f64> {
+    grid_of(every, 4.0)
+}
 
-fn pattern(id: &str, name: &str, steps: Vec<PatternStep>, tail: Option<PatternTail>) -> Pattern {
-    Pattern {
-        id: id.into(),
-        name: name.into(),
-        length: 4.0,
-        steps,
-        tail,
+/// Tone selectors cycling through `indices`, one per step.
+fn tones(indices: &'static [u64]) -> impl Fn(usize) -> NoteSelector {
+    move |i| NoteSelector::Index(indices[i % indices.len()])
+}
+
+const ARP_UP_DOWN: [u64; 8] = [0, 1, 2, 3, 2, 1, 0, 1];
+/// Walking bass over one chord: bass note, third, fifth, octave.
+const WALK: [NoteSelector; 4] = [
+    NoteSelector::Bass,
+    NoteSelector::Index(1),
+    NoteSelector::Index(2),
+    NoteSelector::Octave,
+];
+
+struct PresetDef {
+    pattern: Pattern,
+    roles: &'static [TrackRole],
+    /// One line for the pattern select.
+    description: &'static str,
+}
+
+fn def(
+    roles: &'static [TrackRole],
+    description: &'static str,
+    (id, name, length): (&str, &str, f64),
+    steps: Vec<PatternStep>,
+    tail: Option<PatternTail>,
+) -> PresetDef {
+    PresetDef {
+        pattern: Pattern {
+            id: id.into(),
+            name: name.into(),
+            length,
+            steps,
+            tail,
+        },
+        roles,
+        description,
     }
 }
 
-struct Presets {
-    patterns: Vec<Pattern>,
-    roles: Vec<&'static [TrackRole]>,
-}
-
-fn presets() -> &'static Presets {
-    static PRESETS: OnceLock<Presets> = OnceLock::new();
+fn presets() -> &'static [PresetDef] {
+    static PRESETS: OnceLock<Vec<PresetDef>> = OnceLock::new();
     PRESETS.get_or_init(|| {
-        use NoteSelector::{Bass, Chord, Fifth, Index};
+        use NoteSelector::{Bass, Chord, Fifth, Index, Octave};
         use TrackRole as R;
         let sustain = Some(PatternTail::Sustain);
-        let defs: Vec<(&'static [TrackRole], Pattern)> = vec![
-            (
+        let step = |at, length, notes, accent| PatternStep {
+            at,
+            length,
+            notes,
+            accent,
+        };
+        vec![
+            def(
                 &[R::Chords, R::Pad],
-                pattern(
-                    "sustain",
-                    "Sustain",
-                    steps(&[0.0], 4.0, same(Chord), no_accent),
-                    sustain,
-                ),
+                "One chord held to the chord end",
+                ("sustain", "Sustain", 4.0),
+                steps(&[0.0], 4.0, same(Chord), no_accent),
+                sustain,
             ),
-            (
+            def(
                 &[R::Chords],
-                pattern(
-                    "whole",
-                    "Whole notes",
-                    steps(&[0.0], 4.0, same(Chord), no_accent),
-                    None,
-                ),
+                "One chord every four beats",
+                ("whole", "Whole notes", 4.0),
+                steps(&[0.0], 4.0, same(Chord), no_accent),
+                None,
             ),
-            (
+            def(
                 &[R::Chords],
-                pattern(
-                    "half",
-                    "Half notes",
-                    steps(&[0.0, 2.0], 2.0, same(Chord), no_accent),
-                    None,
-                ),
+                "Chords on beats 1 and 3",
+                ("half", "Half notes", 4.0),
+                steps(&[0.0, 2.0], 2.0, same(Chord), no_accent),
+                None,
             ),
-            (
+            def(
                 &[R::Chords],
-                pattern(
-                    "quarters",
-                    "Quarter stabs",
-                    steps(&grid(1.0), 0.5, same(Chord), no_accent),
-                    None,
-                ),
+                "Short chords on every beat",
+                ("quarters", "Quarter stabs", 4.0),
+                steps(&grid(1.0), 0.5, same(Chord), no_accent),
+                None,
             ),
-            (
+            def(
                 &[R::Chords],
-                pattern(
-                    "eighths",
-                    "Eighths",
-                    steps(&grid(0.5), 0.25, same(Chord), no_accent),
-                    None,
-                ),
+                "Short chords on every eighth",
+                ("eighths", "Eighths", 4.0),
+                steps(&grid(0.5), 0.25, same(Chord), no_accent),
+                None,
             ),
-            (
+            def(
                 &[R::Chords],
-                pattern(
-                    "offbeat",
-                    "Off-beat eighths",
-                    steps(&[0.5, 1.5, 2.5, 3.5], 0.4, same(Chord), no_accent),
-                    None,
-                ),
+                "Chords between the beats",
+                ("offbeat", "Off-beat eighths", 4.0),
+                steps(&[0.5, 1.5, 2.5, 3.5], 0.4, same(Chord), no_accent),
+                None,
             ),
-            (
+            def(
                 &[R::Chords],
-                pattern(
-                    "pop-ballad",
-                    "Pop ballad",
-                    vec![
-                        PatternStep::new(0.0, 1.5, Chord),
-                        PatternStep::new(1.5, 0.5, Chord),
-                        PatternStep::new(2.0, 1.0, Chord),
-                        PatternStep::new(3.0, 1.0, Chord),
-                    ],
-                    None,
-                ),
+                "Long-short-long-long ballad rhythm",
+                ("pop-ballad", "Pop ballad", 4.0),
+                vec![
+                    PatternStep::new(0.0, 1.5, Chord),
+                    PatternStep::new(1.5, 0.5, Chord),
+                    PatternStep::new(2.0, 1.0, Chord),
+                    PatternStep::new(3.0, 1.0, Chord),
+                ],
+                None,
             ),
-            (
+            def(
                 &[R::Bass],
-                pattern(
-                    "bass-whole",
-                    "Bass whole",
-                    steps(&[0.0], 4.0, same(Bass), no_accent),
-                    sustain,
-                ),
+                "The bass note held to the chord end",
+                ("bass-whole", "Bass whole", 4.0),
+                steps(&[0.0], 4.0, same(Bass), no_accent),
+                sustain,
             ),
-            (
+            def(
                 &[R::Bass],
-                pattern(
-                    "bass-quarters",
-                    "Bass quarters",
-                    steps(&grid(1.0), 0.9, same(Bass), no_accent),
-                    None,
-                ),
+                "The bass note on every beat",
+                ("bass-quarters", "Bass quarters", 4.0),
+                steps(&grid(1.0), 0.9, same(Bass), no_accent),
+                None,
             ),
-            (
+            def(
                 &[R::Bass],
-                pattern(
-                    "bass-root-fifth",
-                    "Root–fifth",
-                    steps(
-                        &grid(1.0),
-                        0.9,
-                        |i| if i % 2 == 0 { Bass } else { Fifth },
-                        no_accent,
-                    ),
-                    None,
+                "Bass note and fifth, alternating per beat",
+                ("bass-root-fifth", "Root–fifth", 4.0),
+                steps(
+                    &grid(1.0),
+                    0.9,
+                    |i| if i % 2 == 0 { Bass } else { Fifth },
+                    no_accent,
                 ),
+                None,
             ),
-            (
+            def(
                 &[R::Bass],
-                pattern(
-                    "bass-octaves",
-                    "Octave eighths",
-                    steps(&grid(0.5), 0.45, same(Bass), |i| {
-                        (i % 2 == 1).then_some(0.8)
-                    }),
-                    None,
-                ),
+                "The bass note on every eighth, off-beats softer",
+                ("bass-octaves", "Octave eighths", 4.0),
+                steps(&grid(0.5), 0.45, same(Bass), |i| {
+                    (i % 2 == 1).then_some(0.8)
+                }),
+                None,
             ),
-            (
+            def(
                 &[R::Arp],
-                pattern(
-                    "arp-up-8",
-                    "Arp up 1/8",
-                    steps(&grid(0.5), 0.45, |i| Index(i as u64), no_accent),
-                    None,
-                ),
+                "Chord tones climbing in eighths",
+                ("arp-up-8", "Arp up 1/8", 4.0),
+                steps(&grid(0.5), 0.45, |i| Index(i as u64), no_accent),
+                None,
             ),
-            (
+            def(
                 &[R::Arp],
-                pattern(
-                    "arp-up-16",
-                    "Arp up 1/16",
-                    steps(&grid(0.25), 0.22, |i| Index(i as u64), no_accent),
-                    None,
-                ),
+                "Four chord tones up, every beat",
+                ("arp-up-16", "Arp up 1/16", 4.0),
+                steps(&grid(0.25), 0.22, tones(&[0, 1, 2, 3]), no_accent),
+                None,
             ),
-            (
+            def(
                 &[R::Arp],
-                pattern(
-                    "arp-updown-8",
-                    "Arp up–down 1/8",
-                    steps(
-                        &grid(0.5),
-                        0.45,
-                        |i| Index(ARP_UP_DOWN.get(i).copied().unwrap_or(0)),
-                        no_accent,
-                    ),
-                    None,
-                ),
+                "Chord tones up and down in eighths",
+                ("arp-updown-8", "Arp up–down 1/8", 4.0),
+                steps(&grid(0.5), 0.45, |i| Index(ARP_UP_DOWN[i % 8]), no_accent),
+                None,
             ),
-            (
+            def(
+                &[R::Arp],
+                "Chord tones up and down in sixteenths",
+                ("arp-updown-16", "Arp up–down 1/16", 4.0),
+                steps(
+                    &grid(0.25),
+                    0.22,
+                    tones(&[0, 1, 2, 3, 4, 3, 2, 1]),
+                    no_accent,
+                ),
+                None,
+            ),
+            def(
+                &[R::Arp],
+                "Root, fifth, third, octave in eighths",
+                ("arp-broken-8", "Broken chord 1/8", 4.0),
+                steps(&grid(0.5), 0.45, tones(&[0, 2, 1, 3]), no_accent),
+                None,
+            ),
+            def(
+                &[R::Arp, R::Chords],
+                "Low, high, middle, high: the classic left hand",
+                ("alberti", "Alberti", 4.0),
+                steps(&grid(0.5), 0.45, tones(&[0, 2, 1, 2]), no_accent),
+                None,
+            ),
+            def(
+                &[R::Chords],
+                "Short stabs between the beats with a pickup",
+                ("stab-offbeat", "Off-beat stabs", 4.0),
+                steps(&[0.5, 1.5, 2.5, 3.5, 3.75], 0.2, same(Chord), |i| {
+                    (i == 4).then_some(0.75)
+                }),
+                None,
+            ),
+            def(
+                &[R::Chords],
+                "Syncopated piano stabs for four-on-the-floor",
+                ("house-piano", "House piano", 4.0),
+                steps(&[0.0, 0.75, 1.5, 2.5, 3.25], 0.4, same(Chord), |i| {
+                    (i != 0).then_some(0.85)
+                }),
+                None,
+            ),
+            def(
+                &[R::Chords],
+                "Short chords on beats 2 and 4",
+                ("reggae-skank", "Reggae skank", 4.0),
+                steps(&[1.0, 3.0], 0.3, same(Chord), no_accent),
+                None,
+            ),
+            def(
+                &[R::Chords],
+                "Bass note, then two softer chords (three beats)",
+                ("waltz-3", "Waltz 3/4", 3.0),
+                vec![
+                    step(0.0, 0.9, Bass, None),
+                    step(1.0, 0.6, Chord, Some(0.75)),
+                    step(2.0, 0.6, Chord, Some(0.75)),
+                ],
+                None,
+            ),
+            def(
+                &[R::Bass],
+                "Bass note and its octave, alternating in eighths",
+                ("bass-octave-8", "Bass octaves 1/8", 4.0),
+                steps(
+                    &grid(0.5),
+                    0.45,
+                    |i| if i % 2 == 0 { Bass } else { Octave },
+                    |i| (i % 2 == 1).then_some(0.8),
+                ),
+                None,
+            ),
+            def(
+                &[R::Bass],
+                "Bass note, third, fifth, octave on the beats",
+                ("bass-walk-4", "Walking bass", 4.0),
+                steps(
+                    &grid(1.0),
+                    0.9,
+                    |i| WALK.get(i).copied().unwrap_or(Bass),
+                    no_accent,
+                ),
+                None,
+            ),
+            def(
                 &[R::Pad],
-                pattern(
-                    "pad",
-                    "Pad",
-                    steps(&[0.0], 4.0, same(Chord), |_| Some(0.8)),
-                    sustain,
-                ),
+                "A soft chord held to the chord end",
+                ("pad", "Pad", 4.0),
+                steps(&[0.0], 4.0, same(Chord), |_| Some(0.8)),
+                sustain,
             ),
-        ];
-        let (roles, patterns) = defs.into_iter().unzip();
-        Presets { patterns, roles }
+        ]
     })
 }
 
 /// Built-in rhythm patterns (`PATTERN_PRESETS`); clone one for a mutable copy.
-pub fn pattern_presets() -> &'static [Pattern] {
-    &presets().patterns
+pub fn pattern_presets() -> Vec<&'static Pattern> {
+    presets().iter().map(|d| &d.pattern).collect()
 }
 
 /// Unknown preset id (`patternPreset` throws a `RangeError` with this message).
@@ -245,20 +329,27 @@ impl std::error::Error for UnknownPreset {}
 
 /// A fresh copy of the preset with this id.
 pub fn pattern_preset(id: &str) -> Result<Pattern, UnknownPreset> {
-    pattern_presets()
+    presets()
         .iter()
-        .find(|p| p.id == id)
-        .cloned()
+        .find(|d| d.pattern.id == id)
+        .map(|d| d.pattern.clone())
         .ok_or_else(|| UnknownPreset(id.into()))
 }
 
 /// Roles a preset is meant for (for grouping in the UI); empty for unknown ids and 'custom'.
 pub fn pattern_roles(id: &str) -> &'static [TrackRole] {
-    let p = presets();
-    p.patterns
+    presets()
         .iter()
-        .position(|pat| pat.id == id)
-        .map_or(&[], |i| p.roles[i])
+        .find(|d| d.pattern.id == id)
+        .map_or(&[], |d| d.roles)
+}
+
+/// One-line description of a built-in preset (for the pattern select); '' for unknown ids.
+pub fn pattern_description(id: &str) -> &'static str {
+    presets()
+        .iter()
+        .find(|d| d.pattern.id == id)
+        .map_or("", |d| d.description)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -359,7 +450,7 @@ mod tests {
 
     #[test]
     fn presets_and_roles() {
-        assert_eq!(pattern_presets().len(), 15);
+        assert_eq!(pattern_presets().len(), 24);
         assert_eq!(pattern_preset("arp-up-16").unwrap().steps.len(), 16);
         assert_eq!(
             pattern_preset("nope").unwrap_err().to_string(),
