@@ -13,10 +13,12 @@ import type {
   TrackRole,
 } from '@crokychords/core';
 import {
+  ImportError,
   MELODY_TRACK_ID,
   PATTERN_PRESETS,
   SongError,
   createSong,
+  importFile,
   serializeSong,
   validateSong,
 } from '@crokychords/core';
@@ -134,6 +136,45 @@ interface Edit {
   selected?: number | null;
   result?: Partial<CommandResult>;
   effects?: Effect[];
+}
+
+/** The bytes of base64 text, or a Failure on `path` when it is not base64. */
+export function fromBase64(text: string, path = 'data'): Uint8Array {
+  let binary: string;
+  try {
+    binary = atob(text.replace(/\s+/g, ''));
+  } catch {
+    throw new Failure('invalid', path, 'not valid base64');
+  }
+  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+}
+
+/** `importFile`: the song from a MIDI/MusicXML file (docs/specs/import-v1.md §C). */
+function importEdit(command: CommandOf<'importFile'>): Edit {
+  const bytes = fromBase64(command.data);
+  const key =
+    command.tonic !== undefined && command.mode !== undefined
+      ? { tonic: command.tonic, mode: command.mode }
+      : undefined;
+  try {
+    const { song, report } = importFile(command.name, bytes, key === undefined ? {} : { key });
+    return {
+      song,
+      selected: null,
+      effects: [{ type: 'stop' }],
+      result: {
+        title: report.title,
+        key: `${report.key.tonic} ${report.key.mode}`,
+        chords: report.chords.total,
+        notes: report.melody.notes,
+        dropped: report.dropped.length + report.droppedMore,
+        report,
+      },
+    };
+  } catch (e) {
+    if (e instanceof ImportError) throw new Failure('invalid', 'data', e.message);
+    throw e;
+  }
 }
 
 /** The song edits: a new song (and maybe a new selection). */
@@ -283,6 +324,8 @@ function editSong(state: EngineState, command: Command, env: EngineEnv): Edit | 
       });
       return { song: next, selected: null, effects: [{ type: 'stop' }] };
     }
+    case 'importFile':
+      return importEdit(command);
     default:
       return null;
   }

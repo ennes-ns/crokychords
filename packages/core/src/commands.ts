@@ -27,6 +27,10 @@ export const COMMAND_TEMPO_MAX = 300;
 export const COMMAND_METER_UNITS = [1, 2, 4, 8, 16, 32] as const;
 export const MAX_TITLE_LENGTH = 200;
 export const MAX_TRACK_NAME_LENGTH = 64;
+/** Longest file name `importFile` takes. */
+export const MAX_IMPORT_NAME_LENGTH = 255;
+/** Longest base64 text `importFile` takes (about 3 MB of file). */
+export const MAX_IMPORT_DATA_LENGTH = 4 * 1024 * 1024;
 
 const quarter = (max: number) =>
   z
@@ -135,6 +139,15 @@ export const COMMAND_SCHEMAS = {
   audition: op('audition', { token }),
   exportMidi: op('exportMidi', {}),
   save: op('save', {}),
+  importFile: op('importFile', {
+    name: z.string().min(1).max(MAX_IMPORT_NAME_LENGTH),
+    data: z.string().min(1).max(MAX_IMPORT_DATA_LENGTH),
+    tonic: tonic.optional(),
+    mode: z.enum(MODES).optional(),
+  }).refine((c) => (c.tonic === undefined) === (c.mode === undefined), {
+    message: 'give both tonic and mode to choose the key, or neither to detect it',
+    path: ['tonic'],
+  }),
 } as const;
 
 export type CommandOp = keyof typeof COMMAND_SCHEMAS;
@@ -318,6 +331,12 @@ export const COMMAND_INFO: { readonly [K in CommandOp]: CommandInfo & { example:
       example: { op: 'exportMidi' },
     },
     save: { kind: 'file', summary: 'Save pending edits now.', example: { op: 'save' } },
+    importFile: {
+      kind: 'file',
+      summary:
+        'Replace the song with a MIDI/MusicXML file (`data` in base64, `name` picks the format; `tonic` + `mode` set the key instead of detecting it). Result: the import report.',
+      example: { op: 'importFile', name: 'song.mid', data: 'TVRoZAAAAAYAAAABAGA=' },
+    },
   };
 
 /** Ops the assistant may answer with: song edits that do not depend on the selection. */
