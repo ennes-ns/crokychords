@@ -154,6 +154,32 @@ with tempo, meter and key signature, then one track per unmuted layer with its n
 channel prefix and its notes on its channel. Most DAWs import it as one MIDI track per
 layer.
 
+## Akai Fire controller
+
+Click **Connect Fire** in the toolbar with an Akai Fire plugged in (Chrome, Edge or Opera). The
+browser asks to "control and reprogram your MIDI devices": that is SysEx, which the Fire needs for
+its pad colours. The request is separate from **Enable MIDI out**, so MIDI out to a DAW keeps
+working on its own port. Plugging the Fire in later, or again, re-attaches it; closing the tab or
+clicking **Fire connected** turns every LED off. Layout and protocol: `docs/specs/akai-fire-v1.md`.
+
+| Control | Effect |
+|---|---|
+| Rows 1-3 | timeline: one pad per beat, four bars per row, in the degree colours; tap = select (and listen), tap again = deselect |
+| Row 4, pads 1-7 | insert the diatonic triad I..vii° after the selection (SHIFT: replace the selected chord) |
+| Row 4, pads 9-16 | the top eight Next chord suggestions (brightness = probability); tap to insert |
+| Hold a chord + tap another pad | the chord ends on that beat |
+| ALT + tap a chord | remove it |
+| Tap the dim pad after the last chord | append the top suggestion |
+| SELECT turn / press | move the suggestion cursor / insert it (SHIFT+turn: move the selection; SHIFT+press: listen) |
+| VOLUME | selected chord length ±1 beat (SHIFT: ±¼); one undo step per touch |
+| RESONANCE | tempo ±1 BPM (SHIFT: ±5) |
+| PLAY / STOP / REC | play/stop, stop, loop on/off |
+| PATTERN | undo (SHIFT: redo) |
+| PATTERN UP / DOWN | scroll the timeline by four bars (SHIFT: start/end); follows the playhead |
+| GRID ◀ ▶ | previous/next chord |
+| BROWSER | In context / Popular (SHIFT: diatonic only) |
+| SOLO 1-4 | mute/unmute track 1-4 (row LED green = audible, red = muted; SHIFT: select the track) |
+
 ## Suggestion data (`ngrams.json`)
 
 Out of the box the panel uses the small hand-written seed table from `@crokychords/core`

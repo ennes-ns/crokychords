@@ -12,6 +12,20 @@ export type MidiStatus = 'off' | 'pending' | 'ready' | 'unsupported' | 'denied';
 export type SuggestMode = 'context' | 'popular';
 /** What a Next chord click does: insert after the selection or replace the selected chord. */
 export type PlaceMode = 'insert' | 'replace';
+/**
+ * Akai Fire controller (docs/specs/akai-fire-v1.md): 'waiting' = SysEx access granted but no
+ * Fire plugged in (it attaches when one appears).
+ */
+export type FireStatus = 'off' | 'pending' | 'waiting' | 'connected' | 'unsupported' | 'denied';
+
+/** The Fire's view state; outside the song, so it has no undo. */
+export interface FireState {
+  status: FireStatus;
+  /** First timeline row shown on the pads (one row = four bars). */
+  scroll: number;
+  /** Suggestion under the SELECT encoder (index into the Next chord list, 0..7). */
+  cursor: number;
+}
 
 export interface AppState {
   song: Song;
@@ -38,6 +52,7 @@ export interface AppState {
   placeMode: PlaceMode;
   /** The AudioContext exists and is running (it needs a user gesture). */
   audioReady: boolean;
+  fire: FireState;
 }
 
 export function initialState(song: Song = createSong()): AppState {
@@ -59,6 +74,7 @@ export function initialState(song: Song = createSong()): AppState {
     diatonicOnly: false,
     placeMode: 'insert',
     audioReady: false,
+    fire: { status: 'off', scroll: 0, cursor: 0 },
   };
 }
 

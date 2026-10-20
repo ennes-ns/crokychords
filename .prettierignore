@@ -5,3 +5,4 @@ packages/data
 *.md
 mise.toml
 apps/web/public/data
+apps/web/test/fixtures/*.json
