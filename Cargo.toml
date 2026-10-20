@@ -1,0 +1,20 @@
+# Rust workspace: the port of packages/core (croky-core) and the terminal prototype
+# (croky-tui). Spike for issue #39; see docs/specs/tui-v1.md. Checked by scripts/check-rust.sh.
+[workspace]
+resolver = "2"
+members = ["crates/croky-core", "crates/croky-tui"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+publish = false
+rust-version = "1.85"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+ratatui = "0.29"
+midir = "0.10"
+
+[profile.release]
+lto = "thin"

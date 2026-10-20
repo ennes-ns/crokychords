@@ -1,0 +1,24 @@
+ Croky Chords   Axis · C major · 120 BPM · 4/4 · 0 chords · 0 beats
+┌ Progression ─────────────────────────────────────────────────────────────────────────────────────┐
+│ (empty: press Enter to start with the most common chord)                                         │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Next chord (song start) ───────────────────────────────────────┐┌ MIDI ──────────────────────────┐
+│ 1 I        C         26.7% ██████████████████████████████      ││ out  none                      │
+│ 2 IV       F         20.0% ██████████████████████              ││ now  ○ stopped                 │
+│ 3 V        G         17.0% ███████████████████                 ││ loop on                        │
+│ 4 vi       Am         9.2% ██████████                          ││ late –                         │
+│ 5 ii       Dm         4.4% █████                               ││ data default.json              │
+│ 6 iii      Em         2.5% ███                                 ││                                │
+│ 7 bVII     Bb         1.9% ██                                  ││                                │
+│ 8 II       D          1.8% ██                                  ││                                │
+│ matched context: (none, unigram)                               ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+└────────────────────────────────────────────────────────────────┘└────────────────────────────────┘
+ ←/→ move  Enter insert top  1-8 insert nth  x delete  Space play/stop  r loop  w save  q quit
+ MIDI: no MIDI output matching 'rtpmidid' (see --list-ports)

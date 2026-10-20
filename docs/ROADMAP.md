@@ -65,7 +65,8 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 
 | Task | Spec | Status |
 |------|------|--------|
-| `crates/croky-core`: port token/chords/suggest to Rust; share fixture + golden tests | idea | idea |
+| `crates/croky-core`: port token/chords/suggest to Rust; share fixture + golden tests | [tui-v1](specs/tui-v1.md) | partial (spike #39): tokens, chords, suggest, song JSON |
+| Terminal version for headless machines (`crates/croky-tui`), MIDI over RTP-MIDI | [tui-v1](specs/tui-v1.md) | spike done; phases in spec section 8 |
 | `crates/croky-plugin`: nih-plug MIDI-effect skeleton, CLAP + VST3, plays chord under playhead | idea | idea |
 | Plugin GUI: grid + Next chord panel (egui), state persistence as song JSON | idea | idea |
 | Packaging: CI builds for Windows/macOS/Linux, signing notes, AU via clap-wrapper | idea | idea |

@@ -10,6 +10,7 @@ Read `docs/HANDOVER.md` for history and `docs/ARCHITECTURE.md` for how the piece
 | `packages/core` | Pure TS: theory, chord tokens, song model, n-gram suggestions, MIDI writer | pnpm, vitest |
 | `apps/web` | Vite + TS editor (grid, Next chord panel, playback, MIDI out) | pnpm, vitest/jsdom |
 | `packages/data` | Python builder for `ngrams.json` (Chordonomicon) | uv, pytest |
+| `crates/` | Rust: partial port of core (`croky-core`) + terminal prototype (`croky-tui`), spike, see `docs/specs/tui-v1.md` | cargo |
 | `docs/specs` | One spec per deliverable; agents implement from these | |
 | `docs/adr` | Architecture decision records | |
 
@@ -20,6 +21,8 @@ pnpm install                      # once; mise.toml pins node/pnpm/uv
 pnpm check                        # lint + format:check + typecheck + test + build (CI runs this)
 pnpm dev                          # web app on :5173
 cd packages/data && uv sync && uv run pytest -q
+scripts/check-rust.sh             # crates/: fmt + clippy -D warnings + test (not in pnpm check or CI yet)
+scripts/gen-rust-golden.sh        # regenerate the Rust parity goldens from packages/core
 ```
 
 Run `pnpm check` before every commit. Fix formatting with `pnpm format`.

@@ -1,0 +1,24 @@
+ Croky Chords   Axis · C major · 120 BPM · 4/4 · 5 chords · 20 beats
+┌ Progression ─────────────────────────────────────────────────────────────────────────────────────┐
+│ I         │♪V         │ vi        │ IV        │›I         │                                      │
+│ C         │ G         │ Am        │ F         │ C         │                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Next chord after I ────────────────────────────────────────────┐┌ MIDI ──────────────────────────┐
+│ 1 V        G         58.2% ██████████████████████████████      ││ out  croky-tui:out (virtual)   │
+│ 2 vi       Am        19.0% ██████████                          ││ now  ● playing                 │
+│ 3 IV       F          9.0% █████                               ││ loop on                        │
+│ 4 iii      Em         4.9% ███                                 ││ late max 0.12 ms over 42 msgs  │
+│ 5 ii       Dm         4.1% ██                                  ││ data default.json              │
+│ 6 III      E          2.0% █                                   ││                                │
+│ 7 V/1      G/B        1.8% █                                   ││                                │
+│ 8 III7     E7         0.9%                                     ││                                │
+│ matched context: vi IV I                                       ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+│                                                                ││                                │
+└────────────────────────────────────────────────────────────────┘└────────────────────────────────┘
+ ←/→ move  Enter insert top  1-8 insert nth  x delete  Space play/stop  r loop  w save  q quit
+ → inserted I (66.7%)
