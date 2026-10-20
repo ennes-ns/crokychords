@@ -34,6 +34,7 @@ import { applyTheme, installThemes, loadThemeId } from './themes';
 import { mountBand } from './views/band';
 import { mountChordEditor } from './views/chordEditor';
 import { mountGrid } from './views/grid';
+import { bindImportDrop, mountImporter } from './views/importer';
 import { mountMelody } from './views/melody';
 import { patternEditorKey } from './views/pattern';
 import { mountSaves } from './views/saves';
@@ -166,8 +167,17 @@ async function boot(app: HTMLElement): Promise<void> {
   // Over the side column; the stage keeps its size (docs/specs/assistant-v1.md §B1).
   grid.closest('.workspace')?.append(assistant.element);
   bindAssistantKey(window, assistant);
+  // MIDI/MusicXML import: More panel, drop on the grid, preview (docs/specs/import-v1.md §B).
+  const importer = mountImporter(app, {
+    save: async (songs) => {
+      actions.stop();
+      await session.importSongs(songs);
+    },
+  });
+  bindImportDrop(grid, importer);
   mountToolbar(toolbar, store, actions, {
     storage,
+    importer,
     assistant: assistant.button,
     fire: { connect: () => void fire.connect(), disconnect: () => fire.disconnect() },
     breakcore,

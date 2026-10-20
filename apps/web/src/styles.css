@@ -1707,6 +1707,191 @@ button.icon.danger:hover:not(:disabled) {
   z-index: 10;
 }
 
+/* MIDI/MusicXML import (docs/specs/import-v1.md §B) */
+
+.grid.drop-target {
+  outline: var(--focus-w) dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.import-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh 16px 16px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+
+.import-backdrop[hidden] {
+  display: none;
+}
+
+.import-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(760px, 100%);
+  max-height: 86vh;
+  padding: var(--space-panel);
+  background: var(--panel);
+  border: var(--border-w) solid var(--line-strong);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--overlay-shadow);
+}
+
+.import-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.import-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.import-sub,
+.import-status,
+.import-file-name,
+.import-key-note,
+.import-fact .label {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+}
+
+.import-status {
+  margin: 0;
+}
+
+.import-status:empty {
+  display: none;
+}
+
+.import-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.import-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: var(--border-w) solid var(--line);
+  border-left: var(--row-marker-w) solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.import-entry.failed {
+  border-left-color: var(--danger);
+}
+
+.import-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.import-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.import-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.import-fact select {
+  min-height: 24px;
+  padding: 1px 4px;
+}
+
+.import-line,
+.import-error {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.import-error {
+  color: var(--danger);
+}
+
+.import-strip {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+}
+
+.import-chord {
+  --hue: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  color: hsl(var(--hue) var(--chord-ink));
+  background: hsl(var(--hue) var(--chord-fill));
+  border: var(--border-w) solid hsl(var(--hue) var(--chord-edge));
+  border-radius: var(--radius-bar);
+}
+
+.import-chord.rest {
+  color: var(--muted);
+  background: var(--rest-a);
+  border-color: var(--line);
+}
+
+.import-more {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--font-size-xs);
+}
+
+.import-warnings,
+.import-dropped ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--font-size-sm);
+}
+
+.import-warnings {
+  color: var(--accent);
+}
+
+.import-dropped summary {
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+}
+
+.import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* Narrow windows keep the stacked, page-scrolling layout (mobile is a later issue). */
 @media (max-width: 900px) {
   html:has(> body > .shell),

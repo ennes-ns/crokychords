@@ -134,7 +134,7 @@ export interface BreakcoreDeps {
 }
 
 /** The bytes of a picked file (FileReader where Blob.arrayBuffer is missing). */
-function readBytes(file: Blob): Promise<ArrayBuffer> {
+export function readBytes(file: Blob): Promise<ArrayBuffer> {
   if (typeof file.arrayBuffer === 'function') return file.arrayBuffer();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
