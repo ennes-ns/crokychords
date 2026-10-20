@@ -21,3 +21,8 @@ packages/data/out/
 
 # Built suggestion tables (never committed)
 apps/web/public/data/*.json
+
+# Wrangler local state and secrets (apps/api)
+.wrangler/
+.dev.vars
+.dev.vars.*

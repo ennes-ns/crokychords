@@ -1,0 +1,25 @@
+# Croky Chords API. Placeholders only: real values are set at deploy time (see docs/specs/api-v1.md).
+name = "crokychords-api"
+main = "src/index.ts"
+compatibility_date = "2026-03-01"
+workers_dev = false
+minify = true
+
+[vars]
+# <team>.cloudflareaccess.com of the Access organisation.
+ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
+# Audience (AUD) tag of the Access application.
+ACCESS_AUD = "replace-with-access-application-aud"
+# The single browser origin allowed by CORS.
+ALLOWED_ORIGIN = "http://localhost:5173"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "crokychords"
+# Placeholder; replaced with the real database id when the database is created.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "SAVES"
+bucket_name = "crokychords-saves"
