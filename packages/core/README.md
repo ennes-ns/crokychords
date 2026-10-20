@@ -28,6 +28,7 @@ pnpm --filter @crokychords/core build
 | `patterns` | `PATTERN_PRESETS`, `patternPreset`, `patternRoles`, `patternDescription`, `ROLE_DEFAULTS`, `RoleDefaults`, `DEFAULT_GATE`, `createTrack`, `DEFAULT_TRACKS` |
 | `render` | `renderTrack`, `renderSong`, `layoutPattern`, `NoteEvent`, `RenderOptions`, `StepOccurrence` |
 | `midi` | `songToMidi` (returns `Uint8Array<ArrayBuffer>`, a valid `BlobPart`), `MidiOptions`, `encodeVlq` |
+| `commands` | The command contract (`docs/specs/assistant-v1.md`): `COMMAND_SCHEMAS` (zod), `Command`, `COMMAND_OPS`, `COMMAND_INFO`, `ASSISTANT_OPS`, `parseCommand`, `parseCommands`, `commandJsonSchema`, `assistantReplyJsonSchema`, `parseAssistantReply`, `CommandError`, `COMMANDS_SCHEMA_VERSION`; fixture `test/fixtures/commands-v1.json` |
 
 ```ts
 import { parseToken, chordName, voiceChord, suggestNext, seedTable } from '@crokychords/core';

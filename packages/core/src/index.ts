@@ -9,3 +9,4 @@ export * from './patterns';
 export * from './render';
 export * from './midi';
 export * from './melody';
+export * from './commands';
