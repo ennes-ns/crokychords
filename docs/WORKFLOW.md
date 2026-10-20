@@ -73,6 +73,11 @@ No third-party review apps are installed on the repository.
 - No references to other products in code or docs; Croky Chords stands on its own.
 - Public repository: no personal data, internal hostnames, tokens or local paths in docs, issues or PRs.
 - When an agent gets stuck it stops and writes what it knows in the PR; the main session decides.
+- When an agent heads the wrong way (wrong approach, outside its paths, scope creep), the main session
+  stops it and starts over with a sharper issue text rather than reviewing a bad PR back into shape.
+  Every restart leaves a comment on the issue: what went wrong and what changed in the instruction, so
+  the next attempt and future issues learn from it. Recurring lessons move into `CLAUDE.md` or the
+  issue template.
 
 ## Where things live
 
