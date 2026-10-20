@@ -31,8 +31,17 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 | Full chord editor: type, inversion, sus/add/alt, secondary function, borrowed chords, with live preview | idea | idea |
 | Tone Sets / Bass Sets tabs (chords containing a note / with a bass note) | idea | idea |
 | Progressions tab: whole-progression suggestions from the table's most common paths | idea | idea |
-| Melody lane (scale degrees) and harmonize-by-scale-degree | idea | idea |
-| Pattern editor: step grid per track, better presets, song presets (schema 4) | [pattern-editor-v1](specs/pattern-editor-v1.md) | in review (#56) |
+| Melody lane (scale degrees), degree colours, chord-tone tint | [melody-v1](specs/melody-v1.md) | done (#52, #77) |
+| Pattern editor: step grid per track, better presets, song presets (schema 4) | [pattern-editor-v1](specs/pattern-editor-v1.md) | done (#78) |
+| Replace-first editing: pick replaces the selection, "+" slot adds | `specs/web-v1.md` §3–4 | done (#69) |
+| Loop points, play from the start, Space always play/stop | [loop-v1](specs/loop-v1.md) | done (#51) |
+| Single-screen shell (no page scroll at 1080p), compact mode | `specs/web-v1.md` §9 | done (#83); one-row toolbar #84 |
+| Piano v2 (synth) and SoundFont instruments per track, melody sound row | [soundfonts-v1](specs/soundfonts-v1.md), `web-instruments-v1.md` §7 | done (#73, #85) |
+| Master chain: limiter / soft clip (default off), volume | `web-instruments-v1.md` §Master | done (#70) |
+| Breakcore mode: CC0 break, slicing, stutters, own break | [breakcore-v1](specs/breakcore-v1.md) | done (#80); R2 sync of own break #81 |
+| Playhead on a composited transform; CPU: playhead off the store, suspend idle audio | issue #82 | #71 done, #82 in progress |
+| Akai Fire controller v1 (pads, encoders) and v2 (mode button, OLED, PAN/FILTER) | [akai-fire-v1](specs/akai-fire-v1.md) | v1 done (#49), v2 in review (#76) |
+| Mobile / touch layout | issue #60 | parked |
 | MusicXML export; import of MIDI/MusicXML files | idea | idea |
 
 ## Phase 3 — Online version (chords.cr0ky.com, Cloudflare free tier)
@@ -66,8 +75,8 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 
 | Task | Spec | Status |
 |------|------|--------|
-| `crates/croky-core`: port token/chords/suggest to Rust; share fixture + golden tests | [tui-v1](specs/tui-v1.md) | partial (spike #39): tokens, chords, suggest, song JSON |
-| Terminal version for headless machines (`crates/croky-tui`), MIDI over RTP-MIDI | [tui-v1](specs/tui-v1.md) | spike done; phases in spec section 8 |
+| `crates/croky-core`: full Rust port, byte-identical goldens (schema 1–4, render, MIDI, validation) | [tui-v1](specs/tui-v1.md) | done (#63, #79); `rust check` required in CI (#68) |
+| Terminal version for headless machines (`crates/croky-tui`), MIDI over RTP-MIDI | [tui-v1](specs/tui-v1.md), ADR 0003 | v1 done (#86); NixOS packaging and LAN measurement #67 |
 | `crates/croky-plugin`: nih-plug MIDI-effect skeleton, CLAP + VST3, plays chord under playhead | idea | idea |
 | Plugin GUI: grid + Next chord panel (egui), state persistence as song JSON | idea | idea |
 | Packaging: CI builds for Windows/macOS/Linux, signing notes, AU via clap-wrapper | idea | idea |

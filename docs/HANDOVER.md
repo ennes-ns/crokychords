@@ -8,13 +8,14 @@ collaboration process in `docs/WORKFLOW.md`.
 
 | Part            | State                                                                                                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core` | Done: theory, chord tokens, song model (schema 2 with tracks), n-gram suggestions with backoff, MIDI writer. 408 tests.                                                      |
+| `packages/core` | Done: theory, chord tokens, song model (schema 4: tracks, melody, song pattern presets), n-gram suggestions with backoff, MIDI writer with program changes, chord tones. |
 | `packages/data` | Done: Chordonomicon n-gram builder with deterministic `--trim`, chord-symbol parser, token-format helpers. Python, uv, pytest. 119 tests.                                    |
-| `apps/web`      | Done for v1: grid editor, next-chord panel, built-in instruments and presets, band panel, `.mid` export, Web MIDI out, SaveStore with autosave and sync, Default and Pixel themes. 321 tests. |
-| `apps/api`      | Done, not deployed: Hono Worker with Access-JWT verification, D1/R2 saves, limits; serves the web app as static assets. 67 tests in the Workers runtime.                    |
+| `apps/web`      | Done for v1.1: single-screen shell, replace-first grid with "+" slot, loop points, melody lane (degree colours, chord-tone tint), pattern editor, Band panel with SoundFont or synth instrument per track and a melody row, master chain, Breakcore mode, Default and Pixel themes, SaveStore + sync, Akai Fire controller. |
+| `apps/api`      | Done and deployed: Hono Worker with Access-JWT verification, D1/R2 saves, limits; serves the web app and the SoundFont samples (fetched at build time, never in git) as static assets. |
+| `crates/`       | `croky-core`: full Rust port of `packages/core`, golden-tested byte for byte against the TypeScript output; `croky-tui`: terminal app v1 (ALSA sequencer, real-time scheduler thread, SaveStore-compatible records). `scripts/check-rust.sh`; CI job `rust check` is required. |
 | Data            | `apps/web/public/data/default.json`: trimmed Chordonomicon table (333 KB), loaded by default; seed table as fallback.                                                       |
 | Brand           | Done: pixel banner (`docs/readme/`), favicon and toolbar mark from the pixel master (`tools/brand/`), `docs/BRAND.md`.                                                       |
-| CI              | `.github/workflows/ci.yml`: `pnpm check` and `data tests`, both required on `main`.                                                                                         |
+| CI              | `.github/workflows/ci.yml`: `pnpm check`, `data tests` and `rust check`, all required on `main`; deploy fetches the SoundFont samples first.                                                                                         |
 | Online version  | **Live** at `chords.cr0ky.com` behind Cloudflare Access (one-time PIN, invited e-mails). One Worker serves app + API; D1 + R2; CI deploy on merge to `main` (`DEPLOY_ENABLED`). Zone hardening done within the Free plan (managed ruleset, Bot Fight Mode, no workers.dev/preview URLs); no free rate-limit slot left, Worker limits apply. |
 
 `pnpm check` (lint, format, typecheck, tests, build) and `uv run pytest` are green on `main`.
@@ -59,6 +60,13 @@ collaboration process in `docs/WORKFLOW.md`.
   themes Default and Pixel; the pixel master is the single source for banner, favicon and mark.
 
 ## Changes
+
+- 2026-10-20 (late): replace-first editing (#69), loop points (#51), melody lane (#52) with degree colours and
+  chord-tone tint (#77), pattern editor and schema 4 (#78), piano v2 (#73), master chain (#70), Breakcore (#80),
+  SoundFont instruments per track and melody sound row (#85), single-screen shell (#83), playhead transform
+  (#71), Akai Fire v1 (#49), Rust core port (#63, #79) with a required `rust check` job (#68), terminal app v1
+  (#86, ADR 0003). Open: Fire v2 (#76), CPU work (#82), one-row toolbar (#84), own-break sync (#81), NixOS
+  packaging (#67), mobile (#60).
 
 - 2026-10-20 (night): first production deploy (runbook steps 1–8 done): D1 `crokychords`, R2 `crokychords-saves`,
   Access application with an invited-emails policy, Worker secrets, custom domain, CI deploy enabled.
