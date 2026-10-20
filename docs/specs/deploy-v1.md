@@ -262,6 +262,11 @@ Rollback: `pnpm exec wrangler rollback` (previous version), or
 
 ### 9. Hardening **[dashboard]**, zone `cr0ky.com`
 
+Status 2026-10-20: done within the Free plan. Cloudflare Managed Ruleset is always active, Bot Fight Mode is on,
+workers.dev and preview URLs are off, the custom domain fails closed. The zone's single Free rate-limiting slot is
+already used by another rule, so `/api/*` relies on the Worker's own limits (max save size, saves per user) and on
+Access in front; revisit if abuse shows up in analytics.
+
 See the checklist in section 6. Check: Security → Events shows the rules; a loop of
 `curl -s -o /dev/null -w '%{http_code}\n' https://chords.cr0ky.com/api/me` past the threshold
 returns `429`. Rollback: disable the rule or the toggle.
