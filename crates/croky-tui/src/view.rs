@@ -1,47 +1,77 @@
-//! Pure drawing from `App` + `PlayView`: header, chord grid, next-chord panel, MIDI panel and
-//! footer. No I/O here, so `TestBackend` render tests cover the whole screen.
+//! Pure drawing from `App` + `PlayView`: header, the progression grid (bar positions and the
+//! loop range above each chord, the "+" slot at the end), the Next chord panel, the band panel,
+//! the MIDI panel and the footer, plus the help, saves and rename overlays. No I/O here, so
+//! `TestBackend` render tests cover every screen.
 
-use ratatui::layout::{Constraint, Layout, Rect};
+use croky_core::json::js_number;
+use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::app::{App, PlayView};
+use crate::app::{mode_label, App, PlayView, SavesView, Screen};
+use crate::edit::{bar_length, insert_length, position_label, DEFAULT_INSERT_BEATS};
+use crate::keys::HELP;
 
 const ACCENT: Color = Color::Green;
 const DIM: Color = Color::DarkGray;
 const ERROR: Color = Color::Red;
+const LOOP: Color = Color::Yellow;
+/// Columns per beat in the grid, and the narrowest and widest chord cell.
+const BEAT_COLS: f64 = 3.0;
+const CELL_MIN: usize = 9;
+const CELL_MAX: usize = 36;
 
-fn fmt_beats(b: f64) -> String {
-    if b.fract() == 0.0 {
-        format!("{b:.0}")
-    } else {
-        format!("{b}")
-    }
+fn dim() -> Style {
+    Style::default().fg(DIM)
+}
+
+fn panel(title: impl Into<String>) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(dim())
+        .title(title.into())
+}
+
+/// Pad or cut to exactly `w` display columns.
+fn fit(s: &str, w: usize) -> String {
+    let mut out: String = s.chars().take(w).collect();
+    let n = out.chars().count();
+    out.extend(std::iter::repeat_n(' ', w - n));
+    out
 }
 
 pub fn render(f: &mut Frame, app: &App, play: &PlayView) {
-    let grid_rows = grid_lines(app, play, f.area().width.saturating_sub(2)).len() as u16;
-    let [header, grid, bottom, footer] = Layout::vertical([
+    let area = f.area();
+    let grid = grid_lines(app, play, area.width.saturating_sub(2));
+    let [header, grid_area, bottom, footer] = Layout::vertical([
         Constraint::Length(1),
-        Constraint::Length(grid_rows.max(2) + 2),
-        Constraint::Min(6),
+        Constraint::Length(grid.len().max(3) as u16 + 2),
+        Constraint::Min(8),
         Constraint::Length(2),
     ])
-    .areas(f.area());
+    .areas(area);
     render_header(f, header, app);
-    let lines = grid_lines(app, play, grid.width.saturating_sub(2));
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(DIM))
-        .title(" Progression ");
-    f.render_widget(Paragraph::new(lines).block(block), grid);
+    f.render_widget(
+        Paragraph::new(grid).block(panel(" Progression ")),
+        grid_area,
+    );
     let [left, right] =
-        Layout::horizontal([Constraint::Min(40), Constraint::Length(34)]).areas(bottom);
+        Layout::horizontal([Constraint::Min(40), Constraint::Length(38)]).areas(bottom);
     render_suggestions(f, left, app);
-    render_midi(f, right, app, play);
+    let band_rows = app.song.tracks.as_ref().map_or(0, Vec::len) as u16 + 1;
+    let [band, midi] =
+        Layout::vertical([Constraint::Length(band_rows + 2), Constraint::Min(5)]).areas(right);
+    render_band(f, band, app);
+    render_midi(f, midi, app, play);
     render_footer(f, footer, app);
+    match &app.screen {
+        Screen::Editor => {}
+        Screen::Help => render_help(f, area),
+        Screen::Rename(text) => render_rename(f, area, text),
+        Screen::Saves(view) => render_saves(f, area, view),
+    }
 }
 
 fn render_header(f: &mut Frame, area: Rect, app: &App) {
@@ -55,195 +85,413 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
             "  {} · {} {} · {} BPM · {}/{} · {} chords · {} beats",
             s.title,
             s.key.tonic,
-            s.key.mode.name(),
-            fmt_beats(s.tempo),
+            mode_label(s.key.mode),
+            js_number(s.tempo),
             s.meter.beats,
             s.meter.unit,
             s.chords.len(),
-            fmt_beats(s.total_beats()),
+            js_number(s.total_beats()),
         )),
+        Span::styled(format!("  {}", app.save_label), dim()),
     ]);
     f.render_widget(Paragraph::new(line), area);
 }
 
-/// The grid: one cell per chord, 3 columns per beat (min 9), wrapped to the width; each row
-/// of cells is two text lines (token, chord name). `›` marks the cursor, `♪` the playing chord.
+fn cell_width(beats: f64) -> usize {
+    ((beats * BEAT_COLS).round() as usize).clamp(CELL_MIN, CELL_MAX)
+}
+
+/// The grid: one cell per chord (3 columns per beat, 9 to 36 wide) plus the "+" slot, wrapped
+/// to the width. Each row of cells is three lines: the bar position with the loop range (`━`
+/// looping, `╌` off), the token with `›` for the selection and `♪` for the playing chord, and
+/// the chord name.
 pub fn grid_lines(app: &App, play: &PlayView, width: u16) -> Vec<Line<'static>> {
-    if app.song.chords.is_empty() {
-        return vec![Line::styled(
-            " (empty: press Enter to start with the most common chord)",
-            Style::default().fg(DIM),
-        )];
-    }
-    let width = usize::from(width);
-    let mut rows: Vec<(Vec<Span<'static>>, Vec<Span<'static>>)> = vec![(vec![], vec![])];
+    let song = &app.song;
+    let width = usize::from(width).max(CELL_MIN);
+    let bar = bar_length(song);
+    let playing = play
+        .position
+        .filter(|_| play.playing)
+        .and_then(|beat| song.chord_at_beat(beat))
+        .map(|at| at.index);
+    let range = app.loop_range;
+    let loop_style = Style::default().fg(LOOP);
+
+    type Row = [Vec<Span<'static>>; 3];
+    let mut rows: Vec<Row> = vec![Default::default()];
     let mut used = 0;
-    for (i, c) in app.song.chords.iter().enumerate() {
-        let w = ((c.beats * 3.0).round() as usize).clamp(9, 36);
+    let mut push = |rows: &mut Vec<Row>, w: usize, cell: [Span<'static>; 3]| {
         if used > 0 && used + w > width {
-            rows.push((vec![], vec![]));
+            rows.push(Default::default());
             used = 0;
         }
         used += w;
-        let marker = if play.playing && play.chord == i {
+        if let Some(row) = rows.last_mut() {
+            for (line, span) in row.iter_mut().zip(cell) {
+                line.push(span);
+            }
+        }
+    };
+
+    let mut start = 0.0;
+    for (i, c) in song.chords.iter().enumerate() {
+        let w = cell_width(c.beats);
+        let end = start + c.beats;
+        let selected = app.selected == Some(i);
+        let marker = if playing == Some(i) {
             "♪"
-        } else if i == app.cursor {
+        } else if selected {
             "›"
         } else {
             " "
         };
         let mut style = Style::default();
-        if i == app.cursor {
+        if selected {
             style = style
                 .fg(ACCENT)
                 .add_modifier(Modifier::BOLD | Modifier::REVERSED);
-        } else if play.playing && play.chord == i {
+        } else if playing == Some(i) {
             style = style.fg(ACCENT);
         }
-        let top = fit(&format!("{marker}{}", c.token), w - 1);
-        let bottom = fit(&format!(" {}", app.name(&c.token)), w - 1);
-        if let Some(row) = rows.last_mut() {
-            row.0.push(Span::styled(top, style));
-            row.0.push(Span::styled("│", Style::default().fg(DIM)));
-            row.1.push(Span::styled(
-                bottom,
-                style
-                    .remove_modifier(Modifier::BOLD)
-                    .fg(if i == app.cursor { ACCENT } else { DIM }),
-            ));
-            row.1.push(Span::styled("│", Style::default().fg(DIM)));
+        let in_loop = range.is_some_and(|r| start >= r.start - 1e-9 && end <= r.end + 1e-9);
+        let fill = match (in_loop, app.looping) {
+            (true, true) => '━',
+            (true, false) => '╌',
+            _ => ' ',
+        };
+        let label = position_label(start, bar);
+        let label = label.strip_suffix(".1").unwrap_or(&label);
+        let mut ruler = format!(" {label} ");
+        while ruler.chars().count() < w {
+            ruler.push(fill);
         }
+        let name_style =
+            style
+                .remove_modifier(Modifier::BOLD)
+                .fg(if selected { ACCENT } else { DIM });
+        push(
+            &mut rows,
+            w,
+            [
+                Span::styled(fit(&ruler, w), if in_loop { loop_style } else { dim() }),
+                Span::styled(fit(&format!("{marker}{}", c.token), w - 1) + "│", style),
+                Span::styled(
+                    fit(&format!(" {}", app.name(&c.token)), w - 1) + "│",
+                    name_style,
+                ),
+            ],
+        );
+        start = end;
     }
+    // The "+" slot: as wide as the chord a pick would add there.
+    let next = song.chords.last().map_or_else(
+        || insert_length(song, 0.0, DEFAULT_INSERT_BEATS),
+        |c| c.beats,
+    );
+    let w = cell_width(next);
+    let selected = app.selected.is_none();
+    let style = if selected {
+        Style::default()
+            .fg(ACCENT)
+            .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    } else {
+        dim()
+    };
+    push(
+        &mut rows,
+        w,
+        [
+            Span::styled(fit("", w), dim()),
+            Span::styled(fit(if selected { "›+" } else { " +" }, w - 1) + "┊", style),
+            Span::styled(
+                fit(" add", w - 1) + "┊",
+                style.remove_modifier(Modifier::BOLD),
+            ),
+        ],
+    );
     rows.into_iter()
-        .flat_map(|(a, b)| [Line::from(a), Line::from(b)])
+        .flat_map(|[a, b, c]| [Line::from(a), Line::from(b), Line::from(c)])
         .collect()
 }
 
-/// Pad or cut to exactly `w` display columns.
-fn fit(s: &str, w: usize) -> String {
-    let mut out: String = s.chars().take(w).collect();
-    let n = out.chars().count();
-    out.extend(std::iter::repeat_n(' ', w - n));
-    out
-}
-
 fn render_suggestions(f: &mut Frame, area: Rect, app: &App) {
-    let context = app.context();
-    let used = app
-        .suggestions
-        .first()
-        .map(|s| s.context_used.join(" "))
-        .unwrap_or_default();
-    let title = if context.is_empty() {
-        " Next chord (song start) ".to_string()
-    } else {
-        format!(
-            " Next chord after {} ",
-            context.last().map_or("", String::as_str)
-        )
+    let count = app.song.chords.len();
+    let title = match app.selected.filter(|&i| i < count) {
+        Some(i) => format!(
+            " Next chord · replaces chord {} ({}) ",
+            i + 1,
+            app.song.chords[i].token
+        ),
+        None => " Next chord · adds at the end ".to_string(),
     };
-    let mut lines: Vec<Line> = Vec::new();
+    let title = if app.diatonic_only {
+        format!("{title}· diatonic only ")
+    } else {
+        title
+    };
+    let inner_rows = usize::from(area.height.saturating_sub(2));
+    let room = inner_rows.saturating_sub(2).max(1);
     let top = app
         .suggestions
         .first()
         .map_or(1.0, |s| s.probability)
         .max(1e-9);
-    let bar_width = usize::from(area.width.saturating_sub(34)).min(30);
-    for (n, s) in app.suggestions.iter().enumerate() {
+    let bar_width = usize::from(area.width.saturating_sub(32)).min(30);
+    // Keep the highlighted row in view.
+    let first = app.highlight.saturating_sub(room.saturating_sub(1));
+    let mut lines: Vec<Line> = Vec::new();
+    for (n, s) in app.suggestions.iter().enumerate().skip(first).take(room) {
         let filled = ((s.probability / top) * bar_width as f64).round() as usize;
-        let style = if n == 0 {
-            Style::default().fg(ACCENT)
+        let chosen = n == app.highlight;
+        let style = if chosen {
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
         lines.push(Line::from(vec![
-            Span::styled(format!(" {} ", n + 1), Style::default().fg(DIM)),
-            Span::styled(fit(&s.token, 9), style.add_modifier(Modifier::BOLD)),
+            Span::styled(if chosen { " ▸ " } else { "   " }, style),
+            Span::styled(fit(&s.token, 9), style),
             Span::styled(fit(&app.name(&s.token), 9), style),
             Span::styled(format!("{:>5.1}% ", s.probability * 100.0), style),
-            Span::styled("█".repeat(filled), style),
+            Span::styled("█".repeat(filled), if chosen { style } else { dim() }),
         ]));
     }
     if app.suggestions.is_empty() {
         lines.push(Line::styled(
-            " no suggestions for this mode in the table",
-            Style::default().fg(DIM),
+            "   no suggestions for this mode in the table",
+            dim(),
         ));
     }
+    let used = app
+        .suggestions
+        .first()
+        .map(|s| s.context_used.join(" "))
+        .unwrap_or_default();
     lines.push(Line::styled(
         format!(
-            " matched context: {}",
+            "   after: {}",
             if used.is_empty() {
-                "(none, unigram)".to_string()
+                "any position".to_string()
             } else {
                 used
             }
         ),
-        Style::default().fg(DIM),
+        dim(),
     ));
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(DIM))
-        .title(title);
-    f.render_widget(Paragraph::new(lines).block(block), area);
+    let action = if app.selected.is_some_and(|i| i < count) {
+        "Enter replaces · S-Enter inserts after"
+    } else {
+        "Enter adds"
+    };
+    lines.push(Line::styled(format!("   ↑/↓ choose · {action}"), dim()));
+    f.render_widget(Paragraph::new(lines).block(panel(title)), area);
+}
+
+fn render_band(f: &mut Frame, area: Rect, app: &App) {
+    let mut lines = Vec::new();
+    let row = |selected: bool, name: &str, what: &str, ch: i32, muted: bool| {
+        let style = if selected {
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        } else if muted {
+            dim()
+        } else {
+            Style::default()
+        };
+        Line::from(vec![
+            Span::styled(if selected { " ▸ " } else { "   " }, style),
+            Span::styled(fit(name, 8), style),
+            Span::styled(fit(what, 14), style),
+            Span::styled(fit(&format!("ch{}", ch + 1), 5), style),
+            Span::styled(if muted { "muted" } else { "" }, style),
+        ])
+    };
+    let tracks = app.song.tracks.as_deref().unwrap_or_default();
+    for (i, t) in tracks.iter().enumerate() {
+        lines.push(row(
+            app.track == i,
+            &t.name,
+            &t.pattern.id,
+            t.channel,
+            t.muted,
+        ));
+    }
+    if let Some(m) = &app.song.melody {
+        let notes = format!("{} notes", m.notes.len());
+        lines.push(row(
+            app.track >= tracks.len(),
+            "Melody",
+            &notes,
+            m.channel,
+            m.muted,
+        ));
+    }
+    f.render_widget(
+        Paragraph::new(lines).block(panel(" Band · t select · m mute ")),
+        area,
+    );
 }
 
 fn render_midi(f: &mut Frame, area: Rect, app: &App, play: &PlayView) {
-    let dim = Style::default().fg(DIM);
-    let mut lines = vec![];
-    match &play.port {
-        Some(port) => lines.push(Line::from(vec![
-            Span::styled(" out  ", dim),
-            Span::raw(port.clone()),
-        ])),
-        None => lines.push(Line::styled(" out  none", Style::default().fg(ERROR))),
-    }
-    let state = if play.playing {
-        Span::styled("● playing", Style::default().fg(ACCENT))
-    } else {
-        Span::styled("○ stopped", dim)
+    let field = |name: &str, value: Span<'static>| {
+        Line::from(vec![Span::styled(format!(" {name:<6}"), dim()), value])
     };
-    lines.push(Line::from(vec![Span::styled(" now  ", dim), state]));
-    lines.push(Line::from(vec![
-        Span::styled(" loop ", dim),
-        Span::raw(if app.looped { "on" } else { "off" }),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(" late ", dim),
+    let mut lines = vec![match &play.port {
+        Some(port) => field("out", Span::raw(port.clone())),
+        None => field("out", Span::styled("none", Style::default().fg(ERROR))),
+    }];
+    let bar = bar_length(&app.song);
+    lines.push(field(
+        "now",
+        match play.position.filter(|_| play.playing) {
+            Some(beat) => Span::styled(
+                format!("● playing {}", position_label(beat.floor(), bar)),
+                Style::default().fg(ACCENT),
+            ),
+            None if play.playing => Span::styled("● playing", Style::default().fg(ACCENT)),
+            None => Span::styled("○ stopped", dim()),
+        },
+    ));
+    lines.push(field(
+        "loop",
+        Span::styled(
+            app.loop_text(),
+            if app.looping {
+                Style::default().fg(LOOP)
+            } else {
+                dim()
+            },
+        ),
+    ));
+    lines.push(field(
+        "late",
         Span::raw(if play.sent == 0 {
             "–".to_string()
         } else {
             format!(
-                "max {:.2} ms over {} msgs",
-                play.max_late_us as f64 / 1000.0,
+                "p99 {:.2} max {:.2} ms /{}",
+                play.late_p99_us as f64 / 1000.0,
+                play.late_max_us as f64 / 1000.0,
                 play.sent
             )
         }),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(" data ", dim),
-        Span::raw(app.table_name.clone()),
-    ]));
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(dim)
-        .title(" MIDI ");
-    f.render_widget(Paragraph::new(lines).block(block), area);
+    ));
+    if !play.sched.is_empty() {
+        lines.push(field("sched", Span::raw(play.sched.clone())));
+    }
+    lines.push(field("data", Span::raw(app.table_name.clone())));
+    f.render_widget(Paragraph::new(lines).block(panel(" MIDI ")), area);
 }
 
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
-    let dim = Style::default().fg(DIM);
     let keys = Line::styled(
-        " ←/→ move  Enter insert top  1-8 insert nth  x delete  Space play/stop  r loop  w save  q quit",
-        dim,
+        " ? help  ←/→ select  ↑/↓ Enter pick  1-7 triad  [ ] length  ( ) loop  Space play  o saves  q quit",
+        dim(),
     );
     let status = match &app.error {
         Some(e) => Line::styled(format!(" {e}"), Style::default().fg(ERROR)),
         None if app.status.is_empty() => Line::styled(
-            " q stops playback and exits; the song is only written with w",
-            dim,
+            " picks replace the selected chord; on the + slot they add",
+            dim(),
         ),
         None => Line::raw(format!(" {}", app.status)),
     };
     f.render_widget(Paragraph::new(vec![keys, status]), area);
+}
+
+/// A centred box of at most `w` × `h`.
+fn overlay(area: Rect, w: u16, h: u16) -> Rect {
+    let [row] = Layout::vertical([Constraint::Length(h.min(area.height))])
+        .flex(Flex::Center)
+        .areas(area);
+    let [cell] = Layout::horizontal([Constraint::Length(w.min(area.width))])
+        .flex(Flex::Center)
+        .areas(row);
+    cell
+}
+
+fn render_help(f: &mut Frame, area: Rect) {
+    let lines: Vec<Line> = HELP
+        .iter()
+        .map(|(keys, what)| {
+            Line::from(vec![
+                Span::styled(format!(" {keys:<20}"), Style::default().fg(ACCENT)),
+                Span::raw(*what),
+            ])
+        })
+        .collect();
+    let rect = overlay(area, 66, lines.len() as u16 + 2);
+    f.render_widget(Clear, rect);
+    f.render_widget(
+        Paragraph::new(lines).block(panel(" Keys · any key closes ")),
+        rect,
+    );
+}
+
+fn render_rename(f: &mut Frame, area: Rect, text: &str) {
+    let rect = overlay(area, 60, 4);
+    f.render_widget(Clear, rect);
+    let lines = vec![
+        Line::raw(format!(" {text}▏")),
+        Line::styled(" Enter saves the title · C-u clears · Esc cancels", dim()),
+    ];
+    f.render_widget(Paragraph::new(lines).block(panel(" Title ")), rect);
+}
+
+fn render_saves(f: &mut Frame, area: Rect, view: &SavesView) {
+    let rows = view.list.len().clamp(1, 14) as u16;
+    let rect = overlay(area, 72, rows + 5);
+    f.render_widget(Clear, rect);
+    let room = usize::from(rows);
+    let first = view.index.saturating_sub(room.saturating_sub(1));
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, s) in view.list.iter().enumerate().skip(first).take(room) {
+        let chosen = i == view.index;
+        let style = if chosen {
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let open = view.current.as_deref() == Some(s.id.as_str());
+        // `2026-10-20T12:34:56.789Z` → `2026-10-20 12:34`
+        let when = s
+            .updated_at
+            .get(..16)
+            .unwrap_or(&s.updated_at)
+            .replace('T', " ");
+        lines.push(Line::from(vec![
+            Span::styled(if chosen { " ▸ " } else { "   " }, style),
+            Span::styled(fit(&s.title, 30), style),
+            Span::styled(fit(&format!("v{}", s.version), 6), style),
+            Span::styled(format!("{when} UTC"), dim()),
+            Span::styled(
+                if open { "  ● open" } else { "" },
+                Style::default().fg(ACCENT),
+            ),
+        ]));
+    }
+    if view.list.is_empty() {
+        lines.push(Line::styled("   nothing saved yet", dim()));
+    }
+    lines.push(Line::raw(""));
+    if view.unreadable > 0 {
+        lines.push(Line::styled(
+            format!("   {} unreadable file(s) skipped", view.unreadable),
+            Style::default().fg(ERROR),
+        ));
+    }
+    let hint = match (view.confirm_delete, view.list.get(view.index)) {
+        (true, Some(s)) => Line::styled(
+            format!(
+                "   Delete \"{}\"? y deletes, any other key keeps it",
+                s.title
+            ),
+            Style::default().fg(ERROR),
+        ),
+        _ => Line::styled("   Enter open · n new song · d delete · Esc close", dim()),
+    };
+    lines.push(hint);
+    f.render_widget(
+        Paragraph::new(lines).block(panel(format!(" Saved progressions ({}) ", view.list.len()))),
+        rect,
+    );
 }

@@ -2,10 +2,11 @@
 //! (conductor, one track per band track, the melody) otherwise. Output is byte-identical to
 //! `songToMidi`; errors carry the TS `RangeError` messages.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::chords::voice_chord;
 use crate::json::{is_integer, js_number, js_round};
+use crate::melody::MELODY_TRACK_ID;
 use crate::render::{render_melody, render_track, NoteEvent, RenderOptions};
 use crate::song::Song;
 use crate::theory::{key_signature, Mode};
@@ -32,6 +33,9 @@ pub struct MidiOptions {
     pub track_name: Option<String>,
     /// Also write muted tracks (format 1), default false.
     pub include_muted: bool,
+    /// General MIDI program (0-127) per track id, or `MELODY_TRACK_ID` for the melody
+    /// (format 1): that track gets a Program Change at tick 0. Tracks without an entry get none.
+    pub programs: BTreeMap<String, f64>,
 }
 
 /// The `RangeError` of `songToMidi` (an option or song value outside what SMF can hold).
@@ -190,8 +194,9 @@ fn note_events(channel: u8, note: i64, velocity: u8, on: f64, off: f64) -> Res<[
 ///
 /// - Song with tracks: format 1. Track 0 is the conductor (name, tempo, time and key
 ///   signature); then one track per unmuted track (all with `include_muted`) in song order,
-///   each with a track name, a MIDI channel prefix and the events of `render_track`; then, when
-///   the melody has notes and is unmuted (or `include_muted`), a track named 'Melody'.
+///   each with a track name, a MIDI channel prefix, a Program Change when `programs` names the
+///   track, and the events of `render_track`; then, when the melody has notes and is unmuted
+///   (or `include_muted`), a track named 'Melody' (with `programs["melody"]`).
 /// - Song without tracks: format 0, one track, every chord voiced with `voice_chord` and held
 ///   for `beats * gate`.
 pub fn song_to_midi(song: &Song, opts: &MidiOptions) -> Result<Vec<u8>, MidiError> {
@@ -270,6 +275,7 @@ fn multi_track_midi(
             &events,
             ppq_f,
             end,
+            opts.programs.get(&track.id).copied(),
         )?);
     }
     if let Some(melody) = &song.melody {
@@ -281,19 +287,22 @@ fn multi_track_midi(
                 &events,
                 ppq_f,
                 end,
+                opts.programs.get(MELODY_TRACK_ID).copied(),
             )?);
         }
     }
     Ok(smf(1, ppq, &chunks))
 }
 
-/// Track chunk body: name, channel prefix and the note events on `channel`.
+/// Track chunk body: name, channel prefix, an optional Program Change at tick 0 and the note
+/// events on `channel`.
 fn event_track(
     track_name: &str,
     track_channel: i32,
     notes: &[NoteEvent],
     ppq: f64,
     end: f64,
+    program: Option<f64>,
 ) -> Res<Vec<u8>> {
     let channel = check_int("track.channel", f64::from(track_channel), 0, 15)? as u8;
     let name = track_name.as_bytes();
@@ -301,6 +310,10 @@ fn event_track(
     head.extend(vlq_len(name.len())?);
     head.extend(name);
     head.extend([0, 0xff, 0x20, 0x01, channel]);
+    if let Some(program) = program {
+        let program = check_int("program", program, 0, 127)? as u8;
+        head.extend([0, 0xc0 | channel, program]);
+    }
     let mut events = Vec::new();
     for e in notes {
         let velocity = check_int("track.velocity", f64::from(e.velocity), 1, 127)? as u8;

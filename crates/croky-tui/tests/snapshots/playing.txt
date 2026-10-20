@@ -1,24 +1,30 @@
- Croky Chords   Axis · C major · 120 BPM · 4/4 · 5 chords · 20 beats
+ Croky Chords   Axis · Db major · 130 BPM · 4/4 · 4 chords · 16 beats  v3
 ┌ Progression ─────────────────────────────────────────────────────────────────────────────────────┐
-│ I         │♪V         │ vi        │ IV        │›I         │                                      │
-│ C         │ G         │ Am        │ F         │ C         │                                      │
+│ 1           2           3           4                                                            │
+│ I         │♪V         │ vi        │ IV        │›+         ┊                                      │
+│ Db        │ Ab        │ Bbm       │ Gb        │ add       ┊                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ Next chord after I ────────────────────────────────────────────┐┌ MIDI ──────────────────────────┐
-│ 1 V        G         58.2% ██████████████████████████████      ││ out  croky-tui:out (virtual)   │
-│ 2 vi       Am        19.0% ██████████                          ││ now  ● playing                 │
-│ 3 IV       F          9.0% █████                               ││ loop on                        │
-│ 4 iii      Em         4.9% ███                                 ││ late max 0.12 ms over 42 msgs  │
-│ 5 ii       Dm         4.1% ██                                  ││ data default.json              │
-│ 6 III      E          2.0% █                                   ││                                │
-│ 7 V/1      G/B        1.8% █                                   ││                                │
-│ 8 III7     E7         0.9%                                     ││                                │
-│ matched context: vi IV I                                       ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-└────────────────────────────────────────────────────────────────┘└────────────────────────────────┘
- ←/→ move  Enter insert top  1-8 insert nth  x delete  Space play/stop  r loop  w save  q quit
- → inserted I (66.7%)
+┌ Next chord · adds at the end ──────────────────────────────┐┌ Band · t select · m mute ──────────┐
+│ ▸ I        Db        66.7% ██████████████████████████████  ││   Chords  sustain       ch1        │
+│   V        Ab        25.3% ███████████                     ││ ▸ Bass    bass-quarters ch2  muted │
+│   vi       Bbm        3.5% ██                              ││   Arp     arp-up-8      ch3  muted │
+│   ii       Ebm        2.3% █                               ││   Melody  0 notes       ch4        │
+│   iii      Fm         0.8%                                 │└────────────────────────────────────┘
+│   I/1      Db/F       0.6%                                 │┌ MIDI ──────────────────────────────┐
+│   iv       Gbm        0.4%                                 ││ out   croky-tui:out (virtual)      │
+│   II       Eb         0.3%                                 ││ now   ● playing 2.2                │
+│   after: V vi IV                                           ││ loop  whole song                   │
+│   ↑/↓ choose · Enter adds                                  ││ late  p99 0.02 max 0.09 ms /412    │
+│                                                            ││ sched SCHED_FIFO 40                │
+│                                                            ││ data  default.json                 │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+└────────────────────────────────────────────────────────────┘└────────────────────────────────────┘
+ ? help  ←/→ select  ↑/↓ Enter pick  1-7 triad  [ ] length  ( ) loop  Space play  o saves  q quit
+ → 130 BPM

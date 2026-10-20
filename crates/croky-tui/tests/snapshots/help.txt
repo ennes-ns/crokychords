@@ -1,0 +1,30 @@
+ Croky Chords   Axis · C major · 120 BPM · 4/4 · 4 chords · 16 beats  v3
+┌ Progression ─────────────────────────────────────────────────────────────────────────────────────┐
+│ 1           2           3           4                                                            │
+│ I         │ V         │ vi        │ IV        │›+         ┊                                      │
+│ C         │ G  ┌ Keys · any key closes ─────────────────────────────────────────┐                │
+└────────────────│ ←/→  Tab/S-Tab      select chord / "+" slot                    │────────────────┘
+┌ Next chord · ad│ Home  End/Esc       first chord / "+" slot                     │ mute ──────────┐
+│ ▸ I        C   │ ↑/↓                 highlight a Next chord suggestion          │     ch1        │
+│   V        G   │ Enter               pick it: replace the chord (add on "+")    │ters ch2        │
+│   vi       Am  │ S-Enter  A-Enter    insert it after the chord                  │     ch3  muted │
+│   ii       Dm  │ 1-7                 diatonic triad: replace (add on "+")       │     ch4        │
+│   iii      Em  │ S-1-7               insert the triad after the chord           │────────────────┘
+│   I/1      C/E │ i  Insert  C-Enter  add a copy of the chord after it           │────────────────┐
+│   iv       Fm  │ Backspace  Del  x   remove the chord                           │ (virtual)      │
+│   II       D   │ [ ]   { }           length -/+ 1 beat, -/+ 1/4 beat            │                │
+│   after: V vi I│ ( )  A-[ A-]        loop start / end at the chord              │                │
+│   ↑/↓ choose · │ l   c               loop on/off, clear loop range              │                │
+│                │ Space   p  S-Space  play/stop, play from the chord             │                │
+│                │ k/K  n/N            key up/down a semitone, next/prev mode     │                │
+│                │ - =  _ +            tempo -/+ 1, -/+ 10 BPM                    │                │
+│                │ t/T  m              select track, mute/unmute it               │                │
+│                │ f                   Next chord: diatonic only                  │                │
+│                │ u/U  C-z  C-y       undo / redo                                │                │
+│                │ r  o  w  C-s        rename, saved progressions, save now       │                │
+│                │ e                   export a .mid file (GM program per track)  │                │
+│                │ ?   q  C-c          this help, quit                            │                │
+│                └────────────────────────────────────────────────────────────────┘                │
+└────────────────────────────────────────────────────────────┘└────────────────────────────────────┘
+ ? help  ←/→ select  ↑/↓ Enter pick  1-7 triad  [ ] length  ( ) loop  Space play  o saves  q quit
+ picks replace the selected chord; on the + slot they add

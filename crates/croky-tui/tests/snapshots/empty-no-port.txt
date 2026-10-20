@@ -1,24 +1,30 @@
- Croky Chords   Axis · C major · 120 BPM · 4/4 · 0 chords · 0 beats
+ Croky Chords   Axis · C major · 120 BPM · 4/4 · 0 chords · 0 beats  new
 ┌ Progression ─────────────────────────────────────────────────────────────────────────────────────┐
-│ (empty: press Enter to start with the most common chord)                                         │
 │                                                                                                  │
+│›+         ┊                                                                                      │
+│ add       ┊                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ Next chord (song start) ───────────────────────────────────────┐┌ MIDI ──────────────────────────┐
-│ 1 I        C         26.7% ██████████████████████████████      ││ out  none                      │
-│ 2 IV       F         20.0% ██████████████████████              ││ now  ○ stopped                 │
-│ 3 V        G         17.0% ███████████████████                 ││ loop on                        │
-│ 4 vi       Am         9.2% ██████████                          ││ late –                         │
-│ 5 ii       Dm         4.4% █████                               ││ data default.json              │
-│ 6 iii      Em         2.5% ███                                 ││                                │
-│ 7 bVII     Bb         1.9% ██                                  ││                                │
-│ 8 II       D          1.8% ██                                  ││                                │
-│ matched context: (none, unigram)                               ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-│                                                                ││                                │
-└────────────────────────────────────────────────────────────────┘└────────────────────────────────┘
- ←/→ move  Enter insert top  1-8 insert nth  x delete  Space play/stop  r loop  w save  q quit
+┌ Next chord · adds at the end ──────────────────────────────┐┌ Band · t select · m mute ──────────┐
+│ ▸ I        C         26.7% ██████████████████████████████  ││ ▸ Chords  sustain       ch1        │
+│   IV       F         20.0% ██████████████████████          ││   Bass    bass-quarters ch2        │
+│   V        G         17.0% ███████████████████             ││   Arp     arp-up-8      ch3  muted │
+│   vi       Am         9.2% ██████████                      ││   Melody  0 notes       ch4        │
+│   ii       Dm         4.4% █████                           │└────────────────────────────────────┘
+│   iii      Em         2.5% ███                             │┌ MIDI ──────────────────────────────┐
+│   bVII     Bb         1.9% ██                              ││ out   none                         │
+│   II       D          1.8% ██                              ││ now   ○ stopped                    │
+│   V7       G7         1.5% ██                              ││ loop  whole song                   │
+│   v        Gm         1.2% █                               ││ late  –                            │
+│   vi7      Am7        0.9% █                               ││ data  default.json                 │
+│   ii7      Dm7        0.9% █                               ││                                    │
+│   after: any position                                      ││                                    │
+│   ↑/↓ choose · Enter adds                                  ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+└────────────────────────────────────────────────────────────┘└────────────────────────────────────┘
+ ? help  ←/→ select  ↑/↓ Enter pick  1-7 triad  [ ] length  ( ) loop  Space play  o saves  q quit
  MIDI: no MIDI output matching 'rtpmidid' (see --list-ports)

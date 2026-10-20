@@ -1,5 +1,5 @@
-# Rust workspace: the port of packages/core (croky-core) and the terminal prototype
-# (croky-tui). Spike for issue #39; see docs/specs/tui-v1.md. Checked by scripts/check-rust.sh.
+# Rust workspace: the port of packages/core (croky-core) and the terminal app (croky-tui).
+# See docs/specs/tui-v1.md. Checked by scripts/check-rust.sh.
 [workspace]
 resolver = "2"
 members = ["crates/croky-core", "crates/croky-tui"]
@@ -15,6 +15,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 ratatui = "0.29"
 midir = "0.10"
+libc = "0.2"
+toml = { version = "0.9", default-features = false, features = ["std", "parse", "serde"] }
 
 [profile.release]
 lto = "thin"

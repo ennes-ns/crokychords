@@ -1,7 +1,7 @@
 [package]
 name = "croky-tui"
-version = "0.0.1"
-description = "Throwaway terminal prototype of Croky Chords: grid, next-chord suggestions, ALSA MIDI out."
+version = "0.1.0"
+description = "Croky Chords in the terminal: chord grid, next-chord suggestions, band playback to ALSA MIDI, SaveStore records."
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
@@ -11,4 +11,7 @@ rust-version.workspace = true
 croky-core = { path = "../croky-core" }
 ratatui.workspace = true
 midir.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+libc.workspace = true
+toml.workspace = true
