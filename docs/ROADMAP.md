@@ -43,7 +43,8 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 | Akai Fire controller v1 (pads, encoders) and v2 (mode button, OLED, PAN/FILTER) | [akai-fire-v1](specs/akai-fire-v1.md) | v1 done (#49), v2 in review (#76) |
 | Command API for agents (`window.croky`, `croky-tui --commands`) and the in-app assistant | [assistant-v1](specs/assistant-v1.md), ADR 0004 | in review (#97) |
 | Mobile / touch layout | issue #60 | parked |
-| MusicXML export; import of MIDI/MusicXML files | idea | idea |
+| MIDI/MusicXML import: chords as Roman numerals, key and mode, melody, preview, batch | [import-v1](specs/import-v1.md) | in review (#98) |
+| MusicXML export | idea | idea |
 
 ## Phase 3 — Online version (chords.cr0ky.com, Cloudflare free tier)
 

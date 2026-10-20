@@ -204,6 +204,17 @@ async function runCheck(page, out, expectAssistant) {
   check(smf.format === 1 && smf.tracks === 4, `format ${smf.format}, ${smf.tracks} tracks`);
   check(smf.names.includes('Melody'), `track names: ${smf.names.join(', ')}`);
 
+  // MIDI/MusicXML import (docs/specs/import-v1.md §C): the export comes back as the same song.
+  const data = Buffer.from(bytes).toString('base64');
+  const imported = await apply(page, { op: 'importFile', name: fileName, data });
+  check(imported.ok && imported.results[0].chords === 4, 'importFile reads the export back');
+  const back = await page.evaluate('window.croky.getSong()');
+  check(
+    JSON.stringify(back.chords) === JSON.stringify(song.chords) &&
+      JSON.stringify(back.melody.notes) === JSON.stringify(song.melody.notes),
+    `the import has the same chords and melody (${imported.results[0].key})`,
+  );
+
   // The assistant is hidden unless enabled (issue #100); on a server we started it must be on.
   const panel = await page.evaluate(`(async () => {
     const toggle = document.querySelector('.assistant-toggle');

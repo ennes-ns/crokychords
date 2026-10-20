@@ -68,6 +68,8 @@ export interface ToolbarOptions {
   breakcore?: BreakcoreController;
   /** The assistant's toggle button, placed before More (docs/specs/assistant-v1.md §B1). */
   assistant?: HTMLElement;
+  /** Shows Import… and Import folder… in the More panel (docs/specs/import-v1.md §B). */
+  importer?: { pickFiles(): void; pickFolder(): void };
 }
 
 /** The lamp: 8×10 pixels, `#` glass (lit in the state colour), `=` the socket. */
@@ -327,7 +329,8 @@ export function moreMenu(...sections: MoreSection[]): {
       'aria-label': 'More',
       'aria-expanded': 'false',
       'aria-controls': 'toolbar-more',
-      title: 'More: new song, MIDI export and output, Fire, break, suggestion table, theme',
+      title:
+        'More: new song, MIDI export and import, MIDI output, Fire, break, suggestion table, theme',
     },
   });
   toggle.append(toolIcon(MORE_ROWS, toggle.ownerDocument));
@@ -482,6 +485,20 @@ export function mountToolbar(
   const exportMidi = button('Export MIDI', 'Download a Standard MIDI File', () =>
     actions.exportMidi(),
   );
+  const importer = options.importer;
+  const importButtons =
+    importer === undefined
+      ? []
+      : [
+          button(
+            'Import…',
+            'Import MIDI or MusicXML files as new progressions (or drop them on the chord grid)',
+            () => importer.pickFiles(),
+          ),
+          button('Import folder…', 'Import every MIDI or MusicXML file in a folder', () =>
+            importer.pickFolder(),
+          ),
+        ];
 
   const breakcore =
     options.breakcore === undefined ? null : breakcoreControls(options.breakcore, store);
@@ -501,7 +518,7 @@ export function mountToolbar(
         });
 
   const more = moreMenu(
-    { label: 'Song', content: [newSong, exportMidi] },
+    { label: 'Song', content: [newSong, exportMidi, ...importButtons] },
     { label: 'MIDI', content: [midiBox, channelBox, fireButton] },
     ...(breakcore === null ? [] : [{ label: 'Breakcore', content: [breakcore.settings] }]),
     { label: 'Suggestions', content: [tableInfo] },

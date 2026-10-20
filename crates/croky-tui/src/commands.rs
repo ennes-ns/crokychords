@@ -29,9 +29,11 @@ const TEMPO_MAX: f64 = 300.0;
 const METER_UNITS: [u32; 6] = [1, 2, 4, 8, 16, 32];
 const MAX_TITLE: usize = 200;
 const MAX_NAME: usize = 64;
+const MAX_IMPORT_NAME: usize = 255;
+const MAX_IMPORT_DATA: usize = 4 * 1024 * 1024;
 
 /// Every op with its kind, in the order of the spec and the fixture.
-pub const OPS: [(&str, &str); 30] = [
+pub const OPS: [(&str, &str); 31] = [
     ("appendChord", "song"),
     ("insertChord", "song"),
     ("replaceChord", "song"),
@@ -62,6 +64,7 @@ pub const OPS: [(&str, &str); 30] = [
     ("audition", "transport"),
     ("exportMidi", "file"),
     ("save", "file"),
+    ("importFile", "file"),
 ];
 
 /// The fields each op accepts (anything else is refused).
@@ -101,6 +104,7 @@ fn fields(op: &str) -> &'static [&'static str] {
         "setInstrument" => &["track", "instrument"],
         "play" => &["from"],
         "audition" => &["token"],
+        "importFile" => &["name", "data", "tonic", "mode"],
         _ => &[],
     }
 }
@@ -215,6 +219,8 @@ pub enum Command {
     },
     ExportMidi,
     Save,
+    /// MIDI/MusicXML import (`docs/specs/import-v1.md` §C): parsed, then answered `unsupported`.
+    ImportFile,
 }
 
 impl Command {
@@ -250,6 +256,7 @@ impl Command {
             Command::Audition { .. } => "audition",
             Command::ExportMidi => "exportMidi",
             Command::Save => "save",
+            Command::ImportFile => "importFile",
         }
     }
 }
@@ -701,6 +708,24 @@ fn parse_args(op: &str, value: &Value) -> Result<Command, Problem> {
             token: f.token("token")?,
         },
         "exportMidi" => Command::ExportMidi,
+        "importFile" => {
+            f.string("name", true, 1, MAX_IMPORT_NAME)?;
+            f.string("data", true, 1, MAX_IMPORT_DATA)?;
+            let tonic = f.string("tonic", false, 0, 3)?;
+            if let Some(t) = &tonic {
+                if parse_note_name(t).is_none() {
+                    return Err(invalid("tonic", "not a note name (C, F#, Bb, ...)"));
+                }
+            }
+            let mode = f.one_of("mode", Mode::from_name)?;
+            if tonic.is_some() != mode.is_some() {
+                return Err(invalid(
+                    "tonic",
+                    "give both tonic and mode to choose the key, or neither to detect it",
+                ));
+            }
+            Command::ImportFile
+        }
         _ => Command::Save,
     })
 }
@@ -1209,6 +1234,13 @@ pub fn step(state: &mut EngineState, cmd: &Command) -> Result<Outcome, Problem> 
         Command::Audition { token } => vec![Effect::Audition(token.clone())],
         Command::ExportMidi => vec![Effect::ExportMidi],
         Command::Save => vec![Effect::Save],
+        Command::ImportFile => {
+            return Err(Problem {
+                code: "unsupported",
+                path: "op".into(),
+                message: "the terminal app cannot import files yet (use the web app)".into(),
+            })
+        }
         _ => Vec::new(),
     };
     Ok(Outcome { result, effects })
@@ -1604,6 +1636,26 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(play.code, "failed");
+    }
+
+    #[test]
+    fn import_is_parsed_but_not_supported_here() {
+        let state = EngineState {
+            song: create_song(),
+            selected: None,
+            looping: false,
+            loop_range: None,
+            undo: Vec::new(),
+            redo: Vec::new(),
+        };
+        let input = json!({ "op": "importFile", "name": "a.mid", "data": "TVRoZA==" });
+        assert_eq!(
+            prepare(&state, &input, false).unwrap_err().code,
+            "unsupported"
+        );
+        let half_key = json!({ "op": "importFile", "name": "a.mid", "data": "x", "mode": "minor" });
+        let err = prepare(&state, &half_key, false).unwrap_err();
+        assert_eq!((err.code, err.path.as_str()), ("invalid", "tonic"));
     }
 
     #[test]

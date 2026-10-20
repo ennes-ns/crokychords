@@ -10,3 +10,4 @@ export * from './render';
 export * from './midi';
 export * from './melody';
 export * from './commands';
+export * from './import';

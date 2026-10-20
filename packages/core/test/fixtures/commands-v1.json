@@ -31,7 +31,8 @@
     "stop",
     "audition",
     "exportMidi",
-    "save"
+    "save",
+    "importFile"
   ],
   "assistant_ops": [
     "appendChord",

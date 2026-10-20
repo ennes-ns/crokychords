@@ -135,6 +135,27 @@ export class SaveSession {
     this.#emit();
   }
 
+  /**
+   * Save `songs` as new records (MIDI/MusicXML import, docs/specs/import-v1.md §B) after
+   * flushing pending edits, then open the first. Resolves to the new ids in order.
+   */
+  async importSongs(songs: readonly Song[]): Promise<string[]> {
+    await this.#flushQuietly();
+    const ids = await this.#enqueue(async () => {
+      const out: string[] = [];
+      for (const song of songs) {
+        const id = this.#newId();
+        await this.#saves.put(makeRecord(song, { id, version: 1, now: this.#now() }));
+        out.push(id);
+      }
+      return out;
+    });
+    const first = ids[0];
+    if (first !== undefined) await this.#load(first);
+    this.#emit();
+    return ids;
+  }
+
   /** Rename a record. The open record is renamed through the song title (undoable). */
   async rename(id: string, title: string): Promise<void> {
     if (id === this.currentId) {

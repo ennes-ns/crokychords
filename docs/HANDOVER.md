@@ -61,6 +61,13 @@ collaboration process in `docs/WORKFLOW.md`.
 
 ## Changes
 
+- 2026-10-21 (import, #98): MIDI/MusicXML import (`docs/specs/import-v1.md`): `importMidi`,
+  `importMusicXml`, `importFile` in `packages/core/src/import/` (own SMF and XML readers, chord
+  matching, key and mode detection, Roman numerals with borrowed and secondary chords, melody as
+  scale degrees, a report of what was dropped); Import… / Import folder… in the More panel, drop on
+  the chord grid, a preview with a key override, Save all as saved progressions; the `importFile`
+  command (the terminal app answers `unsupported`).
+
 - 2026-10-20 (assistant, #97): JSON command API as the one control surface (ADR 0004): the
   contract in `packages/core/src/commands.ts` (zod) with the shared fixture `commands-v1.json`,
   `window.croky` in the web app, `croky-tui --commands` (JSON-RPC over stdin), the headless agent

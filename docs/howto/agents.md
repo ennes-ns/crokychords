@@ -29,6 +29,10 @@ A command is a JSON object with an `op`:
 - Indices are 0-based; beats are quarter notes on a ¼-beat grid; MIDI channels are 0–15.
 - The full list with arguments: spec §A2, or `commands()` at run time (summaries, kinds, an
   example per op and the JSON schema).
+- A `.mid` or uncompressed MusicXML file comes in with
+  `{ "op": "importFile", "name": "song.mid", "data": "<base64>" }` (web app only): the song is
+  replaced (one undo step) and the result carries the import report (key, chords, what was
+  dropped); add `"tonic"` and `"mode"` to choose the key instead of detecting it.
 - A batch is checked completely before anything changes (`ok: false, applied: 0` and an error
   with `code`, `index` of the command, `path` of the field and a `message`). Every song edit is
   one undo step; pass `{ undo: 'batch' }` to make the whole batch one.
@@ -50,6 +54,7 @@ up. It needs Node 22 (for the built-in `WebSocket`) and a Chromium (`CHROME_PATH
 node tools/agent/croky.mjs --run my-commands.json --out song.mid
 
 # the integration check CI runs: I–V–vi–IV, a melody, play/stop (muted), undo/redo, .mid export
+# and its re-import
 pnpm agent:check
 ```
 
