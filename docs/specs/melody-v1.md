@@ -204,6 +204,9 @@ both themes stay consistent without new note tokens:
 | flat (`.flat`) | `--suggestion-hover` (one step darker) | `--chord-edge` | `--chord-ink` |
 | selected (cursor) | `--chord-selected` | `--chord-ring` | `--chord-ink`, plus the `--focus-w` ring in `--text` |
 
+Notes take the thin `--border-w` edge rather than the chord blocks' `--chord-border-w`, since a
+pitch row is only 11–14 px high (B2).
+
 `melodyNoteHarmony` no longer colours the note; it is kept as `data-harmony` and in the
 tooltip (`chord tone`, `passing tone`, `outside the key`), so the relation is not shown by
 colour alone.

@@ -15,7 +15,7 @@ can hear the progression with a small band, export it as a `.mid` file, or send 
 DAW over Web MIDI.
 
 <p align="center">
-  <img src="docs/readme/editor.png" alt="The Croky Chords editor: a chord grid, the next-chord panel and the band panel" width="900">
+  <img src="docs/readme/editor.png" alt="The Croky Chords editor: chord rows with the melody beneath each, the next-chord panel and the band panel" width="900">
 </p>
 
 ## Try it locally

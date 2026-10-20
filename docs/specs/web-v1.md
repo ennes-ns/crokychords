@@ -175,9 +175,8 @@ Single-screen shell (issue #59). The whole editor fits one screen without page s
   same bars, in one bordered box with one x-scale and one playhead; the bar lines run through both
   halves. The row after an exactly full song only holds the "+" slot and has no strip. An 8-bar
   song (two full rows plus the "+" row) fits the stage at 1920×1080 with the Band panel open
-  without scrolling; longer songs scroll the timeline. Sizes: chord area 56 px over a strip of
-  15 × 11 px (165 px); folded strip 7 × 14 px (98 px); a row without a strip keeps the 68 px chord
-  area.
+  without scrolling, in both themes; longer songs scroll the timeline. Sizes: chord area 52 px,
+  strip 15 × 11 px (165 px), folded strip 7 × 14 px (98 px), 6 px between rows.
 - Side column: Next chord, the chord editor (fields in three columns) and the saved
   progressions. The chord editor keeps its full height while Next chord (min. 240 px) and the
   saves (min. 96 px) can still give way; only below that does the editor scroll. The editor
@@ -187,7 +186,7 @@ Single-screen shell (issue #59). The whole editor fits one screen without page s
   (`crokychords.bandOpen`); with nothing stored it starts open, except in compact mode.
 - **Compact mode** under 960 px viewport height (`COMPACT_QUERY = (max-height: 959px)`; the shell
   sets `.shell.compact` and follows resizes): tighter gaps and padding (a narrower title field and
-  less toolbar padding), chord areas 44 px over a strip (48 px without one) with smaller text, the
+  less toolbar padding), chord areas 44 px instead of 52 px with smaller text, the
   melody strip always folded to 7 rows of 12 px (84 px), side-column minimums of 212 px (Next
   chord) and 88 px (saves), and the Band panel collapsed by default.
 - Pixel theme: every size in the shell is a whole pixel value (strips of 15 × 11, 7 × 14 and

@@ -97,13 +97,16 @@ The same edits are available to scripts and agents as `window.croky` (`getSong()
 
 ## Melody lane
 
-Under the chord grid sits a single-voice melody, written as scale degrees of the song's key
-(so it follows a key or mode change). Each grid row is a small piano roll from degree 5 an
-octave down to degree 5 an octave up; the tonic rows are shaded. Each note has the colour of its
+Chords and melody are one timeline: every row of chord blocks has its own melody strip directly
+beneath it, for the same bars, with one playhead running through both. The melody is a single
+voice written as scale degrees of the song's key (so it follows a key or mode change). Each strip
+is a small piano roll from degree 5 an octave down to degree 5 an octave up; the tonic rows are
+shaded. "7 rows" folds it to one row per degree (every octave on its degree's row, other octaves
+marked with a dotted edge); short screens always fold it. Each note has the colour of its
 degree, the same as a chord on that degree (a `5` is the colour of `V`); a sharp is one step
 lighter, a flat one step darker. Under each chord, the rows of its root, third, fifth and seventh
 are faintly tinted (the root a little stronger), so a note on a tinted row is a chord tone and one
-on a plain row a passing tone. The header switches the chord-tone tint (`H`, remembered on this
+on a plain row a passing tone. The bar above the timeline switches the chord-tone tint (`H`, remembered on this
 device), switches the grid between 1/8 and 1/16 notes, mutes the melody and picks its MIDI
 channel (default 4). The melody plays through its instrument (the preset's choice, Lead by
 default; see the melody row of the Band panel), goes out over Web MIDI on its channel and is
@@ -112,8 +115,8 @@ exported as a `Melody` track. See [`docs/specs/melody-v1.md`](../../docs/specs/m
 Mouse: click empty space to add a note of that row's degree (drag right for its length), drag a
 note to move it, drag its right edge to resize it, double-click it to delete it.
 
-Keyboard: `N` switches the editing keys between the chord grid and the melody lane (clicking
-either one does too). In the melody lane:
+Keyboard: `N` switches the editing keys between the chords and the melody (clicking either half
+of a row does too); the half the keys act on is marked on the left of every row. In the melody:
 
 | Key | Action |
 |-----|--------|
@@ -155,7 +158,7 @@ progression. A new song starts with three: **Chords** (channel 1, sustained), **
 | ▲ ▼ ✕ | Reorder, remove (undo brings it back) |
 
 Under the tracks sits the **Melody** row with the same columns: mute and MIDI channel (the same
-song fields as the melody lane's header), an octave shift −2..+2 and a velocity for the
+song fields as in the bar above the timeline), an octave shift −2..+2 and a velocity for the
 browser sound, and its instrument. The octave shift and velocity are listening settings like the
 instrument: they change neither the song nor Web MIDI out nor the exported file.
 

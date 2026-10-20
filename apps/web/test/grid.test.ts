@@ -9,13 +9,18 @@ import {
   chordSegments,
   gridLayout,
   loopSegments,
-  mountGrid,
   placePlayhead,
   playheadRun,
   plusSlot,
   removePlayhead,
   xToBeat,
 } from '../src/views/grid';
+import { mountTimeline } from '../src/views/timeline';
+
+/** The chord grid renders inside the timeline (docs/specs/melody-v1.md §B2). */
+const mountGrid = (root: HTMLElement, store: Store, actions: Actions): void => {
+  mountTimeline(document.createElement('div'), root, store, actions);
+};
 
 const song = (beats: number[], meter = { beats: 4, unit: 4 }) =>
   createSong({ meter, chords: beats.map((b) => ({ token: 'IV', beats: b })) });

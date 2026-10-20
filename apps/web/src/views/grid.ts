@@ -1,17 +1,20 @@
 /**
  * Chord grid: rows of bars, chord blocks spanning their beats, the "+" slot after the last chord,
  * selection, resize, and the loop range (shaded; set by clicking or dragging the bar numbers).
+ * It renders the chord half of every timeline row (`timeline.ts`); the playhead helpers here move
+ * the timeline's one playhead.
  */
 import type { Song } from '@crokychords/core';
 import { chordAtBeat, isRestToken, songKey, totalBeats } from '@crokychords/core';
 import type { Actions, Playhead } from '../actions';
-import { h, replaceChildren } from '../dom';
+import { h } from '../dom';
 import type { LoopRange } from '../loop';
 import { barRange, extendRange, loopBounds, spanBars } from '../loop';
 import { MIN_BEATS, barLength, chordStarts, insertLength, setChordBeats } from '../edit';
 import { colorDegree, degreeHue, tokenName } from '../music';
 import { TAB_SLOTS_ATTR } from '../shortcuts';
 import type { AppState, Store } from '../state';
+import type { ChordRow, RowHost } from './timeline';
 
 export const BARS_PER_ROW = 4;
 
@@ -159,8 +162,9 @@ export function playheadRun(
 }
 
 /**
- * Re-anchor a view's playhead on `tracks`: from the live position (`live`, else the store's
- * `cursor`), gliding along the current row at the song's tempo.
+ * Re-anchor a view's playhead on `tracks` (the timeline's row boxes): from the live position
+ * (`live`, else the store's `cursor`), gliding along the current row at the song's tempo.
+ * Returns the row it is on, or null when there is no such row.
  */
 export function anchorPlayhead(
   playhead: HTMLElement,
@@ -168,17 +172,18 @@ export function anchorPlayhead(
   layout: GridLayout,
   state: AppState,
   live: Playhead | null,
-): void {
+): number | null {
   const total = totalBeats(state.song);
   const end = state.loop ? loopBounds(state.loopRange, total).end : total;
   const run = playheadRun(live?.beat ?? state.cursor, layout, tracks.length, end);
   const track = tracks[run.row];
-  if (track === undefined) return;
+  if (track === undefined) return null;
   placePlayhead(playhead, track, run.from, {
     to: run.to,
     seconds: (run.beats * 60) / state.song.tempo,
     delay: live?.wait ?? 0,
   });
+  return run.row;
 }
 
 export function beatToX(
@@ -307,19 +312,17 @@ function pct(fraction: number): string {
   return `${(fraction * 100).toFixed(4)}%`;
 }
 
-export function mountGrid(root: HTMLElement, store: Store, actions: Actions): void {
-  root.classList.add('grid');
-  root.setAttribute('aria-label', 'Chord grid');
+/** Render the chord half of every timeline row into `host` (see `timeline.ts`). */
+export function mountGrid(host: RowHost, store: Store, actions: Actions): void {
+  const root = host.root;
   // Focusable so Tab / Shift+Tab can walk the chord slots (see bindShortcuts).
   root.tabIndex = 0;
   root.setAttribute(TAB_SLOTS_ATTR, '');
-  const playhead = h('div', { class: 'playhead', attrs: { 'aria-hidden': 'true' } });
   let tracks: HTMLElement[] = [];
   let barLabels: HTMLElement[] = [];
-  let layout = gridLayout(store.state.song);
+  let layout = host.plan(store.state).layout;
   let last: unknown[] = [];
   let lastLoop: unknown[] = [];
-  let lastHead: unknown[] = [];
   /** The bar a drag over the bar numbers started on. */
   let dragBar: number | null = null;
 
@@ -364,8 +367,10 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
     const base = store.state.song;
     const start = chordStarts(base)[index] ?? 0;
     const move = (e: PointerEvent): void => {
+      // The row whose box (chord area plus strip) is under the pointer.
       const track =
-        tracks.find((t) => e.clientY < t.getBoundingClientRect().bottom) ?? tracks.at(-1);
+        tracks.find((t) => e.clientY < (t.parentElement ?? t).getBoundingClientRect().bottom) ??
+        tracks.at(-1);
       if (track === undefined) return;
       const rect = track.getBoundingClientRect();
       const row = tracks.indexOf(track);
@@ -410,11 +415,11 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
 
   const renderBlocks = (state: AppState, playingIndex: number | null): void => {
     const { song, selected } = state;
-    layout = gridLayout(song);
+    layout = host.plan(state).layout;
     const key = songKey(song);
     tracks = [];
     barLabels = [];
-    const rows: HTMLElement[] = [];
+    const rows: ChordRow[] = [];
     for (let row = 0; row < layout.rows; row++) {
       const labels = h('div', { class: 'bar-labels' });
       const track = h('div', { class: 'track' });
@@ -441,7 +446,7 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
       }
       track.onclick = (e) => onTrackClick(e, row, track);
       tracks.push(track);
-      rows.push(h('div', { class: 'grid-row' }, labels, track));
+      rows.push({ labels, track });
     }
 
     for (const seg of chordSegments(song, layout)) {
@@ -515,7 +520,7 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
         ),
       );
     }
-    replaceChildren(root, ...rows);
+    host.setChordRows(rows);
   };
 
   const renderLoop = (state: AppState): void => {
@@ -544,19 +549,6 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
     }
   };
 
-  /** Re-anchored only when the cursor, the timing or the rows change (issue #82). */
-  const renderPlayhead = (state: AppState): void => {
-    if (!state.playing) {
-      lastHead = [];
-      removePlayhead(playhead);
-      return;
-    }
-    const inputs = [state.cursor, state.song, state.loop, state.loopRange, tracks];
-    if (inputs.every((value, i) => value === lastHead[i])) return;
-    lastHead = inputs;
-    anchorPlayhead(playhead, tracks, layout, state, actions.playhead());
-  };
-
   const render = (state: AppState): void => {
     const playingIndex = state.playing
       ? (chordAtBeat(state.song, state.cursor)?.index ?? null)
@@ -573,7 +565,6 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
       lastLoop = loopInputs;
       renderLoop(state);
     }
-    renderPlayhead(state);
   };
 
   render(store.state);

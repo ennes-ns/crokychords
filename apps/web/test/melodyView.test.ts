@@ -11,10 +11,10 @@ import {
   chordToneSpans,
   melodyLaneBeats,
   melodyLayout,
-  mountMelody,
   noteSegments,
   yToPitch,
 } from '../src/views/melody';
+import { mountTimeline } from '../src/views/timeline';
 
 const note = (beat: number, length: number, degree: MelodyNote['degree'], extra = {}) => ({
   beat,
@@ -64,13 +64,14 @@ function setup(notes: MelodyNote[] = [], storage = memoryStorage()) {
   const store = new Store(initialState(melodySong(notes)));
   const actions = createActions(store, new AudioEngine(), new MidiOut(null));
   const root = document.createElement('section');
-  document.body.replaceChildren(root);
-  const lane = mountMelody(root, store, actions, storage);
+  const bar = document.createElement('div');
+  document.body.replaceChildren(bar, root);
+  const lane = mountTimeline(bar, root, store, actions, { storage });
   stubRects(root);
   store.subscribe(() => stubRects(root));
   const notesOf = () =>
     songMelody(store.state.song).notes.map((n) => [n.beat, n.length, n.degree, n.octave]);
-  return { store, actions, root, notesOf, lane, storage };
+  return { store, actions, root, bar, notesOf, lane, storage };
 }
 
 const pointer = (type: string, x: number, y: number, target: EventTarget = window): void => {
@@ -188,13 +189,13 @@ describe('mountMelody', () => {
   });
 
   it('shows the cursor and the note under it only while the melody has focus', () => {
-    const { store, root } = setup([note(0, 1, 3)]);
+    const { store, root, bar } = setup([note(0, 1, 3)]);
     expect(root.querySelector('.melody-cursor')).toBeNull();
     store.set({ focus: 'melody' });
-    expect(root.classList.contains('focused')).toBe(true);
+    expect(root.classList.contains('focus-melody')).toBe(true);
     expect(root.querySelector('.melody-cursor')).not.toBeNull();
     expect(root.querySelector('.mnote.selected')).not.toBeNull();
-    expect(root.querySelector('.melody-status')?.textContent).toContain('Editing melody');
+    expect(bar.querySelector('.melody-status')?.textContent).toContain('Editing melody');
   });
 
   it('adds a note with a click and sets its length by dragging', () => {
@@ -243,10 +244,10 @@ describe('mountMelody', () => {
   });
 
   it('draws the chord-tone tint and toggles it from the header, H and storage', () => {
-    const { root, lane, storage } = setup();
+    const { root, bar, lane, storage } = setup();
     expect(root.querySelectorAll('.melody-tone')).toHaveLength(14);
     expect(root.querySelectorAll('.melody-tone.root')).toHaveLength(5);
-    const box = root.querySelector<HTMLInputElement>('[data-field="melody-tones"]');
+    const box = bar.querySelector<HTMLInputElement>('[data-field="melody-tones"]');
     if (box === null) throw new Error('no toggle');
     expect(box.checked).toBe(true);
     expect(root.classList.contains('hide-tones')).toBe(false);
@@ -276,18 +277,18 @@ describe('mountMelody', () => {
     expect(after).toEqual(before);
   });
 
-  it('switches grid, mute and channel from the header', () => {
-    const { store, root } = setup();
-    root.querySelector<HTMLButtonElement>('[data-grid="0.25"]')?.click();
+  it('switches grid, mute and channel from the timeline bar', () => {
+    const { store, root, bar } = setup();
+    bar.querySelector<HTMLButtonElement>('[data-grid="0.25"]')?.click();
     expect(store.state.melodyGrid).toBe(0.25);
-    expect(root.querySelector('[data-grid="0.25"]')?.classList.contains('active')).toBe(true);
-    const mute = root.querySelector<HTMLInputElement>('[data-field="melody-mute"]');
+    expect(bar.querySelector('[data-grid="0.25"]')?.classList.contains('active')).toBe(true);
+    const mute = bar.querySelector<HTMLInputElement>('[data-field="melody-mute"]');
     if (mute === null) throw new Error('no mute');
     mute.checked = true;
     mute.dispatchEvent(new Event('change'));
     expect(songMelody(store.state.song).muted).toBe(true);
-    expect(root.classList.contains('muted')).toBe(true);
-    const channel = root.querySelector<HTMLSelectElement>('[data-field="melody-channel"]');
+    expect(root.classList.contains('melody-muted')).toBe(true);
+    const channel = bar.querySelector<HTMLSelectElement>('[data-field="melody-channel"]');
     if (channel === null) throw new Error('no channel');
     expect(channel.value).toBe('3');
     channel.value = '9';
