@@ -6,14 +6,16 @@ collaboration process in `docs/WORKFLOW.md`.
 
 ## State (2026-10-20)
 
-| Part            | State                                                                                                                                                  |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `packages/core` | Done: theory, chord tokens, song model (schema 2 with tracks), n-gram suggestions with backoff, MIDI writer. 408 tests.                                 |
-| `packages/data` | Done: Chordonomicon n-gram builder, chord-symbol parser, token-format helpers. Python, uv, pytest. 236 tests.                                           |
-| `apps/web`      | Done for v1: chord grid, suggestion panel, playback (Web Audio), multi-track "band" panel, `.mid` export, Web MIDI out. 135 tests.                      |
-| Brand           | Done: logomark, wordmark, favicon (`apps/web/public/brand/`), `docs/BRAND.md`.                                                                          |
-| CI              | `.github/workflows/ci.yml`: `pnpm check` and `data tests`, both required on `main`.                                                                    |
-| Online version  | Spec only: `docs/specs/online-v1.md`.                                                                                                                  |
+| Part            | State                                                                                                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core` | Done: theory, chord tokens, song model (schema 2 with tracks), n-gram suggestions with backoff, MIDI writer. 408 tests.                                                      |
+| `packages/data` | Done: Chordonomicon n-gram builder with deterministic `--trim`, chord-symbol parser, token-format helpers. Python, uv, pytest. 119 tests.                                    |
+| `apps/web`      | Done for v1: grid editor, next-chord panel, built-in instruments and presets, band panel, `.mid` export, Web MIDI out, SaveStore with autosave and sync, Default and Pixel themes. 321 tests. |
+| `apps/api`      | Done, not deployed: Hono Worker with Access-JWT verification, D1/R2 saves, limits; serves the web app as static assets. 67 tests in the Workers runtime.                    |
+| Data            | `apps/web/public/data/default.json`: trimmed Chordonomicon table (333 KB), loaded by default; seed table as fallback.                                                       |
+| Brand           | Done: pixel banner (`docs/readme/`), favicon and toolbar mark from the pixel master (`tools/brand/`), `docs/BRAND.md`.                                                       |
+| CI              | `.github/workflows/ci.yml`: `pnpm check` and `data tests`, both required on `main`.                                                                                         |
+| Online version  | Code complete for v1; deployment pending: `docs/specs/deploy-v1.md` (runbook), hardening in progress (issue #29), CI deploy blocked on a token scope (issue #21).           |
 
 `pnpm check` (lint, format, typecheck, tests, build) and `uv run pytest` are green on `main`.
 
@@ -53,8 +55,16 @@ collaboration process in `docs/WORKFLOW.md`.
 - Online version on `chords.cr0ky.com`, entirely on Cloudflare's free tier (Pages, Workers, D1, R2,
   Access); self-hosting is the fallback (`docs/specs/online-v1.md`, issue #6).
 - Reviews on every PR: CI, the reviewer agent, then the maintainer. No third-party review apps.
+- Hosting: one Worker serves the static app and the API; Access with one-time PIN only; licence MIT;
+  themes Default and Pixel; the pixel master is the single source for banner, favicon and mark.
 
 ## Changes
+
+- 2026-10-20 (evening): instruments and presets (#14), SaveStore + autosave + saved-progressions panel
+  (#15), Worker API (#13) serving the static app (#22), sync client with conflicts, tombstones and
+  offline queue (#24, #31, #32), default Chordonomicon table (#19), themes Default and Pixel (#25),
+  pixel banner, favicon and mark (#12, #30), deployment runbook (#18). Production builds need
+  `VITE_SYNC=on` for cloud sync.
 
 - 2026-10-20 (issue #2): product-own vocabulary ("Next chord" panel, "In context"/"Popular"), personal
   data pipelines removed, fixture renamed to `tokens-roman-v1.json`, MIT licence added.
