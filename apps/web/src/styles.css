@@ -25,6 +25,21 @@ body {
   min-height: 100vh;
 }
 
+/* Single-screen shell (docs/specs/web-v1.md, "Layout"): the page never scrolls; panels whose
+   content is unbounded (grid rows, melody rows, band, suggestions, saves) scroll inside. */
+
+html:has(> body > .shell),
+html:has(> body > .shell) body {
+  height: 100%;
+  overflow: hidden;
+}
+
+.shell {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+}
+
 button,
 input,
 select {
@@ -188,18 +203,204 @@ h2 {
 
 .workspace {
   flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'stage side'
+    'band side';
   gap: var(--space-workspace);
   padding: var(--space-workspace);
-  align-items: start;
 }
 
-.left {
+.stage {
+  grid-area: stage;
   display: flex;
   flex-direction: column;
   gap: var(--space-workspace);
   min-width: 0;
+  min-height: 0;
+  /* Last resort when every panel sits at its minimum height: the stage, never the page, scrolls. */
+  overflow-y: auto;
+}
+
+.side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-workspace);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Grid rows grow with the song: up to half the stage, then the grid scrolls. */
+.stage > .grid {
+  flex: 0 1 auto;
+  min-height: 96px;
+  max-height: 50%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.stage > .melody {
+  flex: 1 1 0;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+}
+
+.stage > .melody .melody-rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Rows keep their height inside the scrolling containers. */
+.stage > .grid > *,
+.stage > .melody .melody-rows > * {
+  flex: none;
+}
+
+.workspace > .band {
+  grid-area: band;
+  display: flex;
+  flex-direction: column;
+  max-height: 42vh;
+  max-height: 42dvh;
+  min-height: 0;
+}
+
+.workspace > .band .band-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.side > .suggest,
+.side > .saves {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+/* The chord editor in the 320 px side column: fields in three columns, toggles wrap. Its content
+   is bounded, so it keeps its height and the suggestion list gives way first; it only scrolls
+   when Next chord and the saves are at their minimum (240 + 96 px plus two gaps). */
+.side > .editor {
+  flex: none;
+  max-height: calc(100% - 364px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.side > .editor .summary {
+  margin-bottom: 6px;
+}
+
+.side > .editor .fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 6px;
+  margin-bottom: 6px;
+}
+
+.side > .editor .field > select,
+.side > .editor .field > input[type='number'] {
+  width: 100%;
+  min-width: 0;
+}
+
+.side > .editor fieldset.toggles {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  white-space: normal;
+}
+
+.side > .editor .summary .token {
+  font-size: var(--font-size-lg);
+}
+
+.side > .suggest {
+  min-height: 240px;
+}
+
+.side > .saves {
+  min-height: 96px;
+  max-height: 40%;
+}
+
+.side .saves-item {
+  gap: 4px;
+}
+
+.side .saves-item button:not(.saves-open) {
+  min-height: 24px;
+  padding: 1px 6px;
+  font-size: var(--font-size-sm);
+}
+
+.side .suggestions,
+.side .saves-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Compact density under 960 px height (the shell sets .compact from COMPACT_QUERY). */
+.shell.compact .workspace,
+.shell.compact .stage,
+.shell.compact .side {
+  gap: 8px;
+}
+
+.shell.compact .workspace {
+  padding: 8px;
+}
+
+.shell.compact .grid {
+  gap: 6px;
+}
+
+.shell.compact .track {
+  height: 48px;
+}
+
+.shell.compact .chord .token {
+  font-size: var(--font-size);
+}
+
+.shell.compact .chord .name {
+  font-size: var(--font-size-xs);
+}
+
+.shell.compact .melody-track {
+  height: 180px;
+}
+
+.shell.compact .stage > .grid {
+  min-height: 72px;
+}
+
+.shell.compact .stage > .melody {
+  min-height: 120px;
+}
+
+.shell.compact .panel-head {
+  margin-bottom: 6px;
+}
+
+.shell.compact .suggestion {
+  padding-top: 4px;
+  padding-bottom: 3px;
+}
+
+.shell.compact .melody-status {
+  margin-top: 2px;
 }
 
 .panel {
@@ -943,11 +1144,6 @@ button.icon.danger:hover:not(:disabled) {
 
 /* Next chord panel */
 
-.suggest {
-  position: sticky;
-  top: var(--space-workspace);
-}
-
 .segmented {
   display: inline-flex;
 }
@@ -991,8 +1187,6 @@ button.icon.danger:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: calc(100vh - 220px);
-  overflow-y: auto;
 }
 
 .suggestions .empty {
@@ -1067,13 +1261,37 @@ button.icon.danger:hover:not(:disabled) {
   z-index: 10;
 }
 
+/* Narrow windows keep the stacked, page-scrolling layout (mobile is a later issue). */
 @media (max-width: 900px) {
-  .workspace {
-    grid-template-columns: minmax(0, 1fr);
+  html:has(> body > .shell),
+  html:has(> body > .shell) body {
+    height: auto;
+    overflow: visible;
   }
 
-  .suggest {
-    position: static;
+  .shell {
+    height: auto;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas:
+      'stage'
+      'band'
+      'side';
+  }
+
+  .stage > .grid,
+  .stage > .melody,
+  .workspace > .band,
+  .side > .saves {
+    max-height: none;
+    min-height: 0;
+  }
+
+  .stage > .melody {
+    flex: none;
   }
 
   .table-status {

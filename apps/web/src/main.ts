@@ -31,6 +31,7 @@ import { mountGrid } from './views/grid';
 import { mountMelody } from './views/melody';
 import { patternEditorKey } from './views/pattern';
 import { mountSaves } from './views/saves';
+import { browserCompactMedia, mountShell } from './views/shell';
 import { mountSuggest } from './views/suggest';
 import { mountToolbar } from './views/toolbar';
 
@@ -97,28 +98,16 @@ async function boot(app: HTMLElement): Promise<void> {
   const fire = new FireConnection(store, browserFireAccess(), new FireController(store, actions));
   bindFirePageEvents(fire, window);
 
-  const toolbar = h('header');
-  const grid = h('section');
-  const melody = h('section');
-  const editor = h('section');
-  const band = h('section');
-  const savesPanel = h('section');
-  const suggest = h('aside');
+  const { toolbar, grid, melody, editor, band, suggest, saves, compact } = mountShell(
+    app,
+    browserCompactMedia(),
+  );
   const overlay = h(
     'button',
     { class: 'audio-overlay', props: { type: 'button' } },
     'Click anywhere to enable audio',
   );
-  app.append(
-    toolbar,
-    h(
-      'main',
-      { class: 'workspace' },
-      h('div', { class: 'left' }, grid, melody, editor, band, savesPanel),
-      suggest,
-    ),
-    overlay,
-  );
+  app.append(overlay);
   mountToolbar(toolbar, store, actions, {
     storage,
     fire: { connect: () => void fire.connect(), disconnect: () => fire.disconnect() },
@@ -129,9 +118,10 @@ async function boot(app: HTMLElement): Promise<void> {
   // Working in the chord grid gives the editing keys back to the chords.
   grid.addEventListener('pointerdown', () => actions.setFocus('chords'));
   mountChordEditor(editor, store, actions);
-  mountBand(band, store, actions, storage, audio.sound, audio.master);
+  // Short screens start with the Band panel collapsed until the user opens it once.
+  mountBand(band, store, actions, storage, audio.sound, audio.master, { defaultOpen: !compact() });
   mountSuggest(suggest, store, actions);
-  mountSaves(savesPanel, session, engine === null ? {} : { status: syncStatusView(engine) });
+  mountSaves(saves, session, engine === null ? {} : { status: syncStatusView(engine) });
 
   // Browsers only start audio from a user gesture: the first click or key press does it.
   const unlock = (): void => {
