@@ -6,9 +6,11 @@
  * - 'root':  the root only, in the track's octave (ignores the inversion)
  * - 'fifth': the fifth above the bass note (fallback: the root)
  * - 'top':   the highest voiced tone
+ * - 'octave': the bass note one octave up (song schema 4, docs/specs/pattern-editor-v1.md)
  * - { index }: the n-th upper tone from the bottom; wraps up an octave (arpeggios)
  */
-export type NoteSelector = 'chord' | 'bass' | 'root' | 'fifth' | 'top' | { index: number };
+export type NoteSelector =
+  'chord' | 'bass' | 'root' | 'fifth' | 'top' | 'octave' | { index: number };
 
 export const NOTE_SELECTOR_NAMES: readonly Exclude<NoteSelector, { index: number }>[] = [
   'chord',
@@ -16,6 +18,7 @@ export const NOTE_SELECTOR_NAMES: readonly Exclude<NoteSelector, { index: number
   'root',
   'fifth',
   'top',
+  'octave',
 ];
 
 export interface PatternStep {
@@ -77,18 +80,30 @@ export interface Track {
 const ID_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz';
 const ID_LENGTH = 8;
 
-/**
- * A new track id: 'trk-' followed by 8 base36 characters. Uses Math.random (core has no
- * crypto dependency); pass `random` (returning values in [0, 1)) for deterministic ids.
- */
-export function newTrackId(random: () => number = Math.random): string {
-  let id = 'trk-';
+function randomId(prefix: string, random: () => number): string {
+  let id = prefix;
   for (let i = 0; i < ID_LENGTH; i++) {
     const r = random();
     const index = Math.min(ID_CHARS.length - 1, Math.max(0, Math.floor(r * ID_CHARS.length)));
     id += ID_CHARS.charAt(index);
   }
   return id;
+}
+
+/**
+ * A new track id: 'trk-' followed by 8 base36 characters. Uses Math.random (core has no
+ * crypto dependency); pass `random` (returning values in [0, 1)) for deterministic ids.
+ */
+export function newTrackId(random: () => number = Math.random): string {
+  return randomId('trk-', random);
+}
+
+/** Every song preset id starts with this, so it never collides with a built-in preset id. */
+export const USER_PATTERN_PREFIX = 'user-';
+
+/** A new song preset id: 'user-' followed by 8 base36 characters (see newTrackId). */
+export function newPatternId(random: () => number = Math.random): string {
+  return randomId(USER_PATTERN_PREFIX, random);
 }
 
 function cloneSelector(notes: NoteSelector): NoteSelector {

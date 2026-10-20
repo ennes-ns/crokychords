@@ -5,6 +5,7 @@ import {
   PATTERN_PRESETS,
   ROLE_DEFAULTS,
   createTrack,
+  patternDescription,
   patternPreset,
   patternRoles,
 } from '../src/patterns';
@@ -28,16 +29,74 @@ const PRESET_IDS = [
   'arp-up-8',
   'arp-up-16',
   'arp-updown-8',
+  'arp-updown-16',
+  'arp-broken-8',
+  'alberti',
+  'stab-offbeat',
+  'house-piano',
+  'reggae-skank',
+  'waltz-3',
+  'bass-octave-8',
+  'bass-walk-4',
   'pad',
+];
+
+/** Presets added by docs/specs/pattern-editor-v1.md (plus the reworked arp-up-16). */
+const EDITOR_PRESETS = [
+  'arp-up-16',
+  'arp-updown-16',
+  'arp-broken-8',
+  'alberti',
+  'stab-offbeat',
+  'house-piano',
+  'reggae-skank',
+  'waltz-3',
+  'bass-octave-8',
+  'bass-walk-4',
 ];
 
 const at = (p: Pattern): number[] => p.steps.map((s) => s.at);
 const notes = (p: Pattern): unknown[] => p.steps.map((s) => s.notes);
 
 describe('PATTERN_PRESETS', () => {
-  it('has every preset of the spec, with unique ids and 4-beat lengths', () => {
+  it('has every preset of the specs, with unique ids and 4-beat lengths (waltz: 3)', () => {
     expect(PATTERN_PRESETS.map((p) => p.id)).toEqual(PRESET_IDS);
-    expect(PATTERN_PRESETS.every((p) => p.length === 4)).toBe(true);
+    expect(PATTERN_PRESETS.filter((p) => p.length !== 4).map((p) => [p.id, p.length])).toEqual([
+      ['waltz-3', 3],
+    ]);
+  });
+
+  it('gives every preset a role hint and a one-line description', () => {
+    for (const p of PATTERN_PRESETS) {
+      expect([p.id, patternRoles(p.id).length > 0]).toEqual([p.id, true]);
+      const description = patternDescription(p.id);
+      expect([p.id, description.length > 0, description.includes('\n')]).toEqual([
+        p.id,
+        true,
+        false,
+      ]);
+    }
+    expect(patternDescription('custom')).toBe('');
+    expect(patternRoles('alberti')).toEqual(['arp', 'chords']);
+  });
+
+  it('keeps the new presets on the 1/16 grid, inside their length, with tones 0..7', () => {
+    for (const id of EDITOR_PRESETS) {
+      const p = patternPreset(id);
+      expect(p.steps.length).toBeGreaterThan(0);
+      for (const s of p.steps) {
+        expect([id, Number.isInteger(s.at * 4), s.at >= 0 && s.at < p.length]).toEqual([
+          id,
+          true,
+          true,
+        ]);
+        expect([id, s.length > 0 && s.at + s.length <= p.length]).toEqual([id, true]);
+        if (typeof s.notes === 'object') {
+          expect([id, s.notes.index >= 0 && s.notes.index < 8]).toEqual([id, true]);
+        }
+        if (s.accent !== undefined) expect(s.accent > 0 && s.accent <= 1).toBe(true);
+      }
+    }
   });
 
   it('is well-formed: validateSong accepts every preset unchanged', () => {
@@ -103,10 +162,53 @@ describe('PATTERN_PRESETS', () => {
     expect(notes(p('arp-up-8'))).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map((index) => ({ index })));
     expect(at(p('arp-up-8'))).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]);
     expect(p('arp-up-8').steps.every((s) => s.length === 0.45)).toBe(true);
-    expect(notes(p('arp-up-16'))).toEqual(Array.from({ length: 16 }, (_, index) => ({ index })));
+    expect(notes(p('arp-up-16'))).toEqual(Array.from({ length: 16 }, (_, i) => ({ index: i % 4 })));
     expect(at(p('arp-up-16'))).toEqual(Array.from({ length: 16 }, (_, i) => i * 0.25));
     expect(p('arp-up-16').steps.every((s) => s.length === 0.22)).toBe(true);
     expect(notes(p('arp-updown-8'))).toEqual([0, 1, 2, 3, 2, 1, 0, 1].map((index) => ({ index })));
+    expect(notes(p('arp-updown-16'))).toEqual(
+      [0, 1, 2, 3, 4, 3, 2, 1, 0, 1, 2, 3, 4, 3, 2, 1].map((index) => ({ index })),
+    );
+    expect(at(p('arp-updown-16'))).toEqual(Array.from({ length: 16 }, (_, i) => i * 0.25));
+    expect(notes(p('arp-broken-8'))).toEqual([0, 2, 1, 3, 0, 2, 1, 3].map((index) => ({ index })));
+    expect(at(p('arp-broken-8'))).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]);
+    expect(notes(p('alberti'))).toEqual([0, 2, 1, 2, 0, 2, 1, 2].map((index) => ({ index })));
+    expect(p('stab-offbeat').steps.map((s) => [s.at, s.length, s.accent])).toEqual([
+      [0.5, 0.2, undefined],
+      [1.5, 0.2, undefined],
+      [2.5, 0.2, undefined],
+      [3.5, 0.2, undefined],
+      [3.75, 0.2, 0.75],
+    ]);
+    expect(p('house-piano').steps.map((s) => [s.at, s.accent])).toEqual([
+      [0, undefined],
+      [0.75, 0.85],
+      [1.5, 0.85],
+      [2.5, 0.85],
+      [3.25, 0.85],
+    ]);
+    expect(p('reggae-skank').steps).toEqual([
+      { at: 1, length: 0.3, notes: 'chord' },
+      { at: 3, length: 0.3, notes: 'chord' },
+    ]);
+    expect(p('waltz-3')).toEqual({
+      id: 'waltz-3',
+      name: 'Waltz 3/4',
+      length: 3,
+      steps: [
+        { at: 0, length: 0.9, notes: 'bass' },
+        { at: 1, length: 0.6, notes: 'chord', accent: 0.75 },
+        { at: 2, length: 0.6, notes: 'chord', accent: 0.75 },
+      ],
+    });
+    expect(notes(p('bass-octave-8'))).toEqual(
+      Array.from({ length: 8 }, (_, i) => (i % 2 === 0 ? 'bass' : 'octave')),
+    );
+    expect(p('bass-octave-8').steps.map((s) => s.accent ?? 1)).toEqual([
+      1, 0.8, 1, 0.8, 1, 0.8, 1, 0.8,
+    ]);
+    expect(notes(p('bass-walk-4'))).toEqual(['bass', { index: 1 }, { index: 2 }, 'octave']);
+    expect(at(p('bass-walk-4'))).toEqual([0, 1, 2, 3]);
     expect(p('pad')).toMatchObject({
       tail: 'sustain',
       steps: [{ at: 0, length: 4, notes: 'chord', accent: 0.8 }],

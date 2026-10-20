@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createTrack, patternPreset } from '../src/patterns';
-import { TRACK_ROLES, clonePattern, cloneTrack, newTrackId } from '../src/tracks';
+import {
+  NOTE_SELECTOR_NAMES,
+  TRACK_ROLES,
+  USER_PATTERN_PREFIX,
+  clonePattern,
+  cloneTrack,
+  newPatternId,
+  newTrackId,
+} from '../src/tracks';
 
 /** A deterministic `random` cycling through `values`. */
 function sequence(...values: number[]): () => number {
@@ -24,6 +32,18 @@ describe('newTrackId', () => {
   it('gives distinct ids in practice', () => {
     const ids = new Set(Array.from({ length: 200 }, () => newTrackId()));
     expect(ids.size).toBe(200);
+  });
+});
+
+describe('newPatternId', () => {
+  it('is user- plus 8 base36 characters, deterministic with an injected source', () => {
+    expect(newPatternId()).toMatch(/^user-[0-9a-z]{8}$/);
+    expect(newPatternId().startsWith(USER_PATTERN_PREFIX)).toBe(true);
+    expect(newPatternId(sequence(0, 10 / 36))).toBe('user-0a0a0a0a');
+  });
+
+  it('includes the octave selector in the named selectors', () => {
+    expect(NOTE_SELECTOR_NAMES).toContain('octave');
   });
 });
 

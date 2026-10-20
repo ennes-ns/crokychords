@@ -84,6 +84,27 @@ describe('renderTrack goldens on I in C (4 beats)', () => {
     );
   });
 
+  it('bass-octave-8: the bass note and the octave above it', () => {
+    const events = renderTrack(song(['I', 4]), track('bass', 'bass-octave-8'));
+    expect(events.map((e) => [e.note, e.start, e.velocity])).toEqual(
+      [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((start, i) =>
+        i % 2 ? [I2.bass + 12, start, 80] : [I2.bass, start, 100],
+      ),
+    );
+  });
+
+  it('bass-walk-4: bass, third, fifth, octave', () => {
+    const events = renderTrack(song(['I', 4]), track('bass', 'bass-walk-4'));
+    expect(events.map((e) => e.note)).toEqual([36, 40, 43, 48]); // C2 E2 G2 C3
+  });
+
+  it('arp-up-16: four tones up per beat (a seventh chord plays its seventh)', () => {
+    const triad = renderTrack(song(['I', 1]), track('arp', 'arp-up-16')).map((e) => e.note);
+    expect(triad).toEqual([60, 64, 67, 72]);
+    const seventh = renderTrack(song(['V7', 1]), track('arp', 'arp-up-16')).map((e) => e.note);
+    expect(seventh).toEqual(voiced('V7', 4).upper);
+  });
+
   it('pad: accent 0.8 scales the velocity', () => {
     expect(renderTrack(song(['I', 4]), track('pad', 'pad', { octave: 4 }))).toEqual(
       I4.upper.map((n) => ev(n, 0, 4, 64)), // pad velocity 80 * 0.8
@@ -171,6 +192,7 @@ describe('renderTrack note selectors and track settings', () => {
     expect(render('I', sel('fifth'))).toEqual([55]); // C3 + 7 = G3
     expect(render('I/1', sel('fifth'))).toEqual([48]); // E + 7 = B, not in the chord: root
     expect(render('I/2', sel('fifth'))).toEqual([48]); // G + 7 = D, not in the chord: root
+    expect(render('I/1', sel('octave'))).toEqual([64]); // the bass E3 an octave up
   });
 
   it('wraps indices over the upper tones, an octave up per round', () => {
@@ -273,6 +295,14 @@ describe('layoutPattern', () => {
   const preset = (id: string): Pattern => patternPreset(id);
 
   it('lays out every preset on 4 and 2 beats', () => {
+    const eighths45 = {
+      4: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((t): [number, number] => [t, 0.45]),
+      2: [0, 0.5, 1, 1.5].map((t): [number, number] => [t, 0.45]),
+    };
+    const sixteenths = {
+      4: Array.from({ length: 16 }, (_, i): [number, number] => [i * 0.25, 0.22]),
+      2: Array.from({ length: 8 }, (_, i): [number, number] => [i * 0.25, 0.22]),
+    };
     const golden: Record<string, { 4: [number, number][]; 2: [number, number][] }> = {
       sustain: { 4: [[0, 4]], 2: [[0, 2]] },
       whole: { 4: [[0, 4]], 2: [[0, 2]] },
@@ -356,13 +386,43 @@ describe('layoutPattern', () => {
         4: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((t): [number, number] => [t, 0.45]),
         2: [0, 0.5, 1, 1.5].map((t): [number, number] => [t, 0.45]),
       },
-      'arp-up-16': {
-        4: Array.from({ length: 16 }, (_, i): [number, number] => [i * 0.25, 0.22]),
-        2: Array.from({ length: 8 }, (_, i): [number, number] => [i * 0.25, 0.22]),
+      'arp-up-16': sixteenths,
+      'arp-updown-8': eighths45,
+      'arp-updown-16': sixteenths,
+      'arp-broken-8': eighths45,
+      alberti: eighths45,
+      'stab-offbeat': {
+        4: [0.5, 1.5, 2.5, 3.5, 3.75].map((t): [number, number] => [t, 0.2]),
+        2: [0.5, 1.5].map((t): [number, number] => [t, 0.2]),
       },
-      'arp-updown-8': {
-        4: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((t): [number, number] => [t, 0.45]),
-        2: [0, 0.5, 1, 1.5].map((t): [number, number] => [t, 0.45]),
+      'house-piano': {
+        4: [0, 0.75, 1.5, 2.5, 3.25].map((t): [number, number] => [t, 0.4]),
+        2: [0, 0.75, 1.5].map((t): [number, number] => [t, 0.4]),
+      },
+      'reggae-skank': {
+        4: [
+          [1, 0.3],
+          [3, 0.3],
+        ],
+        2: [[1, 0.3]],
+      },
+      'waltz-3': {
+        // Three beats loop: the bass note comes back on beat 4.
+        4: [
+          [0, 0.9],
+          [1, 0.6],
+          [2, 0.6],
+          [3, 0.9],
+        ],
+        2: [
+          [0, 0.9],
+          [1, 0.6],
+        ],
+      },
+      'bass-octave-8': eighths45,
+      'bass-walk-4': {
+        4: [0, 1, 2, 3].map((t): [number, number] => [t, 0.9]),
+        2: [0, 1].map((t): [number, number] => [t, 0.9]),
       },
       pad: { 4: [[0, 4]], 2: [[0, 2]] },
     };

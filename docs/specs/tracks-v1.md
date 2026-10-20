@@ -90,7 +90,7 @@ export interface Track {
 | `bass-root-fifth` | Root–fifth | bass | `bass` at 0,2 ; `fifth` at 1,3 ; length 0.9 |
 | `bass-octaves` | Octave eighths | bass | alternate `bass` and `{index:0}` +12 → use `bass` at even eighths and `bass` with `accent 0.8` at odd eighths; (octave jump is done by the renderer when `role === 'bass'` and step index is odd? **No**: keep it simple: `bass` on all eighths, accent 0.8 on off-beats) |
 | `arp-up-8` | Arp up 1/8 | arp | `{index:0..7}` every 0.5 beat over 4 beats, length 0.45 |
-| `arp-up-16` | Arp up 1/16 | arp | `{index:0..15}` every 0.25 beat, length 0.22 |
+| `arp-up-16` | Arp up 1/16 | arp | `{index:0..15}` every 0.25 beat, length 0.22 (since `pattern-editor-v1.md`: `{index: i mod 4}`) |
 | `arp-updown-8` | Arp up–down 1/8 | arp | indices 0,1,2,3,2,1,0,1 every 0.5 beat |
 | `pad` | Pad | pad | `chord` at 0 length 4, tail sustain, accent 0.8 |
 

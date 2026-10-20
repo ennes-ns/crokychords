@@ -1,12 +1,13 @@
 /**
  * Band panel: the browser sound (preset and drum pattern), the master row (protection mode and
  * volume), then one row per track (mute, name,
- * role, pattern, octave, MIDI channel, velocity, gate, transpose, reorder, remove) plus "Add
- * track". Rows are patched in place, so focused
+ * role, pattern, octave, MIDI channel, velocity, gate, transpose, edit pattern, reorder, remove)
+ * plus "Add track". The pattern editor (views/pattern.ts) opens under its track's row. Rows are
+ * patched in place, so focused
  * inputs and dragged sliders survive store updates; every edit is a song commit (undoable).
  */
-import type { Song, Track, TrackRole } from '@crokychords/core';
-import { ROLE_DEFAULTS, TRACK_ROLES } from '@crokychords/core';
+import type { Pattern, Song, Track, TrackRole } from '@crokychords/core';
+import { ROLE_DEFAULTS, TRACK_ROLES, patternDescription } from '@crokychords/core';
 import type { Actions } from '../actions';
 import {
   DRUM_PATTERNS,
@@ -32,7 +33,7 @@ import {
   hasRoleDefaults,
   isPresetPattern,
   presetGroups,
-  setTrackPattern,
+  songPatterns,
   songTracks,
   updateTrack,
 } from '../band';
@@ -40,6 +41,7 @@ import { h, option } from '../dom';
 import type { MasterSettings, SongStorage } from '../persist';
 import { loadBandOpen, saveBandOpen } from '../persist';
 import type { AppState, Store } from '../state';
+import { createPatternEditor } from './pattern';
 
 const GATE_STEP = 0.05;
 const CUSTOM_PATTERN = '__custom__';
@@ -68,7 +70,20 @@ export function gateLabel(gate: number): string {
 
 interface RowView {
   el: HTMLElement;
-  update(track: Track, index: number, count: number, selected: boolean): void;
+  update(
+    track: Track,
+    index: number,
+    count: number,
+    selected: boolean,
+    editing: boolean,
+    songPresets: readonly Pattern[],
+  ): void;
+}
+
+/** Label of a built-in preset in the pattern select: "Name — description". */
+export function presetLabel(pattern: Pattern): string {
+  const description = patternDescription(pattern.id);
+  return description === '' ? pattern.name : `${pattern.name} — ${description}`;
 }
 
 interface RowContext {
@@ -161,17 +176,23 @@ function createRow(ctx: RowContext, id: string): RowView {
   };
 
   const customOption = h('option', { props: { value: CUSTOM_PATTERN, disabled: true } }, 'Custom');
+  const songGroup = h('optgroup', { props: { label: 'Song presets' } });
+  let songGroupOf: readonly Pattern[] | null = null;
   const pattern = h(
     'select',
     { attrs: { 'aria-label': 'Pattern', 'data-field': 'pattern' } },
     customOption,
     ...presetGroups().map((g) =>
-      h('optgroup', { props: { label: g.label } }, ...g.presets.map((p) => option(p.id, p.name))),
+      h(
+        'optgroup',
+        { props: { label: g.label } },
+        ...g.presets.map((p) => option(p.id, presetLabel(p))),
+      ),
     ),
   );
   pattern.onchange = () => {
     if (pattern.value === CUSTOM_PATTERN) return;
-    actions.updateSong(setTrackPattern(ctx.store.state.song, id, pattern.value));
+    actions.setTrackPattern(id, pattern.value);
   };
 
   const numberInput = (
@@ -236,6 +257,10 @@ function createRow(ctx: RowContext, id: string): RowView {
   }));
   const gateValue = h('span', { class: 'band-value' });
 
+  const edit = iconButton('✎', 'Edit pattern', () =>
+    actions.openPatternEditor(ctx.store.state.patternEditor === id ? null : id),
+  );
+  edit.dataset['field'] = 'edit-pattern';
   const up = iconButton('▲', 'Move up', () => actions.moveTrack(id, -1));
   const down = iconButton('▼', 'Move down', () => actions.moveTrack(id, 1));
   const remove = iconButton('✕', 'Remove track (undo restores it)', () => actions.removeTrack(id));
@@ -253,7 +278,7 @@ function createRow(ctx: RowContext, id: string): RowView {
     h('span', { class: 'band-cell band-slider' }, velocity, velocityValue),
     h('span', { class: 'band-cell band-slider' }, gate, gateValue),
     h('span', { class: 'band-cell' }, transpose),
-    h('span', { class: 'band-cell band-buttons' }, up, down, remove),
+    h('span', { class: 'band-cell band-buttons' }, edit, up, down, remove),
   );
   const selectRow = (): void => {
     if (ctx.store.state.selectedTrack !== id) actions.selectTrack(id);
@@ -263,8 +288,11 @@ function createRow(ctx: RowContext, id: string): RowView {
 
   return {
     el,
-    update(t, index, count, selected) {
+    update(t, index, count, selected, editing, songPresets) {
       el.classList.toggle('selected', selected);
+      el.classList.toggle('editing', editing);
+      edit.setAttribute('aria-pressed', String(editing));
+      edit.setAttribute('aria-expanded', String(editing));
       el.classList.toggle('muted', t.muted);
       el.setAttribute('aria-current', String(selected));
       mute.checked = t.muted;
@@ -275,10 +303,20 @@ function createRow(ctx: RowContext, id: string): RowView {
       applyDefaults.hidden = pending !== t.role || hasRoleDefaults(t);
       const d = ROLE_DEFAULTS[t.role];
       applyDefaults.title = `Octave ${d.octave}, pattern ${d.pattern}, velocity ${d.velocity}`;
-      const preset = isPresetPattern(t.pattern);
+      if (songPresets !== songGroupOf) {
+        songGroupOf = songPresets;
+        songGroup.replaceChildren(...songPresets.map((p) => option(p.id, p.name)));
+        // Only listed while the song has presets of its own.
+        if (songPresets.length === 0) songGroup.remove();
+        else if (songGroup.parentElement !== pattern) {
+          pattern.append(songGroup);
+        }
+      }
+      const preset = isPresetPattern(t.pattern, songPresets);
       customOption.hidden = preset;
       customOption.textContent = `Custom: ${t.pattern.name}`;
       setIfIdle(pattern, preset ? t.pattern.id : CUSTOM_PATTERN);
+      pattern.title = pattern.selectedOptions[0]?.textContent ?? '';
       setIfIdle(octave, String(t.octave));
       setIfIdle(channel, String(t.channel));
       setIfIdle(velocity, String(t.velocity));
@@ -403,7 +441,7 @@ export function mountBand(
       'p',
       { class: 'hint' },
       'Every track plays on its own MIDI channel. Click a row to select it (auditions play ' +
-        'through it); M mutes the selected track.',
+        'through it); M mutes the selected track; ✎ opens its pattern editor.',
     ),
   );
   root.append(h('header', { class: 'panel-head' }, toggle, summary), body);
@@ -416,11 +454,13 @@ export function mountBand(
   };
 
   const rows = new Map<string, RowView>();
+  const editor = createPatternEditor(store, actions);
   let last: unknown[] = [];
 
   const render = (state: AppState): void => {
     const tracks = songTracks(state.song);
-    const inputs = [tracks, state.selectedTrack, open];
+    const presets = songPatterns(state.song);
+    const inputs = [tracks, state.selectedTrack, open, state.patternEditor, presets];
     if (inputs.every((v, i) => v === last[i])) return;
     last = inputs;
 
@@ -445,10 +485,14 @@ export function mountBand(
       }
       return row;
     });
+    const editing = tracks.find((t) => t.id === state.patternEditor);
+    const wanted = ordered.flatMap((r, i) =>
+      editing !== undefined && tracks[i] === editing ? [r.el, editor.el] : [r.el],
+    );
     const current = [...rowsEl.children];
-    if (ordered.length !== current.length || ordered.some((r, i) => r.el !== current[i])) {
+    if (wanted.length !== current.length || wanted.some((el, i) => el !== current[i])) {
       const focused = document.activeElement;
-      rowsEl.replaceChildren(...ordered.map((r) => r.el));
+      rowsEl.replaceChildren(...wanted);
       if (
         focused instanceof HTMLElement &&
         focused !== document.activeElement &&
@@ -457,7 +501,17 @@ export function mountBand(
         focused.focus();
       }
     }
-    tracks.forEach((t, i) => ordered[i]?.update(t, i, tracks.length, t.id === state.selectedTrack));
+    tracks.forEach((t, i) =>
+      ordered[i]?.update(
+        t,
+        i,
+        tracks.length,
+        t.id === state.selectedTrack,
+        t.id === state.patternEditor,
+        presets,
+      ),
+    );
+    if (editing !== undefined) editor.update(editing, state.song);
     if (tracks.length === 0) {
       rowsEl.append(h('p', { class: 'hint band-empty' }, 'No tracks: add one to hear the song.'));
     }

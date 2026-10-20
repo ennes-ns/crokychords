@@ -1,8 +1,11 @@
 import type { Song, Track } from '@crokychords/core';
 import {
+  MAX_SONG_PATTERNS,
   PATTERN_PRESETS,
   ROLE_DEFAULTS,
   createSong,
+  deserializeSong,
+  serializeSong,
   createTrack,
   patternPreset,
 } from '@crokychords/core';
@@ -18,6 +21,7 @@ import {
   channelMapLabel,
   channelsToSilence,
   clampInt,
+  deletePatternPreset,
   findTrack,
   hasRoleDefaults,
   isPresetPattern,
@@ -26,7 +30,10 @@ import {
   presetGroups,
   removeTrack,
   roleDefaultsPatch,
+  savePatternPreset,
   setTrackPattern,
+  setTrackPatternData,
+  songPatterns,
   silencedTracks,
   songTracks,
   toggleMute,
@@ -260,5 +267,61 @@ describe('clampInt', () => {
     expect(clampInt('2.6', -1, 9)).toBe(3);
     expect(clampInt('', -1, 9)).toBeUndefined();
     expect(clampInt('abc', -1, 9)).toBeUndefined();
+  });
+});
+
+describe('song presets', () => {
+  const groove = { ...patternPreset('quarters'), id: 'custom', name: 'Groove' };
+
+  it('saves the track pattern as a song preset the track then uses', () => {
+    const song = setTrackPatternData(bandSong(), 'b', groove);
+    const saved = savePatternPreset(song, 'b', '  My groove ', random);
+    if (saved === null) throw new Error('not saved');
+    expect(saved.presetId).toMatch(/^user-[0-9a-z]{8}$/);
+    const [preset] = songPatterns(saved.song);
+    expect(preset).toEqual({ ...groove, id: saved.presetId, name: 'My groove' });
+    expect(findTrack(saved.song, 'b')?.pattern).toEqual(preset);
+    expect(isPresetPattern(groove, songPatterns(saved.song))).toBe(false);
+    expect(isPresetPattern(preset ?? groove, songPatterns(saved.song))).toBe(true);
+    // Saved with the song: survives serialize/deserialize (and so sync).
+    expect(deserializeSong(serializeSong(saved.song)).patterns).toEqual([preset]);
+  });
+
+  it('refuses an empty name, a missing track or a full song', () => {
+    expect(savePatternPreset(bandSong(), 'b', '  ', random)).toBeNull();
+    expect(savePatternPreset(bandSong(), 'zz', 'x', random)).toBeNull();
+    const full = createSong({
+      tracks: [track('a', 0)],
+      patterns: Array.from({ length: MAX_SONG_PATTERNS }, (_, i) => ({
+        ...groove,
+        id: `user-${i}`,
+      })),
+    });
+    expect(savePatternPreset(full, 'a', 'x', random)).toBeNull();
+  });
+
+  it('picks song presets and built-in presets for a track', () => {
+    const saved = savePatternPreset(setTrackPatternData(bandSong(), 'a', groove), 'a', 'G', random);
+    if (saved === null) throw new Error('not saved');
+    const picked = setTrackPattern(saved.song, 'c', saved.presetId);
+    expect(findTrack(picked, 'c')?.pattern).toEqual(songPatterns(saved.song)[0]);
+    expect(findTrack(picked, 'c')?.pattern).not.toBe(songPatterns(saved.song)[0]);
+    expect(findTrack(setTrackPattern(picked, 'c', 'alberti'), 'c')?.pattern.id).toBe('alberti');
+  });
+
+  it('deletes a song preset; tracks using it keep the pattern as custom', () => {
+    const saved = savePatternPreset(setTrackPatternData(bandSong(), 'a', groove), 'a', 'G', random);
+    if (saved === null) throw new Error('not saved');
+    const deleted = deletePatternPreset(saved.song, saved.presetId);
+    expect(songPatterns(deleted)).toEqual([]);
+    expect(findTrack(deleted, 'a')?.pattern).toEqual({ ...groove, name: 'G' });
+    expect(findTrack(deleted, 'b')).toEqual(findTrack(saved.song, 'b'));
+    expect(deletePatternPreset(deleted, saved.presetId)).toBe(deleted);
+  });
+
+  it('treats a song object without presets as having none', () => {
+    const song: Song = { ...bandSong() };
+    delete song.patterns;
+    expect(songPatterns(song)).toEqual([]);
   });
 });

@@ -24,8 +24,8 @@ pnpm --filter @crokychords/core build
 | `token` | `parseToken`, `formatToken`, `tryParseToken`, `isRestToken`, `REST_TOKEN`, `TokenError` |
 | `progression` | `Song`, `SongChord`, `createSong`, `validateSong`, `songKey`, `totalBeats`, `chordAtBeat`, `songTokens`, `serializeSong`, `deserializeSong`, `SongError`, `DEFAULT_SONG_TITLE` |
 | `suggest` | `NgramTable`, `NgramMode`, `NgramSource`, `NgramChordInfo`, `parseNgramTable`, `suggestNext`, `popularChords`, `Suggestion`, `SuggestOptions`, `PopularOptions`, `seedTable`, `NgramTableError`, `DEFAULT_MIN_CONTEXT_COUNT`, `DEFAULT_SUGGESTION_LIMIT` |
-| `tracks` | `Track`, `TrackRole`, `TRACK_ROLES`, `TrackVoicing`, `Pattern`, `PatternStep`, `PatternTail`, `NoteSelector`, `NOTE_SELECTOR_NAMES`, `newTrackId`, `cloneTrack`, `clonePattern` |
-| `patterns` | `PATTERN_PRESETS`, `patternPreset`, `patternRoles`, `ROLE_DEFAULTS`, `RoleDefaults`, `DEFAULT_GATE`, `createTrack`, `DEFAULT_TRACKS` |
+| `tracks` | `Track`, `TrackRole`, `TRACK_ROLES`, `TrackVoicing`, `Pattern`, `PatternStep`, `PatternTail`, `NoteSelector`, `NOTE_SELECTOR_NAMES`, `newTrackId`, `newPatternId`, `USER_PATTERN_PREFIX`, `cloneTrack`, `clonePattern` |
+| `patterns` | `PATTERN_PRESETS`, `patternPreset`, `patternRoles`, `patternDescription`, `ROLE_DEFAULTS`, `RoleDefaults`, `DEFAULT_GATE`, `createTrack`, `DEFAULT_TRACKS` |
 | `render` | `renderTrack`, `renderSong`, `layoutPattern`, `NoteEvent`, `RenderOptions`, `StepOccurrence` |
 | `midi` | `songToMidi` (returns `Uint8Array<ArrayBuffer>`, a valid `BlobPart`), `MidiOptions`, `encodeVlq` |
 
@@ -80,8 +80,13 @@ instrument. `createSong()` starts with `DEFAULT_TRACKS()` (Chords ch 0 `sustain`
 defaults (`ROLE_DEFAULTS`). Ids are `'trk-' + 8 base36 chars` from `Math.random` (inject a
 `random` function for deterministic ids). `validateSong` migrates schema-1 songs by adding the
 default tracks, and reports bad track fields with paths like `tracks[1].pattern.steps[2].at`.
-`serializeSong` writes schema 2 (a hand-built song object without `tracks` is written as
-schema 1 and migrated on load).
+`serializeSong` writes the current schema (a hand-built song object without `tracks` is written
+as schema 1 and migrated on load).
+
+Schema 4 (`docs/specs/pattern-editor-v1.md`) adds `patterns`: **song presets** saved from the
+pattern editor, at most `MAX_SONG_PATTERNS` (64), each a `Pattern` whose id starts with
+`USER_PATTERN_PREFIX` (`'user-'`, see `newPatternId`). Schema 1–3 songs migrate to no song
+presets. Every built-in preset has a one-line `patternDescription(id)`.
 
 A pattern restarts at every chord and loops while it fits; steps that start at or after the
 chord end are dropped and steps crossing it are cut (`tail: 'cut'`, the default). With
@@ -95,6 +100,7 @@ exposes this placement.
 resolve against `voiceChord` with the bass and the upper voicing both in `track.octave`:
 `chord` = upper tones, `bass` = the bass note, `root` = the root in `track.octave`, `fifth` =
 bass + 7 when that pitch class is in the chord (else the root), `top` = the highest tone,
+`octave` = the bass note one octave up (schema 4),
 `{ index }` = upper tone `index mod n`, `12 * floor(index / n)` higher (an 8-step arp over a
 triad climbs an octave). Velocity is `round(track.velocity * accent)` clamped to 1..127 and
 duration is the step length times `track.gate`. Transpose is applied last; notes outside

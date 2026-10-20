@@ -111,6 +111,8 @@ function resolveSelector(
       const top = voicing.notes[voicing.notes.length - 1];
       return top === undefined ? [] : [top];
     }
+    case 'octave':
+      return [bass + 12];
   }
 }
 

@@ -1,0 +1,191 @@
+{
+  "schema": 4,
+  "title": "Pattern fixture",
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "tempo": 96,
+  "meter": {
+    "beats": 3,
+    "unit": 4
+  },
+  "chords": [
+    {
+      "token": "i",
+      "beats": 3
+    },
+    {
+      "token": "VI",
+      "beats": 3
+    },
+    {
+      "token": "rest",
+      "beats": 1
+    },
+    {
+      "token": "V7",
+      "beats": 2
+    }
+  ],
+  "tracks": [
+    {
+      "id": "trk-chords01",
+      "name": "Chords",
+      "role": "chords",
+      "channel": 0,
+      "octave": 4,
+      "voicing": "close",
+      "pattern": {
+        "id": "waltz-3",
+        "name": "Waltz 3/4",
+        "length": 3,
+        "steps": [
+          {
+            "at": 0,
+            "length": 0.9,
+            "notes": "bass"
+          },
+          {
+            "at": 1,
+            "length": 0.6,
+            "notes": "chord",
+            "accent": 0.75
+          },
+          {
+            "at": 2,
+            "length": 0.6,
+            "notes": "chord",
+            "accent": 0.75
+          }
+        ]
+      },
+      "velocity": 96,
+      "gate": 0.9,
+      "muted": false,
+      "transpose": 0
+    },
+    {
+      "id": "trk-bass0001",
+      "name": "Bass",
+      "role": "bass",
+      "channel": 1,
+      "octave": 2,
+      "voicing": "close",
+      "pattern": {
+        "id": "user-k3v9x0c2",
+        "name": "Octave groove",
+        "length": 2,
+        "steps": [
+          {
+            "at": 0,
+            "length": 0.5,
+            "notes": "bass"
+          },
+          {
+            "at": 0.5,
+            "length": 0.25,
+            "notes": "octave",
+            "accent": 0.75
+          },
+          {
+            "at": 1,
+            "length": 0.25,
+            "notes": {
+              "index": 2
+            },
+            "accent": 0.75
+          },
+          {
+            "at": 1.5,
+            "length": 0.5,
+            "notes": "octave"
+          }
+        ],
+        "tail": "sustain"
+      },
+      "velocity": 100,
+      "gate": 0.9,
+      "muted": false,
+      "transpose": 0
+    },
+    {
+      "id": "trk-arp00001",
+      "name": "Arp",
+      "role": "arp",
+      "channel": 2,
+      "octave": 4,
+      "voicing": "close",
+      "pattern": {
+        "id": "custom",
+        "name": "Octave groove",
+        "length": 2,
+        "steps": [
+          {
+            "at": 0,
+            "length": 0.5,
+            "notes": "bass"
+          },
+          {
+            "at": 0.5,
+            "length": 0.25,
+            "notes": "octave",
+            "accent": 0.75
+          }
+        ],
+        "tail": "sustain"
+      },
+      "velocity": 96,
+      "gate": 0.9,
+      "muted": true,
+      "transpose": 0
+    }
+  ],
+  "melody": {
+    "channel": 3,
+    "muted": false,
+    "notes": [
+      {
+        "beat": 0,
+        "length": 1,
+        "degree": 5,
+        "octave": 0,
+        "accidental": 0
+      }
+    ]
+  },
+  "patterns": [
+    {
+      "id": "user-k3v9x0c2",
+      "name": "Octave groove",
+      "length": 2,
+      "steps": [
+        {
+          "at": 0,
+          "length": 0.5,
+          "notes": "bass"
+        },
+        {
+          "at": 0.5,
+          "length": 0.25,
+          "notes": "octave",
+          "accent": 0.75
+        },
+        {
+          "at": 1,
+          "length": 0.25,
+          "notes": {
+            "index": 2
+          },
+          "accent": 0.75
+        },
+        {
+          "at": 1.5,
+          "length": 0.5,
+          "notes": "octave"
+        }
+      ],
+      "tail": "sustain"
+    }
+  ]
+}
