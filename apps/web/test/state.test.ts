@@ -78,6 +78,24 @@ describe('Store', () => {
     store.undo();
     expect(store.state.song).toBe(base);
   });
+
+  it('loads another song with a clean history and selection', () => {
+    const store = new Store(initialState(createSong({ title: 'A' })));
+    store.commit(createSong({ title: 'B' }), { selected: 0, cursor: 4 });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const next = createSong({ title: 'C' });
+    store.load(next);
+    expect(store.state).toMatchObject({
+      song: next,
+      selected: null,
+      selectedTrack: null,
+      cursor: 0,
+    });
+    expect(store.canUndo).toBe(false);
+    expect(store.canRedo).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('track selection', () => {

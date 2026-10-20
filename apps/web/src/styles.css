@@ -779,3 +779,42 @@ button.icon.danger:hover:not(:disabled) {
     grid-column: span 2;
   }
 }
+
+/* Saved progressions */
+
+.saves-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.saves-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+}
+
+.saves-item.current {
+  background: var(--panel-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.saves-open {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: none;
+  border-color: transparent;
+}
+
+.saves-time {
+  color: var(--muted);
+  font-size: 12px;
+}

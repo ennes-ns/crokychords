@@ -133,6 +133,13 @@ export class Store {
     this.#emit({ ...this.#state, ...patch, song });
   }
 
+  /** Open another song (a saved progression): clears undo history, selection and playhead. */
+  load(song: Song): void {
+    this.#past = [];
+    this.#future = [];
+    this.#emit({ ...this.#state, song, selected: null, selectedTrack: null, cursor: 0 });
+  }
+
   undo(): boolean {
     const song = this.#past.pop();
     if (song === undefined) return false;
