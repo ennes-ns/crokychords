@@ -506,6 +506,10 @@ only grows when the maintainer invites people.
 
 ## 9. Backups
 
+In the cloud: the Worker writes a weekly set of D1 and R2 to the bucket `crokychords-backups` and
+keeps 8 weeks ([`backups-v1.md`](backups-v1.md), with the restore runbook). The local copy below
+covers the loss of the Cloudflare account itself.
+
 Simplest free setup, run from the maintainer's machine (a weekly systemd timer or cron), never as a
 GitHub Actions artifact: the data contains e-mail addresses and the repository is public.
 

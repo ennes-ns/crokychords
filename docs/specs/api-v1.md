@@ -97,6 +97,9 @@ All responses are JSON (`application/json`) except `204`. Writes take a JSON bod
 
 `SaveMeta` is `{ id, version, updated_at, title }`. `limits` is `{ max_save_bytes, max_saves }`.
 
+The weekly backups add `GET /api/admin/backups` and `POST /api/admin/backup` for the maintainer;
+see [`backups-v1.md`](backups-v1.md) §6.
+
 The community bank adds `/api/samples*`, `/api/community`, `/api/me/handle` and
 `/api/moderation/*`, and `GET /api/me` gains `handle` and `maintainer`; see
 [`community-v1.md`](community-v1.md) §3 (with its error codes `forbidden`, `sample_limit_reached`,
@@ -159,7 +162,8 @@ Body: `{ "error": { "code": string, "message": string, "current"?: SaveMeta | nu
   frame-ancestors 'none'`, `Strict-Transport-Security: max-age=31536000` (no `includeSubDomains`), `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
 - Logs never contain save bodies or JWTs.
-- Free-tier friendly: no cron triggers, no Durable Objects, no KV.
+- Free-tier friendly: no Durable Objects, no KV. The only cron triggers are the weekly backup
+  and its continuations ([`backups-v1.md`](backups-v1.md)).
 
 ## 9. Local development
 

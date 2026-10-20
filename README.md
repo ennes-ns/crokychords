@@ -94,6 +94,13 @@ larger one from `apps/web/public/data/ngrams.json` when present.
 | CI              | `pnpm check`, the data tests and `rust check` (cargo fmt, clippy, tests, golden freshness), required on `main`. |
 | Online version  | Live for invited users at `chords.cr0ky.com` (Cloudflare Worker, D1, R2, Access).                            |
 
+## Backups
+
+The online version backs itself up: every Monday at 03:00 UTC the Worker copies each D1 table (as
+JSON lines plus the schema) and every stored object into a separate R2 bucket and keeps the last
+8 weekly sets. Restoring one table or one user's saves is a dry-run-first script,
+`tools/backup/restore.mjs`; see [`docs/specs/backups-v1.md`](docs/specs/backups-v1.md).
+
 ## Repository
 
 ```
