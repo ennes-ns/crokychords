@@ -14,6 +14,8 @@ export interface ParamLike {
   exponentialRampToValueAtTime(value: number, time: number): unknown;
   setTargetAtTime(target: number, time: number, timeConstant: number): unknown;
   cancelScheduledValues(time: number): unknown;
+  /** Cancel later events but hold the value the param has at `time` (not in every engine). */
+  cancelAndHoldAtTime?(time: number): unknown;
 }
 
 export interface NodeLike {
