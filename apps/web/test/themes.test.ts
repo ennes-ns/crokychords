@@ -116,6 +116,54 @@ describe('styles.css', () => {
   });
 });
 
+/**
+ * Playback repaints the chord row every frame (the playhead moves by `left`), so the rules the
+ * playhead passes over must stay cheap in every theme (issue #48). Per-frame-expensive effects
+ * (backdrop filters, blur filters, large soft shadows) belong nowhere on this path.
+ */
+describe('playback paint path', () => {
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => ({
+    selector: (m[1] ?? '').trim(),
+    body: m[2] ?? '',
+  }));
+  const onPath = rules.filter((r) => /\.(playhead|track|tick|chord)\b/.test(r.selector));
+
+  it('finds the rules it guards', () => {
+    expect(onPath.map((r) => r.selector)).toEqual(
+      expect.arrayContaining(['.playhead', '.chord', '.chord.playing', '.tick']),
+    );
+  });
+
+  it('has no backdrop-filter, will-change or transitioned geometry on the chord row', () => {
+    for (const { selector, body } of onPath) {
+      expect(body, selector).not.toMatch(/backdrop-filter|will-change/);
+      expect(body, selector).not.toMatch(/transition:[^;]*\b(left|width|all)\b/);
+    }
+  });
+
+  it('uses filter only on the playing chord, which changes once per chord, not per frame', () => {
+    const filtered = onPath.filter((r) => /(^|[\s;])filter:/.test(r.body)).map((r) => r.selector);
+    expect(filtered).toEqual(['.chord.playing']);
+  });
+
+  it.each(THEMES.map((t): [string, Theme] => [t.id, t]))(
+    '%s keeps the playhead glow and playing-chord filter cheap',
+    (_id, theme) => {
+      expect(theme.tokens['--chord-playing-filter']).toMatch(/^(none|brightness\([\d.]+\))$/);
+      const glow = theme.tokens['--playhead-glow'];
+      if (glow !== 'none') {
+        // One shadow, blur radius at most 8px.
+        expect(glow).not.toContain(',');
+        const blur = /^\S+ \S+ (\d+)px /.exec(glow)?.[1];
+        expect(Number(blur)).toBeLessThanOrEqual(8);
+      }
+      for (const name of ['--control-shadow', '--overlay-shadow', '--chord-clip'] as const) {
+        expect(theme.tokens[name], name).not.toMatch(/blur\(|url\(/);
+      }
+    },
+  );
+});
+
 describe('Pixel contrast', () => {
   const pixel = THEMES.find((t) => t.id === 'pixel');
 
