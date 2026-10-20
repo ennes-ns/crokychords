@@ -5,14 +5,17 @@ Deliverable: issue #11, one PR on branch `feat/api-worker`. No deployment in thi
 
 `apps/api` is a Cloudflare Worker written with Hono. It sits behind Cloudflare Access, accepts only
 requests that carry a valid Access JWT, stores saved progressions as JSON objects in R2 and keeps
-their metadata (and the user table) in D1.
+their metadata (and the user table) in D1. The same Worker (`crokychords`) serves the built web app
+as static assets; only `/api/*` runs the Worker first (`run_worker_first`), so the app and the API
+share one origin (see `docs/specs/deploy-v1.md`).
 
 ## 1. Layout
 
 ```
 apps/api/
 ├── package.json        @crokychords/api; scripts dev / build / typecheck / test
-├── wrangler.toml       bindings DB (D1) and SAVES (R2), [vars] placeholders only
+├── wrangler.toml       the whole site: [assets] (../web/dist), DB (D1), SAVES (R2), placeholders only
+├── .dev.vars.example   names and local values for .dev.vars (git-ignored)
 ├── migrations/         D1 schema (wrangler d1 migrations)
 ├── src/
 │   ├── index.ts        Worker entry: createApp() with the cached, fetch-based JWKS
@@ -33,12 +36,16 @@ placeholders only.
 | -------------------- | ------------- | -------------------------------------------------------------------------- |
 | `DB`                 | D1 binding    | users and save metadata                                                    |
 | `SAVES`              | R2 binding    | save bodies, key `saves/<user-id>/<save-id>.json`                          |
-| `ACCESS_TEAM_DOMAIN` | var           | `<team>.cloudflareaccess.com` (scheme optional); issuer and JWKS host      |
-| `ACCESS_AUD`         | var           | the Access application's audience tag                                      |
-| `ALLOWED_ORIGIN`     | var           | the one browser origin allowed by CORS, e.g. `https://app.example.com`     |
+| `ASSETS`             | assets        | the built web app (`../web/dist`); served before the Worker except `/api/*` |
+| `ACCESS_TEAM_DOMAIN` | secret        | `<team>.cloudflareaccess.com` (scheme optional); issuer and JWKS host      |
+| `ACCESS_AUD`         | secret        | the Access application's audience tag                                      |
+| `ALLOWED_ORIGIN`     | var           | a browser origin allowed by CORS besides the Worker's own origin           |
+
+`ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are account-specific and never live in `wrangler.toml`: set them
+with `wrangler secret put` (deploy-v1 runbook step 7), locally in `apps/api/.dev.vars`.
 
 The JWKS is fetched from `https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`. If
-`ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` is empty the API answers `500 server_misconfigured` (fail
+`ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` is missing or empty the API answers `500 server_misconfigured` (fail
 closed).
 
 ## 3. Authentication
@@ -113,7 +120,7 @@ Body: `{ "error": { "code": string, "message": string, "current"?: SaveMeta | nu
 | ------ | ------------------------ | --------------------------------------------------------------- |
 | 400    | `invalid_request`        | bad JSON, schema or song invalid, id mismatch, bad `If-Match`    |
 | 401    | `unauthorized`           | JWT missing, malformed, wrong signature/issuer/audience, expired |
-| 403    | `forbidden_origin`       | `Origin` header present and not `ALLOWED_ORIGIN`                 |
+| 403    | `forbidden_origin`       | `Origin` present, neither `ALLOWED_ORIGIN` nor the request's own |
 | 403    | `save_limit_reached`     | creating a save beyond `max_saves`                               |
 | 404    | `not_found`              | unknown route or save                                            |
 | 409    | `conflict`               | version check failed                                            |
@@ -134,6 +141,11 @@ Body: `{ "error": { "code": string, "message": string, "current"?: SaveMeta | nu
 - CORS: only `ALLOWED_ORIGIN`, with credentials (the Access cookie); methods `GET, PUT, DELETE`;
   request headers `Content-Type, If-Match`; exposed header `ETag`; preflight cached 10 minutes.
   A request with any other `Origin` is refused with `403` before authentication.
+- Same origin: requests without `Origin` and requests whose `Origin` equals the request's own origin
+  (scheme, host and port of the URL the Worker received) are accepted, because browsers send
+  `Origin` on same-origin `PUT`/`DELETE` from the app this Worker serves. This also lets a Worker
+  Preview on another hostname write without changing `ALLOWED_ORIGIN`. Every `/api/*` request still
+  needs a valid Access JWT.
 - Security headers on every response: `Content-Security-Policy: default-src 'none';
   frame-ancestors 'none'`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`.
@@ -142,10 +154,15 @@ Body: `{ "error": { "code": string, "message": string, "current"?: SaveMeta | nu
 
 ## 9. Local development
 
-`pnpm --filter @crokychords/api dev` applies the D1 migrations to the local Miniflare database and
-starts `wrangler dev`. Local values for the vars go in `apps/api/.dev.vars` (git-ignored). Without a
-real Access token every `/api/*` call is `401`; the tests exercise the full flow with a generated
-test key pair.
+`pnpm --filter @crokychords/api dev` builds the web app, applies the D1 migrations to the local
+Miniflare database and starts `wrangler dev` on `http://localhost:8787`, which serves the app and
+`/api/*` like production. Copy `apps/api/.dev.vars.example` to `apps/api/.dev.vars` (git-ignored) for
+the local values. Without a real Access token every `/api/*` call is `401`; the tests exercise the
+full flow with a generated test key pair.
+
+`pnpm build` (`pnpm -r build`) builds `@crokychords/web` before `@crokychords/api`, because the api
+lists the web package as a dev dependency; the api build is `wrangler deploy --dry-run`, which needs
+`../web/dist`. The tests point `[assets]` at `test/assets/` instead, so they run without a web build.
 
 ## 10. Tests
 
