@@ -266,6 +266,66 @@ describe('SyncEngine: tombstones and remote deletes', () => {
   });
 });
 
+describe('SyncEngine: review fixes', () => {
+  it('does not copy when a PUT succeeded but its response was lost', async () => {
+    const api = new FakeApi();
+    const a = device(api, 'a');
+    await edit(a.saves, 's1', 'one');
+    api.dropNextResponse = true;
+    await a.engine.sync('push');
+    expect(a.engine.status.state).toBe('offline');
+    expect(api.saves.get('s1')).toMatchObject({ version: 1, title: 'one' });
+    // The same content saved again as the next local version (e.g. an undo back to it).
+    const first = await a.saves.get('s1');
+    await a.saves.put({ ...(first as SaveRecord), version: 2 });
+    await a.engine.sync('push');
+    expect(api.requests.at(-1)).toMatchObject({ method: 'GET', path: '/saves/s1' }); // the 409
+    expect((await a.local.list()).map((s) => s.id)).toEqual(['s1']);
+    expect(a.changes).toEqual([]);
+    expect(await a.state.get('s1')).toMatchObject({ remote: 1, local: 2 });
+    expect(a.engine.status.state).toBe('synced');
+  });
+
+  it('keeps a save deleted that was deleted during its first upload', async () => {
+    const api = new FakeApi();
+    const a = device(api, 'a');
+    await edit(a.saves, 's1', 'one');
+    api.beforeHandle = async (method) => {
+      if (method !== 'PUT') return;
+      api.beforeHandle = null;
+      await a.saves.delete('s1');
+    };
+    await a.engine.sync('push');
+    await a.engine.sync('full');
+    expect(await a.local.get('s1')).toBeNull();
+    expect(api.saves.has('s1')).toBe(false);
+    expect(await a.state.get('s1')).toBeUndefined();
+    expect(api.count('DELETE')).toBe(1);
+  });
+
+  it('skips one unreadable remote save and still syncs the rest', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const api = new FakeApi();
+    const a = device(api, 'a');
+    api.remoteWrite(rec('bad', 1));
+    api.remoteWrite(rec('good', 1));
+    api.corrupt.add('bad');
+    await edit(a.saves, 'mine', 'mine');
+    await a.engine.sync();
+    expect(await a.local.get('good')).not.toBeNull();
+    expect(await a.local.get('bad')).toBeNull();
+    expect(api.saves.has('mine')).toBe(true);
+    expect(a.engine.status.state).toBe('error');
+    expect(a.engine.status.message).toContain('1 save(s)');
+    await a.engine.sync();
+    expect(console.warn).toHaveBeenCalledOnce();
+    api.corrupt.clear();
+    await a.engine.sync();
+    expect(await a.local.get('bad')).not.toBeNull();
+    expect(a.engine.status.state).toBe('synced');
+  });
+});
+
 describe('SyncEngine: offline, signed out, rejected', () => {
   it('queues while offline and replays with exponential backoff', async () => {
     vi.useFakeTimers();

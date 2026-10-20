@@ -10,6 +10,7 @@ import type { SaveStore } from '../store/saveStore';
 import { conflictTitle } from '../store/session';
 import type { SyncClient } from '../store/sync';
 import { SyncError } from '../store/sync';
+import { INVALID_RECORD } from './http';
 import type { SyncEntry, SyncStateStore } from './state';
 import { emptyEntry } from './state';
 
@@ -82,6 +83,8 @@ export class SyncEngine {
   #failures = 0;
   #lastFull = -Infinity;
   #stopped = false;
+  /** Remote saves already reported as unreadable (logged once each). */
+  #unreadable = new Set<string>();
 
   constructor(options: SyncEngineOptions) {
     this.#client = options.client;
@@ -186,8 +189,11 @@ export class SyncEngine {
     try {
       await this.#withLock(async () => {
         if (!this.#online()) throw new SyncError('offline', 'the browser is offline');
-        if (kind === 'full') await this.#pull();
+        const unreadable = kind === 'full' ? await this.#pull() : 0;
         problem = await this.#push();
+        if (unreadable > 0 && problem === null) {
+          problem = `${unreadable} save(s) on the server could not be read`;
+        }
       });
     } catch (e) {
       const error = e instanceof SyncError ? e : new SyncError('server', String(e));
@@ -211,7 +217,9 @@ export class SyncEngine {
     await this.#publish(problem === null ? 'synced' : 'error', problem);
   }
 
-  async #pull(): Promise<void> {
+  /** Returns how many remote saves were skipped because they do not parse. */
+  async #pull(): Promise<number> {
+    let unreadable = 0;
     const metas = await this.#client.list();
     const entries = await this.#entries();
     const locals = await this.#summaries();
@@ -224,8 +232,9 @@ export class SyncEngine {
         if (entry.deleted || summary !== undefined) continue; // nothing new remotely
       }
       await this.#localRace(async () => {
-        const remote = await this.#client.get(meta.id);
-        if (remote === null) return;
+        const remote = await this.#readable(() => this.#client.get(meta.id), meta.id);
+        if (remote === undefined) unreadable++;
+        if (remote === null || remote === undefined) return;
         const clean =
           summary === undefined ||
           entry?.deleted === true ||
@@ -237,10 +246,6 @@ export class SyncEngine {
         }
         const local = await this.#local.get(meta.id);
         if (local === null) return;
-        if (entry === undefined && sameContent(local, remote)) {
-          await this.#map(meta.id, remote.version, local.version);
-          return;
-        }
         await this.#resolveConflict(local, remote);
       });
     }
@@ -260,6 +265,24 @@ export class SyncEngine {
         // Deleted elsewhere but edited here: keep the edit, the push recreates it.
         await this.#state.update(entry.id, (cur) => cur && { ...cur, remote: 0 });
       }
+    }
+    return unreadable;
+  }
+
+  /**
+   * Run a read that may hit one unparseable remote save: that save is skipped (undefined) and
+   * logged once, so it cannot block the others.
+   */
+  async #readable<T>(read: () => Promise<T>, id: string): Promise<T | undefined> {
+    try {
+      return await read();
+    } catch (e) {
+      if (!(e instanceof SyncError) || e.code !== INVALID_RECORD) throw e;
+      if (!this.#unreadable.has(id)) {
+        this.#unreadable.add(id);
+        console.warn(`Skipping the unreadable remote save "${id}":`, e.message);
+      }
+      return undefined;
     }
   }
 
@@ -281,7 +304,12 @@ export class SyncEngine {
         if (record === null) continue;
         sent = true;
         try {
-          await this.#localRace(() => this.#sendPut(record, entry));
+          const done = await this.#readable(async () => {
+            await this.#localRace(() => this.#sendPut(record, entry));
+            return true;
+          }, record.id);
+          if (done === undefined)
+            problem = `"${record.title}" was not synced: unreadable on the server`;
         } catch (e) {
           if (!(e instanceof SyncError) || e.kind !== 'rejected') throw e;
           problem = `"${record.title}" was not synced: ${e.message}`;
@@ -319,6 +347,13 @@ export class SyncEngine {
   }
 
   async #sendDelete(entry: SyncEntry): Promise<void> {
+    if (entry.remote === 0) {
+      // Deleted before it ever reached the server: nothing to send.
+      await this.#state.update(entry.id, (cur) =>
+        cur?.deleted === true && cur.remote === 0 ? null : undefined,
+      );
+      return;
+    }
     const result = await this.#client.remove(entry.id, entry.remote);
     if (result.status === 'ok' || result.remote === null) {
       await this.#state.update(entry.id, (cur) => (cur?.deleted === true ? null : undefined));
@@ -335,6 +370,16 @@ export class SyncEngine {
    * the remote version take the id, and point the editor at the copy.
    */
   async #resolveConflict(local: SaveRecord, remote: SaveRecord): Promise<void> {
+    if (sameContent(local, remote)) {
+      // Not a real conflict: e.g. our own earlier PUT whose response was lost, or lost sync state.
+      await this.#state.update(local.id, (cur) => ({
+        ...(cur ?? emptyEntry(local.id)),
+        remote: remote.version,
+        local: local.version,
+        rejected: 0,
+      }));
+      return;
+    }
     const copyId = this.#newId();
     const song = { ...local.song, title: conflictTitle(local.song.title) };
     await this.#local.put(makeRecord(song, { id: copyId, version: 1, now: this.#now() }));
@@ -453,12 +498,13 @@ export class SyncingSaveStore implements SaveStore {
     return stored;
   }
 
-  /** Delete locally, then leave a tombstone when the server has the record. */
+  /**
+   * Delete locally, then always leave a tombstone: a first upload may be in flight, and its
+   * success keeps the flag. A tombstone with `remote: 0` is dropped without a request.
+   */
   async delete(id: string): Promise<void> {
     await this.inner.delete(id);
-    await this.state.update(id, (cur) =>
-      cur === undefined ? undefined : cur.remote > 0 ? { ...cur, deleted: true } : null,
-    );
+    await this.state.update(id, (cur) => ({ ...(cur ?? emptyEntry(id)), deleted: true }));
     await this.changed();
   }
 }

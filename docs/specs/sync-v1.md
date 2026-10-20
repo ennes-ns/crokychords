@@ -67,8 +67,9 @@ idempotent: a crash between a request and the state update at worst repeats a re
 ### Tombstones
 
 - `SyncingSaveStore` wraps the local `SaveStore` given to the `SaveSession`. Its `delete(id)` deletes
-  locally and then writes the tombstone: `deleted: true` when `entry.remote > 0`, else it removes
-  the entry (nothing to delete remotely).
+  locally and then always writes the tombstone (`deleted: true`; a new entry with `remote: 0` when
+  there was none). A first upload may be in flight: its success updates `remote` and keeps
+  `deleted: true`, so the DELETE follows. A tombstone with `remote: 0` is dropped without a request.
 - A tombstone is replayed as `DELETE /api/saves/:id` with `If-Match: "<entry.remote>"`.
   `204` or `404` → the entry is removed. `409` → the save was edited elsewhere after this device
   last saw it: **the edit wins over the delete** (no edit is ever discarded). The tombstone is
@@ -91,7 +92,9 @@ A sync **cycle** runs one at a time per tab, and across tabs inside the Web Lock
 | Backoff timer after a failed cycle                   | full                     |
 
 A **pull** reads `GET /api/saves` (metadata only) and compares each remote version with
-`entry.remote`; only changed saves are fetched with `GET /api/saves/:id`.
+`entry.remote`; only changed saves are fetched with `GET /api/saves/:id`. A fetched save that does
+not parse is skipped (logged once per id) and counted; the cycle goes on and ends in `error` with
+"n save(s) on the server could not be read", without backoff blocking the other records.
 
 | Remote                         | Local                         | Action                                                                    |
 | ------------------------------ | ----------------------------- | ------------------------------------------------------------------------- |
@@ -114,7 +117,10 @@ the full current record and reports `{ status: 'conflict', remote, error }`, whe
 `VersionConflictError` (`expected` = the version the server would accept, `actual` = the version
 offered), the same error the local store raises. A pull that finds a remote change on a dirty record is the same case.
 
-Resolution is the `SaveSession` copy rule, applied to the record that lost the race:
+When the remote record has the same title and song as the local one, it is not a conflict (for
+example the response to an earlier `PUT` was lost and the retry meets its own write): the entry is
+mapped to the remote version and nothing is copied. Otherwise the resolution is the `SaveSession`
+copy rule, applied to the record that lost the race:
 
 1. The local version is saved as a **new record** (fresh id, `version: 1`, title with `" (copy)"`).
 2. The remote record replaces the local one under the original id (local version + 1), and the

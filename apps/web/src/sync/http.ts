@@ -13,6 +13,9 @@ import {
 import type { SaveMeta, SyncClient, SyncResult } from '../store/sync';
 import { SyncError } from '../store/sync';
 
+/** `SyncError.code` for one remote record that does not parse; the sync skips just that save. */
+export const INVALID_RECORD = 'invalid_record';
+
 /** The slice of `Response` the client reads; a real Response satisfies it. */
 export interface ResponseLike {
   readonly status: number;
@@ -76,7 +79,7 @@ function remoteRecord(body: unknown): SaveRecord {
     return parseSaveRecord(body);
   } catch (e) {
     if (e instanceof SaveRecordError) {
-      throw new SyncError('server', `malformed save from the server: ${e.message}`);
+      throw new SyncError('server', `malformed save from the server: ${e.message}`, INVALID_RECORD);
     }
     throw e;
   }

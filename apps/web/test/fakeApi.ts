@@ -45,6 +45,12 @@ export class FakeApi {
   readonly saves = new Map<string, SaveRecord>();
   readonly requests: FakeRequest[] = [];
   mode: FakeMode = 'ok';
+  /** Handle the next request, then lose its response (fetch rejects as if offline). */
+  dropNextResponse = false;
+  /** Runs before each request is handled (to interleave local edits with an in-flight request). */
+  beforeHandle: ((method: string, path: string) => Promise<void>) | null = null;
+  /** Ids whose GET returns a record that does not parse. */
+  readonly corrupt = new Set<string>();
   maxSaves = 200;
   maxBytes = 262_144;
   #tick = 0;
@@ -91,8 +97,15 @@ export class FakeApi {
         return Promise.resolve(response(200, undefined, 'text/html; charset=utf-8'));
       case 'error':
         return Promise.resolve(apiError(503, 'internal'));
-      case 'ok':
-        return Promise.resolve(this.#handle(method, path, ifMatch, init.body));
+      case 'ok': {
+        const hook = this.beforeHandle;
+        const handled = (hook === null ? Promise.resolve() : hook(method, path)).then(() =>
+          this.#handle(method, path, ifMatch, init.body),
+        );
+        if (!this.dropNextResponse) return handled;
+        this.dropNextResponse = false;
+        return handled.then(() => Promise.reject(new TypeError('Failed to fetch')));
+      }
     }
   };
 
@@ -108,6 +121,9 @@ export class FakeApi {
     if (ifMatch !== null && Number.isNaN(ifMatch)) return apiError(400, 'invalid_request');
     const stored = this.saves.get(id);
     const storedVersion = stored?.version ?? 0;
+    if (method === 'GET' && stored !== undefined && this.corrupt.has(id)) {
+      return response(200, { ...stored, song: 42 });
+    }
     if (method === 'GET')
       return stored === undefined ? apiError(404, 'not_found') : response(200, stored);
     if (method === 'DELETE') {
