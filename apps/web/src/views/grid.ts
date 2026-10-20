@@ -1,8 +1,13 @@
-/** Chord grid: rows of bars, chord blocks spanning their beats, selection, add/remove/resize. */
+/**
+ * Chord grid: rows of bars, chord blocks spanning their beats, selection, add/remove/resize, and
+ * the loop range (shaded; set by clicking or dragging the bar numbers).
+ */
 import type { Song } from '@crokychords/core';
 import { chordAtBeat, isRestToken, songKey, totalBeats } from '@crokychords/core';
 import type { Actions } from '../actions';
 import { h, replaceChildren } from '../dom';
+import type { LoopRange } from '../loop';
+import { barRange, extendRange, spanBars } from '../loop';
 import { MIN_BEATS, barLength, chordStarts, setChordBeats } from '../edit';
 import { colorDegree, degreeHue, tokenName } from '../music';
 import type { AppState, Store } from '../state';
@@ -118,6 +123,31 @@ export function chordSegments(song: Song, layout: GridLayout): ChordSegment[] {
   return segments;
 }
 
+export interface LoopSegment {
+  row: number;
+  /** Left edge and width as fractions of the row. */
+  left: number;
+  width: number;
+}
+
+/** The loop range per row (split at row ends), limited to the rows the grid shows. */
+export function loopSegments(range: LoopRange, layout: GridLayout): LoopSegment[] {
+  const segments: LoopSegment[] = [];
+  const end = Math.min(range.end, layout.rows * layout.rowBeats);
+  let from = Math.max(0, range.start);
+  while (from < end - 1e-9) {
+    const { row } = beatToRowPosition(from, layout);
+    const to = Math.min(end, (row + 1) * layout.rowBeats);
+    segments.push({
+      row,
+      left: (from - row * layout.rowBeats) / layout.rowBeats,
+      width: (to - from) / layout.rowBeats,
+    });
+    from = to;
+  }
+  return segments;
+}
+
 function pct(fraction: number): string {
   return `${(fraction * 100).toFixed(4)}%`;
 }
@@ -127,8 +157,47 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
   root.setAttribute('aria-label', 'Chord grid');
   const playhead = h('div', { class: 'playhead', attrs: { 'aria-hidden': 'true' } });
   let tracks: HTMLElement[] = [];
+  let barLabels: HTMLElement[] = [];
   let layout = gridLayout(store.state.song);
   let last: unknown[] = [];
+  let lastLoop: unknown[] = [];
+  /** The bar a drag over the bar numbers started on. */
+  let dragBar: number | null = null;
+
+  const onBarLabelEnter = (bar: number): void => {
+    if (dragBar === null) return;
+    actions.setLoopRange(spanBars(layout.barBeats, dragBar, bar));
+  };
+
+  /** Touch pointers are captured by the label they start on: find the bar under the pointer. */
+  const onLoopDragMove = (event: PointerEvent): void => {
+    const doc = root.ownerDocument;
+    if (typeof doc.elementFromPoint !== 'function') return;
+    const label = doc.elementFromPoint(event.clientX, event.clientY)?.closest('.bar-label');
+    if (label instanceof HTMLElement) onBarLabelEnter(Number(label.dataset['bar']));
+  };
+
+  const endLoopDrag = (): void => {
+    dragBar = null;
+    window.removeEventListener('pointermove', onLoopDragMove);
+    window.removeEventListener('pointerup', endLoopDrag);
+    window.removeEventListener('pointercancel', endLoopDrag);
+  };
+
+  const onBarLabelDown = (event: PointerEvent, bar: number): void => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const { loopRange } = store.state;
+    if (event.shiftKey) {
+      actions.setLoopRange(extendRange(loopRange, layout.barBeats, bar));
+      return;
+    }
+    dragBar = bar;
+    actions.setLoopRange(barRange(layout.barBeats, bar));
+    window.addEventListener('pointermove', onLoopDragMove);
+    window.addEventListener('pointerup', endLoopDrag);
+    window.addEventListener('pointercancel', endLoopDrag);
+  };
 
   const startResize = (event: PointerEvent, index: number): void => {
     event.preventDefault();
@@ -180,15 +249,31 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
     layout = gridLayout(song);
     const key = songKey(song);
     tracks = [];
+    barLabels = [];
     const rows: HTMLElement[] = [];
     for (let row = 0; row < layout.rows; row++) {
       const labels = h('div', { class: 'bar-labels' });
       const track = h('div', { class: 'track' });
       for (let b = 0; b < layout.barsPerRow; b++) {
-        labels.append(h('span', {}, String(row * layout.barsPerRow + b + 1)));
-        const bar = h('div', { class: 'bar' });
-        for (let t = 0; t < layout.ticksPerBar; t++) bar.append(h('span', { class: 'tick' }));
-        track.append(bar);
+        const bar = row * layout.barsPerRow + b;
+        const label = h(
+          'span',
+          {
+            class: 'bar-label',
+            attrs: {
+              'data-bar': String(bar),
+              title: 'Click or drag: loop these bars · Shift+click: extend the loop',
+            },
+          },
+          String(bar + 1),
+        );
+        label.addEventListener('pointerdown', (e) => onBarLabelDown(e, bar));
+        label.addEventListener('pointerenter', () => onBarLabelEnter(bar));
+        barLabels.push(label);
+        labels.append(label);
+        const cell = h('div', { class: 'bar' });
+        for (let t = 0; t < layout.ticksPerBar; t++) cell.append(h('span', { class: 'tick' }));
+        track.append(cell);
       }
       track.onclick = (e) => onTrackClick(e, row, track);
       tracks.push(track);
@@ -250,6 +335,32 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
     replaceChildren(root, ...rows);
   };
 
+  const renderLoop = (state: AppState): void => {
+    for (const track of tracks) track.querySelector('.loop-region')?.remove();
+    const range = state.loopRange;
+    for (const label of barLabels) {
+      const bar = Number(label.dataset['bar']);
+      const inside =
+        range !== null &&
+        bar * layout.barBeats < range.end - 1e-9 &&
+        (bar + 1) * layout.barBeats > range.start + 1e-9;
+      label.classList.toggle('in-loop', inside);
+      label.classList.toggle('off', inside && !state.loop);
+    }
+    if (range === null) return;
+    for (const seg of loopSegments(range, layout)) {
+      const track = tracks[seg.row];
+      if (track === undefined) continue;
+      track.prepend(
+        h('div', {
+          class: state.loop ? 'loop-region' : 'loop-region off',
+          style: { left: pct(seg.left), width: pct(seg.width) },
+          attrs: { 'aria-hidden': 'true' },
+        }),
+      );
+    }
+  };
+
   const renderPlayhead = (state: AppState): void => {
     if (!state.playing) {
       playhead.remove();
@@ -267,9 +378,16 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
       ? (chordAtBeat(state.song, state.cursor)?.index ?? null)
       : null;
     const inputs = [state.song, state.selected, playingIndex];
+    let rebuilt = false;
     if (!inputs.every((value, i) => value === last[i])) {
       last = inputs;
       renderBlocks(state, playingIndex);
+      rebuilt = true;
+    }
+    const loopInputs = [state.loopRange, state.loop];
+    if (rebuilt || !loopInputs.every((value, i) => value === lastLoop[i])) {
+      lastLoop = loopInputs;
+      renderLoop(state);
     }
     renderPlayhead(state);
   };

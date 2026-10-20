@@ -136,6 +136,8 @@ function noopActions(): Actions {
     togglePlay: noop,
     stop: noop,
     setLoop: noop,
+    toggleLoop: noop,
+    setLoopRange: noop,
     audition: noop,
     enableMidi: () => Promise.resolve(),
     selectMidiOut: noop,

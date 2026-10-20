@@ -123,6 +123,22 @@ export class MidiOut {
   }
 
   /**
+   * Loop wrap at `time` (DOMHighResTimeStamp): without dropping pending messages, release the
+   * notes we sent and send All Notes Off (CC 123) on those channels plus `channels`, timestamped
+   * so they land before the notes of the next pass (sent after this, at the same time).
+   */
+  notesOffAt(channels: Iterable<number>, time: number): void {
+    const out = this.#output();
+    if (out === null) return;
+    const all = new Set([...this.#sounding.keys(), ...[...channels].map((c) => c & 0x0f)]);
+    for (const ch of [...all].sort((a, b) => a - b)) {
+      for (const note of this.#sounding.get(ch) ?? []) out.send([NOTE_OFF | ch, note, 0], time);
+      out.send([CONTROL_CHANGE | ch, ALL_NOTES_OFF, 0], time);
+    }
+    this.#sounding.clear();
+  }
+
+  /**
    * Stop: drop pending messages, then on every channel we sent notes on plus `channels` (the
    * song's track channels) release our notes and send CC 120 and CC 123.
    */

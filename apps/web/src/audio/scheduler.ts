@@ -3,10 +3,17 @@
  * 25 ms and schedules every note event (from core's `renderSong`) that starts within the next
  * 100 ms on the precise audio clock. Sinks (synth, Web MIDI) receive audio-clock times.
  * Drum hits of the current drum pattern are scheduled the same way, to sinks that play drums.
+ *
+ * Looping (docs/specs/loop-v1.md) plays the loop range `[start, end)` (or the whole song) again
+ * and again without a gap: beats on the scheduler's timeline keep growing, and pass k >= 1 plays
+ * the events of the range shifted by k range lengths. Notes are cut at the loop end, and sinks
+ * get `loopWrap` at every jump back so they can release what is still held.
  */
 import type { NoteEvent, Song } from '@crokychords/core';
 import { renderSong, totalBeats } from '@crokychords/core';
 import type { DrumHit, DrumPatternId } from './instruments';
+import type { LoopRange } from '../loop';
+import { loopBounds } from '../loop';
 import { drumHits } from './instruments';
 
 export const TICK_MS = 25;
@@ -25,6 +32,8 @@ export interface NoteSink {
   stopAll(): void;
   /** Play a drum hit at `time`. Optional: sinks without it (Web MIDI) get no drums. */
   playDrum?(hit: DrumHit, time: number): void;
+  /** The playhead jumps from the loop end back to the loop start at `time` (optional). */
+  loopWrap?(time: number): void;
 }
 
 export interface Timer {
@@ -52,6 +61,8 @@ export function firstEventAt(events: readonly NoteEvent[], beat: number): number
 export interface StartOptions {
   fromBeat?: number;
   loop?: boolean;
+  /** The loop range; null or absent loops the whole song. */
+  range?: LoopRange | null;
 }
 
 export class Scheduler {
@@ -64,6 +75,7 @@ export class Scheduler {
   #events: NoteEvent[] = [];
   #total = 0;
   #loop = false;
+  #range: LoopRange | null = null;
   #secondsPerBeat = 0.5;
   #beatsPerBar = 4;
   /** Absolute beats (they keep growing while looping) are anchored to an audio time. */
@@ -102,10 +114,14 @@ export class Scheduler {
   start(song: Song, options: StartOptions = {}): void {
     this.stop();
     this.#loop = options.loop ?? false;
+    this.#range = options.range ?? null;
     this.#setSong(song);
     if (this.#total <= 0) return;
     const from = Math.min(Math.max(0, options.fromBeat ?? 0), this.#total);
-    this.#anchorBeat = from >= this.#total ? 0 : from;
+    const { start, end } = this.#bounds();
+    // Past the end there is nothing to play: start over (from the loop start when looping).
+    const last = this.#loop ? end : this.#total;
+    this.#anchorBeat = from >= last ? (this.#loop ? start : 0) : from;
     this.#anchorTime = this.#clock.now() + START_DELAY_S;
     this.#scheduledUntil = this.#anchorBeat;
     this.#timerId = this.#timer.setInterval(() => this.tick(), TICK_MS);
@@ -119,8 +135,17 @@ export class Scheduler {
     for (const sink of this.#sinks()) sink.stopAll();
   }
 
-  setLoop(loop: boolean): void {
-    this.#loop = loop;
+  /** Turn looping on or off and set the loop range; while playing the change applies at once. */
+  setLoop(loop: boolean, range: LoopRange | null = this.#range): void {
+    if (!this.playing) {
+      this.#loop = loop;
+      this.#range = range;
+      return;
+    }
+    this.#rebase(() => {
+      this.#loop = loop;
+      this.#range = range;
+    });
   }
 
   /**
@@ -129,22 +154,34 @@ export class Scheduler {
    */
   update(song: Song): void {
     if (!this.playing) return;
+    this.#rebase(() => this.#setSong(song));
+    if (this.#total <= 0) this.#finish();
+  }
+
+  /**
+   * Re-anchor the timeline at the current song position (pass 0, where timeline beats are song
+   * beats), apply `change`, and jump to the loop start when the position is past the new loop end.
+   */
+  #rebase(change: () => void): void {
     const now = this.#clock.now();
     const beat = Math.max(this.#anchorBeat, this.#beatAt(now));
-    const shift = this.#total > 0 ? Math.floor(beat / this.#total) * this.#total : 0;
-    this.#anchorBeat = beat - shift;
+    const position = this.#songBeat(beat);
+    const shift = beat - position;
     this.#anchorTime = Math.max(now, this.#anchorTime);
-    this.#scheduledUntil = Math.max(this.#anchorBeat, this.#scheduledUntil - shift);
-    this.#setSong(song);
-    if (this.#total <= 0) this.#finish();
+    this.#scheduledUntil = Math.max(position, this.#scheduledUntil - shift);
+    this.#anchorBeat = position;
+    change();
+    const { start, end } = this.#bounds();
+    if (this.#loop && position >= end) {
+      this.#anchorBeat = start;
+      this.#scheduledUntil = start;
+    }
   }
 
   /** Playhead in song beats (wrapped while looping), or null when stopped. */
   position(): number | null {
     if (!this.playing) return null;
-    const beat = Math.max(this.#anchorBeat, this.#beatAt(this.#clock.now()));
-    if (this.#loop && this.#total > 0) return beat % this.#total;
-    return Math.min(beat, this.#total);
+    return this.#songBeat(Math.max(this.#anchorBeat, this.#beatAt(this.#clock.now())));
   }
 
   /** One scheduler wake-up (public for tests). */
@@ -163,20 +200,30 @@ export class Scheduler {
     const drumSinks = sinks.filter((s) => s.playDrum !== undefined);
     const pattern = drumSinks.length > 0 ? this.#drums() : 'none';
     const events = this.#events;
-    let pass = Math.floor(this.#scheduledUntil / this.#total);
-    while (pass * this.#total < until) {
-      // Looping restarts the event list: pass k plays every event shifted by k song lengths.
-      const offset = pass * this.#total;
-      for (let i = firstEventAt(events, this.#scheduledUntil - offset); i < events.length; i++) {
+    const { start, end } = this.#loop ? this.#bounds() : { start: 0, end: this.#total };
+    const length = end - start;
+    // Pass 0 plays the song from beat 0 up to the loop end; pass k >= 1 the range, k lengths on.
+    let pass = this.#scheduledUntil < end ? 0 : Math.floor((this.#scheduledUntil - start) / length);
+    for (;;) {
+      const offset = pass * length;
+      const passStart = pass === 0 ? 0 : start;
+      if (passStart + offset >= until) break;
+      const from = Math.max(this.#scheduledUntil - offset, passStart);
+      const to = Math.min(until - offset, end);
+      if (pass > 0 && from === passStart) {
+        const time = this.#timeAt(offset + start);
+        for (const sink of sinks) sink.loopWrap?.(time);
+      }
+      for (let i = firstEventAt(events, from); i < events.length; i++) {
         const event = events[i];
-        if (event === undefined || offset + event.start >= until) break;
+        if (event === undefined || event.start >= to) break;
         const time = this.#timeAt(offset + event.start);
-        const duration = event.duration * this.#secondsPerBeat;
+        // While looping, a note that runs past the loop end is cut there.
+        const beats = this.#loop ? Math.min(event.duration, end - event.start) : event.duration;
+        const duration = beats * this.#secondsPerBeat;
         for (const sink of sinks) sink.playNote(event, time, duration);
       }
       // Drum bars restart with every pass, like the events.
-      const from = Math.max(0, this.#scheduledUntil - offset);
-      const to = Math.min(this.#total, until - offset);
       for (const hit of drumHits(pattern, this.#beatsPerBar, from, to)) {
         const time = this.#timeAt(offset + hit.beat);
         for (const sink of drumSinks) sink.playDrum?.(hit, time);
@@ -198,6 +245,20 @@ export class Scheduler {
     this.#total = total;
     this.#secondsPerBeat = 60 / song.tempo;
     this.#beatsPerBar = song.meter.beats;
+  }
+
+  /** The loop range clipped to the song (the whole song without a range). */
+  #bounds(): LoopRange {
+    return loopBounds(this.#range, this.#total);
+  }
+
+  /** Timeline beat → song beat: wrapped into the loop range while looping, else clamped. */
+  #songBeat(beat: number): number {
+    if (!this.#loop) return Math.min(beat, this.#total);
+    const { start, end } = this.#bounds();
+    const length = end - start;
+    if (beat < end || length <= 0) return beat;
+    return beat - Math.floor((beat - start) / length) * length;
   }
 
   #beatAt(time: number): number {

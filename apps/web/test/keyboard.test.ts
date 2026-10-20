@@ -49,6 +49,29 @@ describe('keyAction', () => {
     expect(keyAction(press('a'))).toBeNull();
   });
 
+  it('maps Space to play/stop, Shift+Space to play from the selection', () => {
+    expect(keyAction(press(' ', { code: 'Space' }))).toEqual({ type: 'togglePlay' });
+    expect(keyAction(press(' ', { code: 'Space', shiftKey: true }))).toEqual({
+      type: 'togglePlay',
+      fromSelection: true,
+    });
+    expect(keyAction(press(' ', { code: 'Space', ctrlKey: true }))).toBeNull();
+  });
+
+  it('maps L to loop on/off and Alt+[ / Alt+] to loop points (by physical key)', () => {
+    expect(keyAction(press('l'))).toEqual({ type: 'toggleLoop' });
+    expect(keyAction(press('L', { shiftKey: true }))).toEqual({ type: 'toggleLoop' });
+    expect(keyAction(press('“', { code: 'BracketLeft', altKey: true }))).toEqual({
+      type: 'loopStart',
+    });
+    expect(keyAction(press(']', { code: 'BracketRight', altKey: true }))).toEqual({
+      type: 'loopEnd',
+    });
+    // Plain brackets still resize the selected chord.
+    expect(keyAction(press('[', { code: 'BracketLeft' }))).toEqual({ type: 'resize', delta: -1 });
+    expect(keyAction(press('l', { altKey: true }))).toBeNull();
+  });
+
   it('maps M to muting the selected track', () => {
     expect(keyAction(press('m'))).toEqual({ type: 'toggleMute' });
     expect(keyAction(press('M', { shiftKey: true }))).toEqual({ type: 'toggleMute' });

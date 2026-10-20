@@ -130,9 +130,53 @@ describe('actions', () => {
     actions.select(1);
     actions.togglePlay();
     await vi.waitFor(() => expect(store.state.playing).toBe(true));
-    expect(store.state.cursor).toBe(4);
+    expect(store.state.cursor).toBe(0); // Play starts from the beginning, not the selection
     actions.key({ type: 'togglePlay' });
     expect(store.state.playing).toBe(false);
+    actions.key({ type: 'togglePlay', fromSelection: true }); // Shift+Space
+    await vi.waitFor(() => expect(store.state.playing).toBe(true));
+    expect(store.state.cursor).toBe(4);
+    actions.stop();
+  });
+
+  it('starts at the loop start when looping a range, else at beat 0', async () => {
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn(() => 1),
+    );
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const { store, actions } = setup(['I', 'IV', 'V', 'I']);
+    actions.setLoopRange({ start: 4, end: 12 });
+    expect(store.state.loop).toBe(true); // setting loop points turns looping on
+    actions.togglePlay();
+    await vi.waitFor(() => expect(store.state.playing).toBe(true));
+    expect(store.state.cursor).toBe(4);
+    actions.stop();
+    actions.key({ type: 'toggleLoop' });
+    expect(store.state.loop).toBe(false);
+    actions.togglePlay();
+    await vi.waitFor(() => expect(store.state.playing).toBe(true));
+    expect(store.state.cursor).toBe(0); // the range is kept but not used while not looping
+    actions.stop();
+    expect(store.state.loopRange).toEqual({ start: 4, end: 12 });
+    actions.setLoopRange(null);
+    expect(store.state.loopRange).toBeNull();
+  });
+
+  it('sets loop points at the selected chord with Alt+[ and Alt+]', () => {
+    const { store, actions } = setup(['I', 'IV', 'V', 'I']);
+    actions.key({ type: 'loopStart' }); // nothing selected: no-op
+    expect(store.state.loopRange).toBeNull();
+    actions.select(1);
+    actions.key({ type: 'loopStart' });
+    expect(store.state.loopRange).toEqual({ start: 4, end: 16 }); // to the end of the song
+    actions.select(2);
+    actions.key({ type: 'loopEnd' });
+    expect(store.state.loopRange).toEqual({ start: 4, end: 12 });
+    actions.select(0);
+    actions.key({ type: 'loopEnd' }); // an end before the start resets the start to 0
+    expect(store.state.loopRange).toEqual({ start: 0, end: 4 });
+    expect(store.state.loop).toBe(true);
   });
 
   it('edits the band with undo/redo and keeps track selection valid', () => {

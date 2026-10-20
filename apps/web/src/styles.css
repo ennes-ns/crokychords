@@ -854,3 +854,58 @@ button.icon.danger:hover:not(:disabled) {
     transition: none !important;
   }
 }
+
+/* Loop points (docs/specs/loop-v1.md): shaded range in the grid, bar numbers as handles. */
+
+.bar-label {
+  cursor: pointer;
+  touch-action: none;
+  border-radius: var(--radius);
+}
+
+.bar-label:hover {
+  color: var(--text);
+}
+
+.bar-label.in-loop {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.bar-label.in-loop.off {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.loop-region {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    inset -2px 0 0 var(--accent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.loop-region.off {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  box-shadow:
+    inset 1px 0 0 var(--line-strong),
+    inset -1px 0 0 var(--line-strong);
+}
+
+.loop-range {
+  font-size: var(--font-size-xs);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.loop-range.off {
+  color: var(--muted);
+}
+
+.loop-clear {
+  padding-inline: 6px;
+}

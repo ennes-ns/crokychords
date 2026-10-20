@@ -7,6 +7,7 @@ import {
   beatToX,
   chordSegments,
   gridLayout,
+  loopSegments,
   mountGrid,
   xToBeat,
 } from '../src/views/grid';
@@ -72,6 +73,60 @@ describe('chordSegments', () => {
   });
 });
 
+describe('loopSegments', () => {
+  it('splits the loop range at row ends and stops at the last row', () => {
+    const s = song([4, 4, 4, 4, 4]); // 5 bars: 2 rows of 16 beats
+    const layout = gridLayout(s);
+    expect(loopSegments({ start: 12, end: 20 }, layout)).toEqual([
+      { row: 0, left: 0.75, width: 0.25 },
+      { row: 1, left: 0, width: 0.25 },
+    ]);
+    expect(loopSegments({ start: 28, end: 40 }, layout)).toEqual([
+      { row: 1, left: 0.75, width: 0.25 },
+    ]);
+  });
+});
+
+describe('mountGrid loop points', () => {
+  it('sets the loop from the bar numbers and shades the range', () => {
+    const store = new Store(initialState(song([4, 4, 4, 4])));
+    const actions = fakeActions();
+    actions.setLoopRange = (range) =>
+      store.set(range === null ? { loopRange: null } : { loopRange: range, loop: true });
+    const root = document.createElement('section');
+    mountGrid(root, store, actions);
+    const label = (bar: number) =>
+      root.querySelector<HTMLElement>(`.bar-label[data-bar="${bar}"]`) ?? document.body;
+    const down = (bar: number, shiftKey = false) =>
+      label(bar).dispatchEvent(
+        new MouseEvent('pointerdown', { button: 0, shiftKey, bubbles: true }),
+      );
+
+    down(1);
+    expect(store.state.loopRange).toEqual({ start: 4, end: 8 });
+    label(2).dispatchEvent(new MouseEvent('pointerenter'));
+    expect(store.state.loopRange).toEqual({ start: 4, end: 12 }); // dragged over bar 3
+    window.dispatchEvent(new MouseEvent('pointerup'));
+    label(3).dispatchEvent(new MouseEvent('pointerenter'));
+    expect(store.state.loopRange).toEqual({ start: 4, end: 12 }); // the drag is over
+
+    down(3, true);
+    expect(store.state.loopRange).toEqual({ start: 4, end: 16 }); // Shift+click extends
+    const inLoop = [...root.querySelectorAll('.bar-label.in-loop')].map((l) => l.textContent);
+    expect(inLoop).toEqual(['2', '3', '4']);
+    const region = root.querySelector<HTMLElement>('.loop-region');
+    expect(region?.style.left).toBe('25%');
+    expect(region?.style.width).toBe('75%');
+    expect(region?.classList.contains('off')).toBe(false);
+
+    store.set({ loop: false });
+    expect(root.querySelector('.loop-region')?.classList.contains('off')).toBe(true);
+    store.set({ loopRange: null });
+    expect(root.querySelector('.loop-region')).toBeNull();
+    expect(root.querySelector('.bar-label.in-loop')).toBeNull();
+  });
+});
+
 function fakeActions(): Actions {
   const noop = () => undefined;
   return {
@@ -101,6 +156,8 @@ function fakeActions(): Actions {
     togglePlay: noop,
     stop: noop,
     setLoop: noop,
+    toggleLoop: noop,
+    setLoopRange: noop,
     audition: vi.fn(),
     enableMidi: () => Promise.resolve(),
     selectMidiOut: noop,

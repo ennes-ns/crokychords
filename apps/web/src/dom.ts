@@ -54,3 +54,11 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   }
   return false;
 }
+
+/**
+ * True when Space should type into the target instead of playing: text fields (the song title),
+ * number inputs (BPM), text areas and contentEditable. Selects, checkboxes and buttons are not.
+ */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  return isEditableTarget(target) && !(target instanceof HTMLSelectElement);
+}

@@ -1,6 +1,6 @@
 /** Everything the views and the keyboard can do, wired to the store, audio and MIDI. */
 import type { Degree, Song, TrackRole } from '@crokychords/core';
-import { createSong, diatonicTriadToken } from '@crokychords/core';
+import { createSong, diatonicTriadToken, totalBeats } from '@crokychords/core';
 import type { NoteSink } from './audio/scheduler';
 import { Scheduler } from './audio/scheduler';
 import type { AudioEngine, NoteHandle } from './audio/synth';
@@ -30,6 +30,8 @@ import {
   setChordToken,
 } from './edit';
 import type { KeyAction } from './keyboard';
+import type { LoopRange } from './loop';
+import { playStart, withLoopEnd, withLoopStart } from './loop';
 import { downloadMidi } from './midi/download';
 import type { MidiOut } from './midi/webmidi';
 import type { PlaceMode, Store } from './state';
@@ -73,9 +75,16 @@ export interface Actions {
   newSong(): void;
   undo(): void;
   redo(): void;
-  togglePlay(): void;
+  /**
+   * Play from the start (the loop start when looping, else beat 0), or stop. `fromSelection`
+   * plays from the selected chord instead.
+   */
+  togglePlay(fromSelection?: boolean): void;
   stop(): void;
   setLoop(loop: boolean): void;
+  toggleLoop(): void;
+  /** Set the loop points (null clears them); setting a range turns looping on. */
+  setLoopRange(range: LoopRange | null): void;
   /** Play `token` through the selected track (fallback: the first unmuted track). */
   audition(token: string): void;
   enableMidi(): Promise<void>;
@@ -110,6 +119,8 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
         duration * 1000,
       ),
     stopAll: () => midi.allNotesOff(trackChannels(songTracks(store.state.song))),
+    loopWrap: (time) =>
+      midi.notesOffAt(trackChannels(songTracks(store.state.song)), audio.toPerformanceTime(time)),
   };
   const scheduler = new Scheduler(
     { now: () => audio.context?.currentTime ?? performance.now() / 1000 },
@@ -138,6 +149,9 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
   scheduler.onEnd = stopped;
 
   store.subscribe((state, previous) => {
+    if (state.loop !== previous.loop || state.loopRange !== previous.loopRange) {
+      scheduler.setLoop(state.loop, state.loopRange);
+    }
     if (state.song === previous.song) return;
     scheduler.update(state.song);
     const before = songTracks(previous.song);
@@ -280,9 +294,9 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
       store.redo();
     },
 
-    togglePlay() {
+    togglePlay(fromSelection = false) {
       if (store.state.playing) actions.stop();
-      else void play();
+      else void play(fromSelection);
     },
 
     stop() {
@@ -291,8 +305,15 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     },
 
     setLoop(loop) {
-      scheduler.setLoop(loop);
       store.set({ loop });
+    },
+
+    toggleLoop() {
+      actions.setLoop(!store.state.loop);
+    },
+
+    setLoopRange(range) {
+      store.set(range === null ? { loopRange: null } : { loopRange: range, loop: true });
     },
 
     audition(token) {
@@ -373,8 +394,25 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
           break;
         }
         case 'togglePlay':
-          actions.togglePlay();
+          actions.togglePlay(action.fromSelection ?? false);
           break;
+        case 'toggleLoop':
+          actions.toggleLoop();
+          break;
+        case 'loopStart':
+        case 'loopEnd': {
+          // At the selected chord: its start for `[`, its end for `]`.
+          const { song, selected, loopRange } = store.state;
+          const chord = selected === null ? undefined : song.chords[selected];
+          if (selected === null || chord === undefined) break;
+          const start = chordStart(song, selected);
+          actions.setLoopRange(
+            action.type === 'loopStart'
+              ? withLoopStart(loopRange, start, totalBeats(song))
+              : withLoopEnd(loopRange, start + chord.beats),
+          );
+          break;
+        }
         case 'deselect':
           actions.select(null);
           break;
@@ -393,14 +431,17 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     },
   };
 
-  async function play(): Promise<void> {
+  async function play(fromSelection: boolean): Promise<void> {
     await actions.startAudio();
-    const { song, selected, loop } = store.state;
+    const { song, selected, loop, loopRange } = store.state;
     if (song.chords.length === 0) return;
-    const fromBeat = selected === null ? 0 : chordStart(song, selected);
-    scheduler.start(song, { fromBeat, loop });
+    const fromBeat =
+      fromSelection && selected !== null
+        ? chordStart(song, selected)
+        : playStart(loop, loopRange, totalBeats(song));
+    scheduler.start(song, { fromBeat, loop, range: loopRange });
     if (!scheduler.playing) return;
-    store.set({ playing: true, cursor: fromBeat });
+    store.set({ playing: true, cursor: scheduler.position() ?? fromBeat });
     if (frame === null) frame = requestAnimationFrame(follow);
   }
 
