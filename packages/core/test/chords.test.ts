@@ -8,6 +8,7 @@ import {
   chordName,
   chordPitchClasses,
   chordRootPitchClass,
+  chordTones,
   isDiminishedExtension,
   voiceChord,
 } from '../src/chords';
@@ -135,6 +136,62 @@ describe('chordBassPitchClass', () => {
     ['I7sus2/3', 10],
   ])('%s in C -> %i', (token, pc) => {
     expect(chordBassPitchClass(parseToken(token), C)).toBe(pc);
+  });
+});
+
+/** 'role:accidental-degree' per tone, e.g. 'third:b3'. */
+const tones = (t: string, key: Key = C): string[] =>
+  chordTones(parseToken(t), key).map((tone) => {
+    const acc = tone.accidental < 0 ? 'b'.repeat(-tone.accidental) : '#'.repeat(tone.accidental);
+    return `${tone.role}:${acc}${tone.degree}`;
+  });
+
+describe('chordTones', () => {
+  it('spells diatonic triads on the degrees of the key', () => {
+    expect(tones('I')).toEqual(['root:1', 'third:3', 'fifth:5']);
+    expect(tones('ii')).toEqual(['root:2', 'third:4', 'fifth:6']);
+    expect(tones('vii°')).toEqual(['root:7', 'third:2', 'fifth:4']);
+    expect(tones('i', A_MINOR)).toEqual(['root:1', 'third:3', 'fifth:5']);
+  });
+
+  it('adds the seventh and leaves extensions and added tones out', () => {
+    expect(tones('V7')).toEqual(['root:5', 'third:7', 'fifth:2', 'seventh:4']);
+    expect(tones('Imaj7')).toEqual(['root:1', 'third:3', 'fifth:5', 'seventh:7']);
+    expect(tones('viiø7')).toEqual(['root:7', 'third:2', 'fifth:4', 'seventh:6']);
+    expect(tones('#vii°7', A_MINOR)).toEqual(['root:#7', 'third:2', 'fifth:4', 'seventh:6']);
+    expect(tones('V9')).toEqual(tones('V7'));
+    expect(tones('Iadd9')).toEqual(tones('I'));
+  });
+
+  it('marks borrowed and chromatic tones with their accidental', () => {
+    expect(tones('bVII')).toEqual(['root:b7', 'third:2', 'fifth:4']);
+    expect(tones('iv')).toEqual(['root:4', 'third:b6', 'fifth:1']);
+    expect(tones('bVI')).toEqual(['root:b6', 'third:1', 'fifth:b3']);
+    expect(tones('V', A_MINOR)).toEqual(['root:5', 'third:#7', 'fifth:2']);
+  });
+
+  it('spells applied chords from their target', () => {
+    expect(tones('V/vi')).toEqual(['root:3', 'third:#5', 'fifth:7']);
+    expect(tones('V7/V')).toEqual(['root:2', 'third:#4', 'fifth:6', 'seventh:1']);
+  });
+
+  it('spells sus tones and altered fifths', () => {
+    expect(tones('Vsus4')).toEqual(['root:5', 'third:1', 'fifth:2']);
+    expect(tones('Isus2')).toEqual(['root:1', 'third:2', 'fifth:5']);
+    expect(tones('V7(b5)')).toEqual(['root:5', 'third:7', 'fifth:b2', 'seventh:4']);
+  });
+
+  it('ignores the inversion', () => {
+    for (const inv of ['/1', '/2']) expect(tones(`V${inv}`)).toEqual(tones('V'));
+    expect(tones('V7/3')).toEqual(tones('V7'));
+  });
+
+  it('agrees with chordPitchClasses on the pitch classes', () => {
+    for (const t of ['I', 'V7', 'bVII', 'V/vi', '#vii°7', 'Vsus4']) {
+      const got = chordTones(parseToken(t), F).map((tone) => tone.pitchClass);
+      expect(pcs(t, F)).toEqual(expect.arrayContaining(got));
+      expect(got[0]).toBe(chordRootPitchClass(parseToken(t), F));
+    }
   });
 });
 
