@@ -75,6 +75,27 @@ What it means:
 - Owners are shown by a handle (a neutral `user-…` default or a chosen, unique name), never by
   anything derived from their e-mail address.
 
+### Moderation models
+
+The automatic checks of pending shares (`docs/specs/moderation-v1.md`) use open models that run
+in the GitHub Actions runner of `.github/workflows/moderation.yml`. They are downloaded at run
+time into the runner's cache (never into git, the build or the app) and only recommend; the
+maintainer decides.
+
+| Model / data | Used for | Source | Licence |
+|--------------|----------|--------|---------|
+| Whisper `small` (CTranslate2 conversion) | transcript of speech (rule 6) | OpenAI Whisper weights, converted by the faster-whisper project, fetched from the Hugging Face hub by `faster-whisper` | MIT (weights and conversion) |
+| faster-whisper, CTranslate2 | running Whisper on the CPU | PyPI | MIT |
+| silero VAD v5 (bundled with faster-whisper) | share of the sample that is speech (rule 7) | PyPI (inside `faster-whisper`) | MIT |
+| YAMNet (TFLite, float32) | AudioSet event scores (rules 8–15) | Google's MediaPipe model storage, SHA-256 pinned in `tools/moderation/policy.yaml` | Apache 2.0 |
+| YAMNet class map (`yamnet_class_map.csv`) | the AudioSet class names | `tensorflow/models` at a pinned commit, SHA-256 pinned | Apache 2.0; the AudioSet ontology's class names are CC BY-SA 4.0 |
+| LiteRT (`ai-edge-litert`), ONNX Runtime | running YAMNet and the VAD | PyPI | Apache 2.0, MIT |
+| Llama Guard 3 8B (`@cf/meta/llama-guard-3-8b`) | name and tags (rule 18) | Cloudflare Workers AI, called by the Worker; nothing is downloaded or redistributed | Llama 3.1 Community License (open weights) |
+
+Nothing is sent to a third party beyond Cloudflare: the audio stays in the runner, and only a
+sample's name and tags go to Workers AI. Tests use audio generated in code; a real speech test
+needs a local text-to-speech model, which is optional and not part of the repository.
+
 ## SoundFonts
 
 The browser instruments of `docs/specs/soundfonts-v1.md` play samples that are downloaded at
@@ -103,7 +124,7 @@ build time, never committed:
 
 The code is MIT (`LICENSE`). Suggestion data derived from Chordonomicon (CC BY-NC 4.0):
 attribution required, non-commercial. SoundFont samples: see "SoundFonts" above. Community
-samples: the `community-v1` grant above.
+samples: the `community-v1` grant above. Moderation models: see "Moderation models" above.
 
 ## Token mapping caveats
 

@@ -105,6 +105,12 @@ The community bank adds `/api/samples*`, `/api/community`, `/api/me/handle` and
 [`community-v1.md`](community-v1.md) §3 (with its error codes `forbidden`, `sample_limit_reached`,
 `not_listed`, `share_rejected` and `sample_in_use`).
 
+Moderation ([`moderation-v1.md`](moderation-v1.md) §3) adds `/api/moderation/job/*` for the
+scheduled job, which is the one exception to the user session: an Access **service token** (its
+JWT carries `common_name` instead of `email`) plus `Authorization: Bearer <MODERATION_TOKEN>`,
+compared in constant time; no user is created. It also adds `POST /api/samples/:id/report`,
+`POST /api/samples/:id/appeal` and `POST /api/moderation/:id/delete`.
+
 ### Version check (optimistic concurrency)
 
 - `PUT`: the body is a full `SaveRecord` whose `id` equals `:id`. The *base version* is the version
