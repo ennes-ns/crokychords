@@ -1,7 +1,8 @@
 /**
- * The user's own break for Breakcore mode (docs/specs/breakcore-v1.md, "Own break"): one audio
- * file kept as bytes in IndexedDB (database `crokychords-samples`, object store `samples`, key
- * `break`), or in memory when IndexedDB is unavailable. Never part of the song or of git.
+ * The user's own audio files, kept as bytes in IndexedDB (database `crokychords-samples`, object
+ * store `samples`), or in memory when IndexedDB is unavailable: the own break for Breakcore mode
+ * (docs/specs/breakcore-v1.md, "Own break", key `break`) and the sample of every sampler slot
+ * (docs/specs/sampler-v1.md §2, keys `sampler-1` … `sampler-8`). Never part of the song or of git.
  */
 import type { IdbDatabaseLike, IdbFactoryLike, IdbRequestLike } from './indexedDb';
 
@@ -12,6 +13,10 @@ export const BREAK_SAMPLE_ID = 'break';
 export const SAMPLE_SCHEMA_VERSION = 1;
 /** Largest own break file accepted (bytes). */
 export const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
+/** Largest sampler file accepted (bytes). */
+export const MAX_SAMPLER_BYTES = 10 * 1024 * 1024;
+/** Largest record the store reads back: the larger of the two limits. */
+export const MAX_STORED_BYTES = Math.max(MAX_SAMPLE_BYTES, MAX_SAMPLER_BYTES);
 
 export interface StoredSample {
   schema_version: 1;
@@ -37,7 +42,7 @@ export function parseStoredSample(value: unknown): StoredSample | null {
   if (get('schema_version') !== SAMPLE_SCHEMA_VERSION) return null;
   if (typeof id !== 'string' || typeof name !== 'string' || typeof type !== 'string') return null;
   if (typeof savedAt !== 'string' || !(bytes instanceof ArrayBuffer)) return null;
-  if (bytes.byteLength === 0 || bytes.byteLength > MAX_SAMPLE_BYTES) return null;
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_STORED_BYTES) return null;
   return { schema_version: 1, id, name, type, bytes, saved_at: savedAt };
 }
 
@@ -123,7 +128,7 @@ export async function openSampleStore(factory: IdbFactoryLike | null): Promise<S
     try {
       return await IndexedDbSampleStore.open(factory);
     } catch (e) {
-      console.warn('IndexedDB is unavailable, keeping the own break in memory:', e);
+      console.warn('IndexedDB is unavailable, keeping own samples in memory:', e);
     }
   }
   return new MemorySampleStore();

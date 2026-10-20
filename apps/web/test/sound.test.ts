@@ -9,9 +9,14 @@ import {
   parseSound,
   trackPrograms,
 } from '../src/audio/sound';
+import { defaultPatch, defaultSamplers } from '../src/audio/sampler';
 
 /** Settings with only a preset and drums, as saved before per-track instruments existed. */
-const plain = { instruments: {}, melody: { octave: 0, velocity: 100 } };
+const plain = {
+  instruments: {},
+  melody: { octave: 0, velocity: 100 },
+  samplers: defaultSamplers(),
+};
 
 function memory(initial: Record<string, string> = {}): SoundStorage & {
   data: Record<string, string>;
@@ -64,6 +69,7 @@ describe('parseSound', () => {
       drums: 'none',
       instruments: { 'trk-a': 'flute', melody: 'pad' },
       melody: { octave: -2, velocity: 64 },
+      samplers: defaultSamplers(),
     });
     const bad = parseSound('{"instruments":[1],"melody":{"octave":3,"velocity":0.5}}');
     expect(bad.instruments).toEqual({});
@@ -176,5 +182,43 @@ describe('SoundSettings', () => {
     expect(b.state).toEqual(defaultSound());
     b.setDrums('ballad');
     expect(b.drums).toBe('ballad');
+  });
+});
+
+describe('sampler slots in the sound settings', () => {
+  const song = createSong({ tracks: [createTrack('chords', { id: 'trk-a', channel: 0 })] });
+
+  it('keeps a patch per slot, clamped, saved and loaded again', () => {
+    const storage = memory();
+    const sound = new SoundSettings(storage);
+    expect(sound.sampler('sampler-3')).toEqual(defaultPatch('sampler-3'));
+    sound.setSampler('sampler-3', { ...defaultPatch('sampler-3'), name: 'Vox', root: 300 });
+    expect(sound.sampler('sampler-3').name).toBe('Vox');
+    expect(sound.sampler('sampler-3').root).toBe(127);
+    expect(new SoundSettings(storage).sampler('sampler-3').name).toBe('Vox');
+  });
+
+  it('a track can play a slot; a preset choice resets the track but keeps the slots', () => {
+    const sound = new SoundSettings();
+    sound.setSampler('sampler-2', { ...defaultPatch('sampler-2'), name: 'Keys', program: 4 });
+    sound.setInstrument('trk-a', 'chords', 'sampler-2');
+    expect(sound.trackInstrument({ id: 'trk-a', role: 'chords' })).toBe('sampler-2');
+    expect(trackPrograms(sound.state, song)).toEqual({ 'trk-a': 4, melody: 80 });
+    sound.setPreset('piano');
+    expect(sound.trackInstrument({ id: 'trk-a', role: 'chords' })).toBe('piano');
+    expect(sound.sampler('sampler-2').name).toBe('Keys');
+  });
+
+  it('parses saved slots field by field', () => {
+    const state = parseSound(
+      JSON.stringify({ samplers: { 'sampler-1': { name: 'Pad', root: 'x' }, 'sampler-9': {} } }),
+    );
+    expect(state.samplers['sampler-1'].name).toBe('Pad');
+    expect(state.samplers['sampler-1'].root).toBe(60);
+    expect(state.samplers['sampler-2']).toEqual(defaultPatch('sampler-2'));
+    expect(Object.keys(state.samplers)).toHaveLength(8);
+    expect(
+      parseSound(JSON.stringify({ instruments: { 'trk-a': 'sampler-4' } })).instruments,
+    ).toEqual({ 'trk-a': 'sampler-4' });
   });
 });

@@ -52,6 +52,10 @@ export interface BufferLike {
 export interface BufferSourceLike extends SourceLike {
   buffer: BufferLike | null;
   readonly playbackRate: ParamLike;
+  /** Native looping between `loopStart` and `loopEnd` (seconds of buffer). */
+  loop: boolean;
+  loopStart: number;
+  loopEnd: number;
   /** Play from `offset` seconds into the buffer for `duration` seconds of buffer. */
   start(when?: number, offset?: number, duration?: number): void;
 }

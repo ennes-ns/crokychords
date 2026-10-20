@@ -3,7 +3,8 @@
  * volume), then one row per track (mute, name,
  * role, pattern, octave, MIDI channel, velocity, gate, transpose, instrument, edit pattern,
  * reorder, remove), the melody row (mute, octave shift, channel, velocity, instrument) plus "Add
- * track". The pattern editor (views/pattern.ts) opens under its track's row. Rows are patched in
+ * track". The pattern editor (views/pattern.ts) and the Sampler panel (views/sampler.ts) open under
+ * their track's row. Rows are patched in
  * place, so focused
  * inputs and dragged sliders survive store updates; every song edit is a commit (undoable), the
  * instruments and the melody's octave shift and velocity are sound settings (not in the song).
@@ -11,18 +12,22 @@
 import type { Pattern, Song, Track, TrackRole } from '@crokychords/core';
 import { MELODY_TRACK_ID, ROLE_DEFAULTS, TRACK_ROLES, patternDescription } from '@crokychords/core';
 import type { Actions } from '../actions';
-import type { InstrumentId } from '../audio/instruments';
+import type { InstrumentId, SamplerId } from '../audio/instruments';
 import {
   DRUM_PATTERNS,
   INSTRUMENTS,
+  SAMPLER_IDS,
   SOUNDFONTS,
   SOUND_PRESETS,
   SYNTH_IDS,
   isDrumPatternId,
   isInstrumentId,
+  isSamplerId,
   isSoundPresetId,
+  samplerSlot,
   soundfont,
 } from '../audio/instruments';
+import type { SamplerState, Samplers } from '../audio/sampler';
 import { MASTER_MODES, MASTER_MODE_LABELS, isMasterMode } from '../audio/graph';
 import type { SoundSettings } from '../audio/sound';
 import { MELODY_SHIFT_MAX, MELODY_SHIFT_MIN, customTracks } from '../audio/sound';
@@ -53,9 +58,12 @@ import type { MasterSettings, SongStorage } from '../persist';
 import { loadBandOpen, saveBandOpen } from '../persist';
 import type { AppState, Store } from '../state';
 import { createPatternEditor } from './pattern';
+import { createSamplerPanel } from './sampler';
 
 const GATE_STEP = 0.05;
 const CUSTOM_PATTERN = '__custom__';
+/** Instrument select entry that opens the Sampler panel. */
+export const OPEN_SAMPLER = '__sampler__';
 
 export const BAND_COLUMNS = [
   'Mute',
@@ -105,6 +113,9 @@ interface RowContext {
   pendingRole: Map<string, TrackRole>;
   sound: SoundSettings | null;
   samples: SampleStatus | null;
+  samplers: Samplers | null;
+  /** Open the Sampler panel for a track (`role` null: the melody lane). */
+  openSampler(track: string, role: TrackRole | null): void;
 }
 
 /** Instrument select plus its loading mark, for a track or the melody (`role` null). */
@@ -117,6 +128,16 @@ interface InstrumentPicker {
 export function loadingMark(state: string): { text: string; title: string } {
   if (state === 'loading') return { text: '…', title: 'Loading the samples' };
   if (state === 'error') return { text: '!', title: 'Could not load; playing the synth stand-in' };
+  return { text: '', title: '' };
+}
+
+/** Status mark of a sampler slot (docs/specs/sampler-v1.md §8). */
+export function samplerMark(state: SamplerState): { text: string; title: string } {
+  if (state === 'empty') return { text: '∅', title: 'No sample yet; playing the piano stand-in' };
+  if (state === 'loading') return { text: '…', title: 'Decoding the sample' };
+  if (state === 'error') {
+    return { text: '!', title: 'Could not load the sample; playing the piano stand-in' };
+  }
   return { text: '', title: '' };
 }
 
@@ -135,17 +156,57 @@ function instrumentPicker(ctx: RowContext): InstrumentPicker {
       ...SYNTH_IDS.map((id) => option(id, INSTRUMENTS[id].name)),
     ),
   );
+  const samplerOptions = SAMPLER_IDS.map((id) => option(id, `Sampler ${samplerSlot(id)}`));
+  if (ctx.samplers !== null) {
+    select.append(
+      h(
+        'optgroup',
+        { props: { label: 'Sampler' } },
+        ...samplerOptions,
+        option(OPEN_SAMPLER, 'Sampler… ✎'),
+      ),
+    );
+  }
   const mark = h('span', { class: 'band-load', attrs: { 'data-field': 'loading' } });
+  const editSampler = h(
+    'button',
+    {
+      class: 'icon band-sampler-edit',
+      props: { type: 'button', hidden: true },
+      attrs: {
+        title: 'Edit the sampler',
+        'aria-label': 'Edit the sampler',
+        'data-field': 'sampler',
+      },
+    },
+    '∿',
+  );
   let current: { track: string; role: TrackRole | null } | null = null;
+  let shown: InstrumentId | null = null;
   select.onchange = () => {
     const id = select.value;
-    if (current === null || ctx.sound === null || !isInstrumentId(id)) return;
-    ctx.sound.setInstrument(current.track, current.role, id);
+    const sound = ctx.sound;
+    if (current === null || sound === null) return;
+    if (id === OPEN_SAMPLER) {
+      // Open the track's slot, or give it the first slot.
+      if (shown === null || !isSamplerId(shown)) {
+        sound.setInstrument(current.track, current.role, SAMPLER_IDS[0]);
+      }
+      if (shown !== null) select.value = shown;
+      ctx.openSampler(current.track, current.role);
+      return;
+    }
+    if (!isInstrumentId(id)) return;
+    sound.setInstrument(current.track, current.role, id);
+    if (isSamplerId(id)) ctx.openSampler(current.track, current.role);
     // Also retries an instrument that failed to load before.
     const font = soundfont(id);
     if (font !== undefined) ctx.samples?.load(font.id);
   };
-  const cell = h('span', { class: 'band-cell band-instrument' }, select, mark);
+  editSampler.onclick = () => {
+    if (current !== null) ctx.openSampler(current.track, current.role);
+  };
+  const cell = h('span', { class: 'band-cell band-instrument' }, select, mark, editSampler);
   cell.hidden = ctx.sound === null;
   return {
     cell,
@@ -155,11 +216,21 @@ function instrumentPicker(ctx: RowContext): InstrumentPicker {
       if (sound === null) return;
       const id: InstrumentId =
         role === null ? sound.melodyInstrument() : sound.trackInstrument({ id: track, role });
+      shown = id;
+      if (ctx.samplers !== null) {
+        for (const o of samplerOptions) {
+          const slot = SAMPLER_IDS.find((s) => s === o.value);
+          if (slot !== undefined)
+            o.textContent = `${samplerSlot(slot)} · ${sound.sampler(slot).name}`;
+        }
+      }
       if (select.value !== id) select.value = id;
       const font = soundfont(id);
-      const status = loadingMark(
-        font === undefined ? 'ready' : (ctx.samples?.state(font.id) ?? ''),
-      );
+      const sampler = isSamplerId(id);
+      editSampler.hidden = !sampler || ctx.samplers === null;
+      const status = sampler
+        ? samplerMark(ctx.samplers?.state(id) ?? 'empty')
+        : loadingMark(font === undefined ? 'ready' : (ctx.samples?.state(font.id) ?? ''));
       mark.textContent = status.text;
       mark.title = status.title;
       mark.classList.toggle('failed', status.text === '!');
@@ -602,13 +673,63 @@ export function mountBand(
   storage: SongStorage | null = null,
   sound: SoundSettings | null = null,
   master: MasterSettings | null = null,
-  options: { defaultOpen?: boolean; samples?: SampleStatus | null } = {},
+  options: {
+    defaultOpen?: boolean;
+    samples?: SampleStatus | null;
+    samplers?: Samplers | null;
+  } = {},
 ): void {
   root.classList.add('panel', 'band');
   let open = loadBandOpen(storage, options.defaultOpen);
   const samples = options.samples ?? null;
-  const ctx: RowContext = { store, actions, pendingRole: new Map(), sound, samples };
+  const samplers = sound === null ? null : (options.samplers ?? null);
+  /** The track whose Sampler panel is open (only one at a time). */
+  let samplerFor: { track: string; role: TrackRole | null } | null = null;
+  const ctx: RowContext = {
+    store,
+    actions,
+    pendingRole: new Map(),
+    sound,
+    samples,
+    samplers,
+    openSampler(track, role) {
+      samplerFor = { track, role };
+      refresh();
+      samplerPanel?.el.scrollIntoView?.({ block: 'nearest' });
+      samplerPanel?.el.querySelector<HTMLElement>('select, input, button')?.focus();
+    },
+  };
+  const closeSampler = (): void => {
+    const was = samplerFor;
+    samplerFor = null;
+    refresh();
+    if (was === null) return;
+    // Hand the focus back to the row's instrument select.
+    root
+      .querySelector<HTMLElement>(`[data-track="${was.track}"] [data-field="instrument"]`)
+      ?.focus();
+  };
+  const samplerPanel =
+    samplers === null
+      ? null
+      : createSamplerPanel({
+          samplers,
+          assign(id: SamplerId) {
+            if (samplerFor !== null) sound?.setInstrument(samplerFor.track, samplerFor.role, id);
+          },
+          close: closeSampler,
+        });
+  /** The slot the open Sampler panel shows, or null when it is closed or the track moved on. */
+  const samplerSlotOf = (state: AppState): SamplerId | null => {
+    if (samplerFor === null || sound === null) return null;
+    const { track, role } = samplerFor;
+    if (role !== null && !songTracks(state.song).some((t) => t.id === track)) return null;
+    const id =
+      role === null ? sound.melodyInstrument() : sound.trackInstrument({ id: track, role });
+    return isSamplerId(id) ? id : null;
+  };
   const melodyRow = createMelodyRow(ctx);
+  const melodyBox = h('div', { class: 'band-melody' }, melodyRow.el);
 
   const toggle = h(
     'button',
@@ -638,7 +759,7 @@ export function mountBand(
       ...BAND_COLUMNS.map((c) => h('span', { class: 'band-cell' }, c)),
     ),
     rowsEl,
-    h('div', { class: 'band-melody' }, melodyRow.el),
+    melodyBox,
     h('div', { class: 'band-add' }, addRole, add),
     h(
       'p',
@@ -676,6 +797,10 @@ export function mountBand(
     ];
     if (inputs.every((v, i) => v === last[i])) return;
     last = inputs;
+    // Close the Sampler panel when its track is gone or plays something else now.
+    const samplerId = samplerSlotOf(state);
+    if (samplerId === null) samplerFor = null;
+    const samplerTrack = samplerFor?.track ?? null;
 
     body.hidden = !open;
     root.classList.toggle('collapsed', !open);
@@ -699,9 +824,13 @@ export function mountBand(
       return row;
     });
     const editing = tracks.find((t) => t.id === state.patternEditor);
-    const wanted = ordered.flatMap((r, i) =>
-      editing !== undefined && tracks[i] === editing ? [r.el, editor.el] : [r.el],
-    );
+    const panelEl = samplerPanel?.el ?? null;
+    const wanted = ordered.flatMap((r, i) => {
+      const t = tracks[i];
+      const els = editing !== undefined && t === editing ? [r.el, editor.el] : [r.el];
+      if (panelEl !== null && t !== undefined && samplerTrack === t.id) els.push(panelEl);
+      return els;
+    });
     const current = [...rowsEl.children];
     if (wanted.length !== current.length || wanted.some((el, i) => el !== current[i])) {
       const focused = document.activeElement;
@@ -729,6 +858,21 @@ export function mountBand(
       rowsEl.append(h('p', { class: 'hint band-empty' }, 'No tracks: add one to hear the song.'));
     }
     melodyRow.update(state.song);
+    const melodyEls: HTMLElement[] = [melodyRow.el];
+    if (panelEl !== null && samplerTrack === MELODY_TRACK_ID) melodyEls.push(panelEl);
+    if (
+      melodyEls.length !== melodyBox.children.length ||
+      melodyEls.some((el, i) => el !== melodyBox.children[i])
+    ) {
+      melodyBox.replaceChildren(...melodyEls);
+    }
+    if (samplerPanel !== null && samplerId !== null && samplerTrack !== null) {
+      const label =
+        samplerTrack === MELODY_TRACK_ID
+          ? 'Melody'
+          : (tracks.find((t) => t.id === samplerTrack)?.name ?? samplerTrack);
+      samplerPanel.show(samplerId, label);
+    }
   };
 
   const refresh = (): void => {
@@ -739,6 +883,7 @@ export function mountBand(
   store.subscribe(render);
   sound?.subscribe(refresh);
   samples?.subscribe(refresh);
+  samplers?.subscribe(refresh);
 }
 
 function iconButton(text: string, title: string, onClick: () => void): HTMLButtonElement {

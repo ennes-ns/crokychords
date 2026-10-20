@@ -45,8 +45,9 @@ its source recorded here; never a copyrighted original recording (for the Breakc
 | Processing | Freesound's public high-quality preview (MP3) of the 4-bar loop at 141 BPM, decoded, mixed to mono, 44.1 kHz, trimmed to the first two bars (150 128 samples, 3.404 s), 16-bit FLAC at the highest compression level (≈ 190 KB) |
 
 Regenerate with `ffmpeg -i <preview.mp3> -ac 1 -ar 44100 -af atrim=end_sample=150128 -sample_fmt
-s16 -compression_level 12 pseudoamen-141.flac`. A user's own break ("Use my own break") is stored
-only in that browser's IndexedDB, never in git or the build.
+s16 -compression_level 12 pseudoamen-141.flac`. A user's own break ("Use my own break") and the
+samples of the sampler slots (`docs/specs/sampler-v1.md`) are stored only in that browser's
+IndexedDB, never in git or the build; the sampler tests generate their audio in code.
 
 ## SoundFonts
 
