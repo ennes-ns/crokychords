@@ -5,7 +5,7 @@ import { VersionConflictError, makeRecord } from '../src/store/record';
 import { SyncError } from '../src/store/sync';
 import { DEFAULT_SYNC_BASE_URL, syncConfig } from '../src/sync/config';
 import type { ResponseLike } from '../src/sync/http';
-import { HttpSyncClient, parseSaveMeta } from '../src/sync/http';
+import { HttpSyncClient, INVALID_RECORD, parseSaveMeta } from '../src/sync/http';
 import { FakeApi } from './fakeApi';
 
 function rec(id: string, version: number, title = id): SaveRecord {
@@ -106,7 +106,7 @@ describe('HttpSyncClient', () => {
     api.mode = 'redirect';
     expect(await kind(client.push(rec('a', 1), 0))).toBe('signed-out');
     api.mode = 'html';
-    expect(await kind(client.get('a'))).toBe('signed-out');
+    expect(await kind(client.get('a'))).toBe('server');
     api.mode = 'error';
     expect(await kind(client.list())).toBe('server');
     api.mode = 'ok';
@@ -116,6 +116,41 @@ describe('HttpSyncClient', () => {
     api.maxSaves = 0;
     const limit = await client.push(rec('a', 1), 0).catch((e: unknown) => e);
     expect(limit).toMatchObject({ kind: 'rejected', code: 'save_limit_reached' });
+  });
+
+  it('classifies non-JSON (edge) answers by status, not as signed out', async () => {
+    const { api, client } = setup();
+    api.remoteWrite(rec('a', 1));
+    let status = 0;
+    api.edge = () => status;
+    const failure = (p: Promise<unknown>) =>
+      p.then(
+        () => null,
+        (e: unknown) => (e instanceof SyncError ? { kind: e.kind, code: e.code } : null),
+      );
+    const signedOut = { kind: 'signed-out', code: null };
+    const transient = { kind: 'server', code: null };
+    for (status of [401, 403]) {
+      expect(await failure(client.list())).toEqual(signedOut);
+      expect(await failure(client.get('a'))).toEqual(signedOut);
+      expect(await failure(client.push(rec('a', 2), 1))).toEqual(signedOut);
+      expect(await failure(client.remove('a', 1))).toEqual(signedOut);
+    }
+    for (status of [404, 413, 415]) {
+      // Per record: a write is refused, a read is skipped like an unreadable save.
+      expect(await failure(client.push(rec('a', 2), 1))).toEqual({ kind: 'rejected', code: null });
+      expect(await failure(client.remove('a', 1))).toEqual({ kind: 'rejected', code: null });
+      expect(await failure(client.get('a'))).toEqual({ kind: 'server', code: INVALID_RECORD });
+      // The list is not one record: back off and retry.
+      expect(await failure(client.list())).toEqual(transient);
+    }
+    for (status of [200, 400, 405, 418]) {
+      expect(await failure(client.list())).toEqual(transient);
+      expect(await failure(client.get('a'))).toEqual(transient);
+      expect(await failure(client.push(rec('a', 2), 1))).toEqual(transient);
+      expect(await failure(client.remove('a', 1))).toEqual(transient);
+    }
+    expect(api.saves.get('a')?.version).toBe(1);
   });
 
   it('does not touch the network while the browser is offline', async () => {

@@ -420,6 +420,55 @@ describe('SyncEngine: offline, signed out, rejected', () => {
     expect(a.engine.status.state).toBe('synced');
   });
 
+  it('treats HTML answers from the edge per record or as transient, never as signed out', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const api = new FakeApi();
+    const a = device(api, 'a');
+    api.remoteWrite(rec('theirs', 1));
+    await edit(a.saves, 'big', 'big');
+    await edit(a.saves, 'small', 'small');
+    await edit(a.saves, 'gone', 'gone');
+    await a.engine.sync();
+    await a.saves.delete('gone');
+    await edit(a.saves, 'big', 'big, edited');
+    api.remoteWrite(rec('theirs', 1, 'theirs, edited'));
+    api.edge = (method, path) =>
+      (method === 'PUT' && path === '/saves/big') || (method === 'DELETE' && path === '/saves/gone')
+        ? 413
+        : method === 'GET' && path === '/saves/theirs'
+          ? 404
+          : null;
+    await edit(a.saves, 'small', 'small, edited');
+    await a.engine.sync();
+    expect(a.engine.status.state).toBe('error');
+    expect(api.saves.get('small')?.title).toBe('small, edited');
+    expect(api.saves.get('big')?.title).toBe('big');
+    expect(await a.state.get('big')).toMatchObject({ rejected: 2 });
+    expect(api.saves.has('gone')).toBe(true);
+    expect(await a.state.get('gone')).toMatchObject({ deleted: true });
+    expect((await a.local.get('theirs'))?.title).toBe('theirs');
+    expect(api.count('DELETE')).toBe(1); // a refused tombstone waits for the next cycle
+
+    api.edge = null;
+    await edit(a.saves, 'big', 'big, smaller');
+    await a.engine.sync();
+    expect(a.engine.status.state).toBe('synced');
+    expect(api.saves.get('big')?.title).toBe('big, smaller');
+    expect(api.saves.has('gone')).toBe(false);
+    expect((await a.local.get('theirs'))?.title).toBe('theirs, edited');
+
+    // Any other HTML answer is transient: error, and the backoff retries by itself.
+    api.edge = () => 200;
+    await edit(a.saves, 'small', 'small, again');
+    await a.engine.sync();
+    expect(a.engine.status.state).toBe('error');
+    api.edge = null;
+    await vi.advanceTimersByTimeAsync(backoffDelay(1, 0));
+    expect(a.engine.status.state).toBe('synced');
+    expect(api.saves.get('small')?.title).toBe('small, again');
+  });
+
   it('reports server errors and local failures as error with a retry', async () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);

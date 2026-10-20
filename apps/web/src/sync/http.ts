@@ -85,6 +85,27 @@ function remoteRecord(body: unknown): SaveRecord {
   }
 }
 
+/** Statuses an edge or WAF in front of the API may answer for one request (not the session). */
+const EDGE_RECORD_STATUSES = new Set([404, 413, 415]);
+
+/**
+ * Classify a non-JSON answer (an HTML page from Access, the edge or a WAF) by its status, so only
+ * a real session problem reads as "signed out" (docs/specs/sync-v1.md, "Failures").
+ */
+export function edgeFailure(status: number, method: string, perRecord: boolean): SyncError {
+  if (status === 401 || status === 403) {
+    return new SyncError('signed-out', `HTTP ${status}: the sign-in session is missing`);
+  }
+  if (perRecord && EDGE_RECORD_STATUSES.has(status)) {
+    const message = `HTTP ${status} from the edge`;
+    // A refused write marks just that save; a refused read skips it like an unreadable save.
+    return method === 'GET'
+      ? new SyncError('server', message, INVALID_RECORD)
+      : new SyncError('rejected', message);
+  }
+  return new SyncError('server', `HTTP ${status}: the API answered with a non-JSON page`);
+}
+
 export class HttpSyncClient implements SyncClient {
   readonly #base: string;
   readonly #fetch: FetchLike;
@@ -157,6 +178,7 @@ export class HttpSyncClient implements SyncClient {
     path: string,
     options: { ifMatch?: number; body?: string } = {},
   ): Promise<{ status: number; body: unknown }> {
+    const perRecord = path !== '/saves';
     if (!this.#online()) throw new SyncError('offline', 'the browser is offline');
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (options.ifMatch !== undefined) headers['If-Match'] = `"${options.ifMatch}"`;
@@ -187,8 +209,7 @@ export class HttpSyncClient implements SyncClient {
     if (status === 204) return { status, body: null };
     const type = response.headers.get('Content-Type') ?? '';
     if (!type.toLowerCase().includes('application/json')) {
-      // An HTML login page instead of the API: the session is gone.
-      throw new SyncError('signed-out', 'the API answered with a non-JSON page');
+      throw edgeFailure(status, method, perRecord);
     }
     let body: unknown;
     try {

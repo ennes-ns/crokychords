@@ -289,13 +289,21 @@ export class SyncEngine {
   /** Send tombstones and dirty records; returns a message when a record was refused. */
   async #push(): Promise<string | null> {
     let problem: string | null = null;
+    /** Tombstones refused this cycle: kept, and tried again on the next cycle. */
+    const refused = new Set<string>();
     for (let pass = 0; pass < PUSH_PASSES; pass++) {
       let sent = false;
       const entries = await this.#entries();
       for (const entry of entries.values()) {
-        if (!entry.deleted) continue;
+        if (!entry.deleted || refused.has(entry.id)) continue;
         sent = true;
-        await this.#sendDelete(entry);
+        try {
+          await this.#sendDelete(entry);
+        } catch (e) {
+          if (!(e instanceof SyncError) || e.kind !== 'rejected') throw e;
+          refused.add(entry.id);
+          problem = `a delete was not synced: ${e.message}`;
+        }
       }
       for (const summary of (await this.#summaries()).values()) {
         const entry = entries.get(summary.id);

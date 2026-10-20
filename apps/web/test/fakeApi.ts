@@ -10,7 +10,7 @@ export type FakeMode =
   | 'offline' // fetch rejects
   | 'unauthorized' // 401 JSON
   | 'redirect' // Access login redirect (opaque with redirect: 'manual')
-  | 'html' // a login page served with 200
+  | 'html' // an HTML page served with 200 (an edge page instead of the API)
   | 'error'; // 503
 
 export interface FakeRequest {
@@ -49,6 +49,8 @@ export class FakeApi {
   dropNextResponse = false;
   /** Runs before each request is handled (to interleave local edits with an in-flight request). */
   beforeHandle: ((method: string, path: string) => Promise<void>) | null = null;
+  /** An HTML status the edge answers for a request instead of the API (null: pass through). */
+  edge: ((method: string, path: string) => number | null) | null = null;
   /** Ids whose GET returns a record that does not parse. */
   readonly corrupt = new Set<string>();
   maxSaves = 200;
@@ -86,6 +88,10 @@ export class FakeApi {
     const ifMatch = headers.get('If-Match');
     const path = url.replace(/^\/api/, '');
     this.requests.push({ method, path, ifMatch });
+    const edgeStatus = this.edge?.(method, path) ?? null;
+    if (edgeStatus !== null) {
+      return Promise.resolve(response(edgeStatus, undefined, 'text/html; charset=utf-8'));
+    }
     switch (this.mode) {
       case 'offline':
         return Promise.reject(new TypeError('Failed to fetch'));
