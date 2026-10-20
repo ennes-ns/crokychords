@@ -58,8 +58,10 @@ export const pixelTheme: Theme = {
 
 `themes/index.ts` is the registry (`THEMES`, in switcher order, Default first). It turns every
 theme into one rule, `:root[data-theme='<id>'] { … }` (Default also gets plain `:root`, so the app
-renders as Default before a theme is applied), plus an `@font-face` per font, and injects the
-result as one `<style id="themes">` before the app mounts.
+renders as Default before a theme is applied), plus an `@font-face` per font, and installs the
+result before the app mounts as one constructed stylesheet (`document.adoptedStyleSheets`), which
+the CSP `style-src 'self'` allows; an inline `<style>` would be blocked (`public/_headers`). The
+`<style id="themes">` fallback only runs where constructable stylesheets are missing (jsdom).
 
 **Adding a theme** (for example a light one): add `themes/light.ts` with every token and add it to
 `THEMES`. Nothing else changes; the switcher, persistence and the token test pick it up.

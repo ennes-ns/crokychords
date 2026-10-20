@@ -8,6 +8,7 @@ import {
   THEMES,
   TOKEN_NAMES,
   applyTheme,
+  adoptThemeSheet,
   installThemes,
   loadThemeId,
   saveThemeId,
@@ -129,6 +130,21 @@ describe('applying and persisting', () => {
     expect(document.documentElement.dataset.theme).toBe('pixel');
     expect(applyTheme('no-such-theme', document)).toBe(DEFAULT_THEME_ID);
     expect(document.documentElement.dataset.theme).toBe(DEFAULT_THEME_ID);
+  });
+
+  it('adopts a constructed stylesheet, so the CSP needs no inline style', () => {
+    const replaced: string[] = [];
+    class FakeSheet {
+      replaceSync(css: string): void {
+        replaced.push(css);
+      }
+    }
+    const existing = new FakeSheet();
+    const host = { adoptedStyleSheets: [existing] };
+    adoptThemeSheet(host, FakeSheet);
+    expect(host.adoptedStyleSheets).toHaveLength(2);
+    expect(host.adoptedStyleSheets[1]).toBe(existing);
+    expect(replaced).toEqual([themeCss()]);
   });
 
   it('loads the stored id, falling back to Default for unknown ids and storage errors', () => {

@@ -22,6 +22,44 @@ describe('one Worker for the web app and the API', () => {
     expect(await res.text()).not.toContain('must never be served');
   });
 
+  // test/assets/_headers is a symlink to apps/web/public/_headers, the file the web build ships.
+  it('serves the static app with the CSP and security headers from _headers', async () => {
+    const res = await SELF.fetch('https://chords.example.test/');
+    expect(res.status).toBe(200);
+    const csp = res.headers.get('Content-Security-Policy') ?? '';
+    for (const directive of [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self'",
+      "font-src 'self'",
+      "img-src 'self' data:",
+      "connect-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "frame-ancestors 'none'",
+    ]) {
+      expect(csp.split(';').map((d) => d.trim())).toContain(directive);
+    }
+    expect(csp).not.toContain('unsafe');
+    expect(res.headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+    expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+  });
+
+  it('never serves the _headers file itself', async () => {
+    const res = await SELF.fetch('https://chords.example.test/_headers');
+    expect(await res.text()).not.toContain('Content-Security-Policy');
+  });
+
+  it('keeps the strict API headers on /api/* (Worker, not _headers)', async () => {
+    const res = await SELF.fetch('https://chords.example.test/api/me');
+    expect(res.headers.get('Content-Security-Policy')).toBe(
+      "default-src 'none'; frame-ancestors 'none'",
+    );
+    expect(res.headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
+  });
+
   it('answers unknown non-asset paths with the JSON 404', async () => {
     const res = await SELF.fetch('https://chords.example.test/nope');
     expect(res.status).toBe(404);

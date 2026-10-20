@@ -1,6 +1,9 @@
 import { decodeProtectedHeader, importJWK, jwtVerify } from 'jose';
 import type { JWK, JWTPayload } from 'jose';
 
+/** Allowed clock skew between Access and the Worker when checking `exp`, `nbf` and `iat`. */
+export const CLOCK_TOLERANCE_SECONDS = 60;
+
 /** Header in which Cloudflare Access forwards the signed identity of the user. */
 export const ACCESS_JWT_HEADER = 'Cf-Access-Jwt-Assertion';
 
@@ -101,8 +104,8 @@ export class AuthError extends Error {
 }
 
 /**
- * Verify an Access JWT: RS256 signature against the JWKS, issuer, audience and expiry, and a
- * non-empty `email` claim. Throws AuthError for every kind of invalid token.
+ * Verify an Access JWT: RS256 signature against the JWKS, issuer, audience and expiry (with
+ * CLOCK_TOLERANCE_SECONDS of skew), and a non-empty `email` claim. Throws AuthError for every kind of invalid token.
  */
 export async function verifyAccessJwt(
   token: string,
@@ -129,6 +132,7 @@ export async function verifyAccessJwt(
       issuer: accessIssuer(config.teamDomain),
       audience: config.audience,
       requiredClaims: ['exp'],
+      clockTolerance: CLOCK_TOLERANCE_SECONDS,
       ...(now === undefined ? {} : { currentDate: now }),
     });
     payload = result.payload;

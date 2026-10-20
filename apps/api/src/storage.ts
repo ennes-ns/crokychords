@@ -13,6 +13,9 @@ interface SaveRow {
   title: string;
 }
 
+/** Outcome of Storage.claimVersion. */
+export type ClaimResult = 'claimed' | 'conflict' | 'limit';
+
 /** R2 key of a save body: `saves/<user-id>/<save-id>.json`. */
 export function saveKey(userId: string, saveId: string): string {
   return `saves/${userId}/${saveId}.json`;
@@ -75,29 +78,45 @@ export class Storage {
 
   /**
    * Claim `record.version` in D1, provided the stored version still equals `base` (0 = the save
-   * does not exist yet). Returns false when another write got there first.
+   * does not exist yet). A new save is only inserted while the user has fewer than `maxSaves`
+   * saves; the count and the insert are one statement, so concurrent creates cannot overshoot.
+   * Returns `conflict` when another write got there first, `limit` when the cap is reached.
    */
   async claimVersion(
     userId: string,
     record: SaveRecord,
     base: number,
     size: number,
-  ): Promise<boolean> {
-    const result =
-      base === 0
-        ? await this.db
-            .prepare(
-              'INSERT INTO saves (user_id, id, version, updated_at, title, size) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, id) DO NOTHING',
-            )
-            .bind(userId, record.id, record.version, record.updated_at, record.title, size)
-            .run()
-        : await this.db
-            .prepare(
-              'UPDATE saves SET version = ?, updated_at = ?, title = ?, size = ? WHERE user_id = ? AND id = ? AND version = ?',
-            )
-            .bind(record.version, record.updated_at, record.title, size, userId, record.id, base)
-            .run();
-    return result.meta.changes === 1;
+    maxSaves: number,
+  ): Promise<ClaimResult> {
+    if (base !== 0) {
+      const result = await this.db
+        .prepare(
+          'UPDATE saves SET version = ?, updated_at = ?, title = ?, size = ? WHERE user_id = ? AND id = ? AND version = ?',
+        )
+        .bind(record.version, record.updated_at, record.title, size, userId, record.id, base)
+        .run();
+      return result.meta.changes === 1 ? 'claimed' : 'conflict';
+    }
+    const result = await this.db
+      .prepare(
+        'INSERT INTO saves (user_id, id, version, updated_at, title, size) ' +
+          'SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM saves WHERE user_id = ?) < ? ' +
+          'ON CONFLICT(user_id, id) DO NOTHING',
+      )
+      .bind(
+        userId,
+        record.id,
+        record.version,
+        record.updated_at,
+        record.title,
+        size,
+        userId,
+        maxSaves,
+      )
+      .run();
+    if (result.meta.changes === 1) return 'claimed';
+    return (await this.getMeta(userId, record.id)) === null ? 'limit' : 'conflict';
   }
 
   /** Undo a claim whose R2 write failed. */

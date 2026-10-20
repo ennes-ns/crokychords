@@ -3,6 +3,8 @@ import { DEFAULT_TRACKS, createTrack, patternPreset } from '../src/patterns';
 import type { Song } from '../src/progression';
 import {
   DEFAULT_SONG_TITLE,
+  MAX_METER_BEATS,
+  MAX_TEMPO,
   SongError,
   chordAtBeat,
   createSong,
@@ -94,9 +96,13 @@ describe('validateSong', () => {
     ['tempo', { ...song, tempo: 0 }],
     ['tempo', { ...song, tempo: Number.NaN }],
     ['tempo', { ...song, tempo: '120' }],
+    ['tempo', { ...song, tempo: MAX_TEMPO + 1 }],
+    ['tempo', { ...song, tempo: Number.MAX_VALUE }],
     ['meter', { ...song, meter: null }],
     ['meter.beats', { ...song, meter: { beats: 3.5, unit: 4 } }],
     ['meter.beats', { ...song, meter: { beats: 0, unit: 4 } }],
+    ['meter.beats', { ...song, meter: { beats: MAX_METER_BEATS + 1, unit: 4 } }],
+    ['meter.beats', { ...song, meter: { beats: 1e9, unit: 4 } }],
     ['meter.unit', { ...song, meter: { beats: 4, unit: 3 } }],
     ['chords', { ...song, chords: {} }],
     ['chords[1]', { ...song, chords: [{ token: 'I', beats: 1 }, 'IV'] }],
@@ -110,6 +116,16 @@ describe('validateSong', () => {
     ['chords[0].beats', { ...song, chords: [{ token: 'I', beats: -1 }] }],
   ])('reports %j', (path, value) => {
     expectSongError(value, path);
+  });
+
+  it('accepts the upper bounds of tempo and meter', () => {
+    const edge = validateSong({
+      ...song,
+      tempo: MAX_TEMPO,
+      meter: { beats: MAX_METER_BEATS, unit: 4 },
+    });
+    expect(edge.tempo).toBe(MAX_TEMPO);
+    expect(edge.meter.beats).toBe(MAX_METER_BEATS);
   });
 
   it('migrates a schema-1 song to schema 2 with the default tracks', () => {

@@ -45,13 +45,45 @@ export function themeCss(themes: readonly Theme[] = THEMES): string {
   return parts.join('\n\n') + '\n';
 }
 
-/** Inject the theme stylesheet once (before the app's own styles take effect). */
+const adopted = new WeakSet<Document>();
+
+/**
+ * Install the theme stylesheet once. Browsers get a constructed stylesheet (adoptedStyleSheets),
+ * which the Content-Security-Policy `style-src 'self'` allows (public/_headers); an inline
+ * `<style>` would be blocked. The `<style>` fallback is for environments without constructable
+ * stylesheets (jsdom in the tests).
+ */
 export function installThemes(doc: Document = document): void {
-  if (doc.getElementById(THEME_STYLE_ID) !== null) return;
+  if (adopted.has(doc) || doc.getElementById(THEME_STYLE_ID) !== null) return;
+  const Sheet = doc.defaultView?.CSSStyleSheet;
+  if (
+    Sheet !== undefined &&
+    Array.isArray(doc.adoptedStyleSheets) &&
+    typeof Sheet.prototype.replaceSync === 'function'
+  ) {
+    adoptThemeSheet(doc, Sheet);
+    adopted.add(doc);
+    return;
+  }
   const style = doc.createElement('style');
   style.id = THEME_STYLE_ID;
   style.textContent = themeCss();
   doc.head.prepend(style);
+}
+
+/** A stylesheet that can be built from text (CSSStyleSheet in browsers). */
+export interface ConstructableSheet {
+  replaceSync(css: string): void;
+}
+
+/** Build the theme CSS into a new `Sheet` and put it first in `host.adoptedStyleSheets`. */
+export function adoptThemeSheet<S extends ConstructableSheet>(
+  host: { adoptedStyleSheets: S[] },
+  Sheet: new () => S,
+): void {
+  const sheet = new Sheet();
+  sheet.replaceSync(themeCss());
+  host.adoptedStyleSheets = [sheet, ...host.adoptedStyleSheets];
 }
 
 /** Activate a theme; an unknown id activates Default. Returns the id that is active. */

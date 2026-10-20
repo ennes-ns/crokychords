@@ -2,6 +2,7 @@ import { SignJWT } from 'jose';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   AuthError,
+  CLOCK_TOLERANCE_SECONDS,
   accessCertsUrl,
   accessIssuer,
   createCachedJwks,
@@ -50,10 +51,15 @@ describe('verifyAccessJwt', () => {
     await expect(verifyAccessJwt(token, config, staticJwks([key.jwk]))).resolves.toBeDefined();
   });
 
+  it('tolerates a little clock skew on the expiry', async () => {
+    const token = await signToken({ key, email: 'a@example.test', expiresIn: -30 });
+    await expect(verifyAccessJwt(token, config, staticJwks([key.jwk]))).resolves.toBeDefined();
+  });
+
   it.each([
     ['wrong audience', { audience: 'someone-else' }],
     ['wrong issuer', { issuer: 'https://evil.cloudflareaccess.com' }],
-    ['expired token', { expiresIn: -60 }],
+    ['expired token', { expiresIn: -(CLOCK_TOLERANCE_SECONDS + 30) }],
     ['no exp claim', { omitExp: true }],
     ['no email claim', { email: undefined }],
     ['empty email claim', { email: '  ' }],

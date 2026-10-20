@@ -85,6 +85,11 @@ function numberField(obj: Record<string, unknown>, field: string, path: string):
 
 const METER_UNITS = [1, 2, 4, 8, 16, 32];
 
+/** Highest tempo (BPM) a song may have; the editor offers 20–300. */
+export const MAX_TEMPO = 1000;
+/** Most beats per bar a song may have. */
+export const MAX_METER_BEATS = 32;
+
 function intField(
   obj: Record<string, unknown>,
   field: string,
@@ -221,12 +226,14 @@ export function validateSong(value: unknown): Song {
   if (!isMode(mode)) throw new SongError('key.mode', 'unknown mode');
 
   const tempo = numberField(root, 'tempo', '');
-  if (tempo <= 0) throw new SongError('tempo', 'must be > 0');
+  if (tempo <= 0 || tempo > MAX_TEMPO) {
+    throw new SongError('tempo', `must be > 0 and at most ${MAX_TEMPO}`);
+  }
 
   const meterObj = record(root['meter'], 'meter');
   const meterBeats = numberField(meterObj, 'beats', 'meter');
-  if (!Number.isInteger(meterBeats) || meterBeats < 1) {
-    throw new SongError('meter.beats', 'must be a positive integer');
+  if (!Number.isInteger(meterBeats) || meterBeats < 1 || meterBeats > MAX_METER_BEATS) {
+    throw new SongError('meter.beats', `must be an integer from 1 to ${MAX_METER_BEATS}`);
   }
   const unit = numberField(meterObj, 'unit', 'meter');
   if (!METER_UNITS.includes(unit)) throw new SongError('meter.unit', 'must be 1, 2, 4, ..., 32');

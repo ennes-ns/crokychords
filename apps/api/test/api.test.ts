@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createApp, parseIfMatch } from '../src/app';
+import { createApp, parseIfMatch, readBounded } from '../src/app';
 import { ApiError } from '../src/errors';
 import { LIMITS } from '../src/record';
 import { saveKey } from '../src/storage';
@@ -60,7 +60,7 @@ describe('authentication', () => {
   });
 
   it('rejects an expired token, a wrong audience and a malformed header', async () => {
-    const expired = await signToken({ key, email: 'a@example.test', expiresIn: -5 });
+    const expired = await signToken({ key, email: 'a@example.test', expiresIn: -120 });
     const wrongAud = await signToken({ key, email: 'a@example.test', audience: 'other-app' });
     for (const token of [expired, wrongAud, 'garbage', 'a.b.c']) {
       const res = await client.request('/api/me', authed(token));
@@ -257,6 +257,35 @@ describe('saves: validation and limits', () => {
     expect(res.status).toBe(413);
   });
 
+  it('stops reading a chunked body as soon as it passes the limit', async () => {
+    const chunk = new Uint8Array(64 * 1024);
+    let pulled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++;
+        controller.enqueue(chunk);
+        if (pulled >= 100) controller.close();
+      },
+    });
+    const req = new Request('https://api.example.test/', {
+      method: 'PUT',
+      body: stream,
+      // @ts-expect-error duplex is required for a streaming body but missing from the types
+      duplex: 'half',
+    });
+    await expect(readBounded(req, LIMITS.maxSaveBytes)).rejects.toMatchObject({
+      code: 'payload_too_large',
+    });
+    expect(pulled).toBeLessThan(10);
+  });
+
+  it('reads a body within the limit completely', async () => {
+    const req = new Request('https://api.example.test/', { method: 'PUT', body: 'x'.repeat(1000) });
+    expect((await readBounded(req, 1000)).byteLength).toBe(1000);
+    const empty = new Request('https://api.example.test/', { method: 'PUT' });
+    expect((await readBounded(empty, 1000)).byteLength).toBe(0);
+  });
+
   it('accepts a body just under the limit', async () => {
     const input = record('near', 1);
     const base = JSON.stringify(input).length;
@@ -323,6 +352,31 @@ describe('saves: validation and limits', () => {
     const update = await client.request('/api/saves/last', putInit(carol, record('last', 2)));
     expect(update.status).toBe(200);
   });
+
+  it('never exceeds the cap when new saves are created concurrently', async () => {
+    const dave = await signToken({ key, email: 'dave@example.test' });
+    const uid = await userId(dave);
+    const now = new Date().toISOString();
+    const insert = env.DB.prepare(
+      'INSERT INTO saves (user_id, id, version, updated_at, title, size) VALUES (?, ?, 1, ?, ?, 1)',
+    );
+    await env.DB.batch(
+      Array.from({ length: LIMITS.maxSaves - 2 }, (_, i) =>
+        insert.bind(uid, `s${i}`, now, `S${i}`),
+      ),
+    );
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        client.request(`/api/saves/race${i}`, putInit(dave, record(`race${i}`, 1))),
+      ),
+    );
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual([201, 201, 403, 403, 403, 403]);
+    const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM saves WHERE user_id = ?')
+      .bind(uid)
+      .first<{ n: number }>();
+    expect(count?.n).toBe(LIMITS.maxSaves);
+  });
 });
 
 describe('CORS and headers', () => {
@@ -356,23 +410,24 @@ describe('CORS and headers', () => {
     expect(await errorCode(res)).toBe('forbidden_origin');
   });
 
-  it('accepts same-origin requests from the web app served by this Worker', async () => {
+  it("refuses the request's own origin unless it is ALLOWED_ORIGIN (no previews)", async () => {
     const self = 'https://api.example.test';
     const put = await client.request(
       '/api/saves/same-origin',
       putInit(alice, record('same-origin', 1)),
     );
     expect(put.status).toBe(201);
-    const withOrigin = putInit(alice, record('same-origin', 2), '"1"');
-    const headers = new Headers(withOrigin.headers);
-    headers.set('Origin', self);
-    const res = await client.request('/api/saves/same-origin', { ...withOrigin, headers });
-    expect(res.status).toBe(200);
     const del = await client.request(
       '/api/saves/same-origin',
-      authed(alice, { method: 'DELETE', headers: { Origin: self, 'If-Match': '"2"' } }),
+      authed(alice, { method: 'DELETE', headers: { Origin: self, 'If-Match': '"1"' } }),
     );
-    expect(del.status).toBe(204);
+    expect(del.status).toBe(403);
+    expect(await errorCode(del)).toBe('forbidden_origin');
+    const allowed = await client.request(
+      '/api/saves/same-origin',
+      authed(alice, { method: 'DELETE', headers: { Origin: ORIGIN, 'If-Match': '"1"' } }),
+    );
+    expect(allowed.status).toBe(204);
   });
 
   it('refuses a foreign origin that only shares the host name', async () => {
@@ -397,7 +452,7 @@ describe('CORS and headers', () => {
       expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
       expect(res.headers.get('X-Frame-Options')).toBe('DENY');
       expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
-      expect(res.headers.get('Strict-Transport-Security')).toContain('max-age=');
+      expect(res.headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
       expect(res.headers.get('Cache-Control')).toBe('no-store');
     }
   });

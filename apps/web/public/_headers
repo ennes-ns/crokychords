@@ -1,0 +1,9 @@
+# Security headers for the static web app, applied by Workers Static Assets to every asset
+# response (docs/specs/deploy-v1.md, hardening item 9). /api/* is answered by the Worker, which
+# sets its own headers (apps/api/src/app.ts). Shipped by vite.config.ts (SHIPPED_PUBLIC_FILES).
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
