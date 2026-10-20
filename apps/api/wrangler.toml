@@ -1,5 +1,5 @@
 # Croky Chords: web app (static assets) + API (Hono) in one Worker. See docs/specs/deploy-v1.md.
-# Placeholders only; account-specific values are set at deploy time (docs/specs/api-v1.md §2).
+# Production values; secrets stay out of this file (docs/specs/api-v1.md §2).
 #
 # Secrets (never in this file; `wrangler secret put <NAME>`, locally in .dev.vars):
 #   ACCESS_TEAM_DOMAIN  <team>.cloudflareaccess.com of the Access organisation
@@ -14,10 +14,10 @@ preview_urls = false
 minify = true
 upload_source_maps = true
 
-# Production hostname (placeholder: replace with the real hostname before the first deploy).
+# Production hostname.
 # `wrangler deploy` creates the Custom Domain; it needs Workers Routes: Edit on the zone.
 [[routes]]
-pattern = "chords.example.com"
+pattern = "chords.cr0ky.com"
 custom_domain = true
 
 # The built web app (`pnpm --filter @crokychords/web build`). Static paths are served from the
@@ -30,13 +30,13 @@ run_worker_first = ["/api/*"]
 [vars]
 # The only browser origin the API accepts (the production hostname of the app this Worker
 # serves); requests with any other Origin get 403. Placeholder; local dev overrides it in .dev.vars.
-ALLOWED_ORIGIN = "https://chords.example.com"
+ALLOWED_ORIGIN = "https://chords.cr0ky.com"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "crokychords"
-# Placeholder; replaced with the real database id when the database is created.
-database_id = "00000000-0000-0000-0000-000000000000"
+# Production database (D1 ids are not secrets).
+database_id = "abeff41e-ec33-4ea0-8e88-11b94fd3fc09"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
