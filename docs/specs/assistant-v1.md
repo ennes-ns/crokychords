@@ -85,7 +85,9 @@ Audio and Web MIDI out; in the terminal the MIDI port.
 **Files:** `exportMidi` (result `{ fileName, bytes, base64 }`: the `.mid` file as `songToMidi`
 writes it, with the General MIDI programs of the current sound settings; the terminal app also
 writes it to `<data dir>/exports/` and returns `path`), `save` (write pending edits now: the web
-app's autosave, the terminal's record or `--song` file).
+app's autosave, the terminal's record or `--song` file), `importFile { name, data, tonic?, mode? }`
+(replace the song with a MIDI/MusicXML file given in base64, one undo step; web only, the terminal
+app answers `unsupported`; [import-v1](import-v1.md) §C).
 
 ### A3. Running commands
 

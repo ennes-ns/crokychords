@@ -95,8 +95,11 @@ more notes of the chord part start together (an *attack*); when fewer than half 
 notes start in attacks (arpeggios), every bar start is a boundary too. A segment runs to the next
 boundary; its content is every pitch class sounding in it, weighted by duration, and its bass is
 the lowest note sounding at its start (else the lowest in it). A segment where nothing sounds is a
-`rest`. Repeated attacks of the same chord less than one beat apart (stabs, eighths) merge into one
-chord; attacks one beat or more apart stay separate chords, so `I I` survives.
+`rest`. A silence of at least one beat (and at least a quarter of the sounding time) after a
+segment's notes is a rest too; the chord then ends on the first whole beat after its last note
+(this undoes the gate of exported chords). Repeated attacks of the same chord merge into one chord
+when they fall in the same bar and the earlier one is shorter than two beats (stabs, eighths);
+otherwise they stay separate chords, so `I I` in whole bars or half notes survives.
 
 **Matching.** Each segment is matched against the chord shapes the token format spells:
 triads (major, minor, dim, aug, sus2, sus4), sevenths (`7`, `maj7`, minor 7, minor-major 7, `ø7`,
@@ -112,9 +115,10 @@ with its notes). The inversion comes from the bass: third (or sus tone) `/1`, fi
 modes) is scored from a duration-weighted pitch-class histogram of all used notes (chords and
 melody): the share of weight inside the scale, the correlation with a major or minor key profile
 (major profile for major/lydian/mixolydian, minor for the rest), bonuses when the first and the last
-chord are the tonic triad of that mode, a bonus when the file's key signature (and minor flag or
-MusicXML mode) agrees, and a small prior for major and minor so that plain diatonic music is not
-called lydian or dorian. The best score wins; the report gives the runner-up and a confidence.
+chord are the tonic triad of that mode, the share of chord time that is diatonic or on the tonic, a
+bonus when the file's key signature (and minor flag or MusicXML mode) agrees, and a small prior for
+major and minor so that plain diatonic music is not called lydian or dorian. Harmonic minor and
+phrygian dominant need clear evidence (a raised seventh in a minor song is usually a borrowed `V`). The best score wins; the report gives the runner-up and a confidence.
 
 **Roman numerals.** A root on a scale degree gets that degree with no accidental and its own
 quality (so `III` in C major is the E major chord). A root off the scale is **borrowed**: a flat
@@ -125,12 +129,16 @@ a secondary dominant (`V/vi`, `V7/ii`). The report counts diatonic, borrowed and
 
 ### A4. Melody
 
-The melody part is the highest (by mean pitch) mostly monophonic part (at most 10 % of its notes
-overlap another) that is not the chord part; with chord symbols the chord part does not exist, so
-a lead sheet's single part is the melody. Overlaps are resolved by keeping the highest note
-(skyline) and cutting the one before. Starts are quantised to ¼ beat; an end snaps to the next
-note's start (or the song end) when the gap is under a 1/16 note or 10 % of the note, else it is
-quantised to ¼ beat (at least ¼ beat). This undoes the gate of exported notes.
+The melody part is a mostly monophonic part (at most 10 % of its notes overlap another) above the
+bass (mean pitch at least C3) that is not the chord part; with chord symbols the chord part does not
+exist, so a lead sheet's single part is the melody. Among the candidates a part named like a melody
+(melody, lead, vocal, voice, solo, …) wins, machine-regular lines (16 or more notes, equal gaps and
+lengths: arpeggios) come last, and then the highest mean pitch wins. Overlaps are resolved by
+keeping the highest note (skyline) and cutting the one before. Starts are quantised to ¼ beat. The
+part's gate (the largest ratio of a note's length to the time to the next note, at most 1) is
+undone first; then an end snaps to the next note's start (or the song end) when the gap is under a
+1/32 note or 10 % of the note, else it is quantised to ¼ beat (at least ¼ beat). When the melody
+runs past the last chord, a rest is added so it plays to its end.
 
 Pitch → `{ degree, octave, accidental }` relative to the key: octave 0 is the octave from the tonic
 in octave 4 up (as `melodyNotePitch`). A pitch off the scale prefers the spelling that is a tone of
@@ -159,7 +167,8 @@ export interface ImportReport {
 ## B. Web (`apps/web`)
 
 - **More panel → Song**: `Import…` (file picker, several files) and `Import folder…`
-  (`webkitdirectory`). Files are filtered by extension.
+  (`webkitdirectory`). Files are filtered by extension; at most 200 files of at most 5 MB each
+  are read, the rest are listed as skipped.
 - **Drop** files (or a folder, through `webkitGetAsEntry` where the browser has it) on the chord
   grid; the grid shows a drop outline while a file is dragged over it.
 - **Preview** (`src/views/importer.ts`): a modal dialog with one entry per file: title, key (with a
@@ -190,3 +199,16 @@ chord matching per shape and inversion; key detection per mode; a fuzz test (ran
 mutated valid files never throw anything but `ImportError`, and every song validates).
 Web: the preview view (entries, override, Open/Save all/Cancel), file filtering, the session's
 `importSongs`, the `importFile` command.
+
+## Notes on the implementation
+
+- Deviations from the issue text: none in behaviour. Beyond triads and sevenths the matcher also
+  knows `add6`, `add9` and ninths, because the token format spells them and block chords from
+  other editors use them; chord symbols (MusicXML `<harmony>`) take precedence over block chords
+  when a score has both; MusicXML parts are split per staff.
+- Not recovered: slash chords whose bass is no chord tone (the token format has none; the bass is
+  dropped and reported), a separate bass track's inversions (only the chord part's lowest note
+  counts), `I I` repeats shorter than two beats inside one bar (merged), swing and triplets
+  (quantised to 1/16), more than one key, tempo or meter.
+- The importer has no Rust port yet: the terminal app parses `importFile` and answers
+  `unsupported`; the core goldens are unaffected.
