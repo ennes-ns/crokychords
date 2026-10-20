@@ -121,7 +121,7 @@ Changes versus today, and why:
   origin as well (one line, with a test) before enabling Previews.
 - **Data table:** `docs/DATA.md` says built tables never enter a build; that rule was written for
   the personal-use data. Chordonomicon output may be redistributed with attribution (the UI shows
-  the source). See open decision 3 for how `ngrams.json` reaches production.
+  the source). See decision 3 for how `ngrams.json` reaches production.
 
 ## 4. Runbook
 
@@ -186,7 +186,7 @@ lists `users` and `saves`. Rollback: D1 Time Travel (7 days on Free):
 2. **Zero Trust → Integrations → Identity providers → Add new identity provider → One-time PIN.**
    New organisations do not get OTP automatically
    ([one-time PIN](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/)).
-3. Optional (open decision 2): add **GitHub** and/or **Google** as identity providers. Each needs an
+3. Optional (decision 2): add **GitHub** and/or **Google** as identity providers. Each needs an
    OAuth app registered at the provider with the callback
    `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`, and its client id/secret pasted
    into Zero Trust. OTP needs nothing.
@@ -315,13 +315,13 @@ Rollback: an empty e-mail list closes the door.
 | 1   | Access in front of the whole hostname (section 4, step 6)                                             | yes   | Zero Trust → Access controls → Applications                                                 |
 | 2   | WAF **Free Managed Ruleset**: deployed by default on Free zones; verify it is on                       | yes   | Security → Settings → Web application exploits                                              |
 | 3   | **Rate limiting rule** (the one Free rule): expression `(starts_with(http.request.uri.path, "/api/"))`, characteristic IP, 50 requests per 10 seconds, action Block, duration 10 seconds | yes (1 rule, IP only, 10 s period, Block) | Security → Security rules → Create rule → Rate limiting rules |
-| 4   | **Bot Fight Mode** on. Cannot be exempted on Free; if a friend's browser gets challenged on `fetch`, turn it off (open decision 5) | yes | Security → Settings → Bot traffic                                                     |
+| 4   | **Bot Fight Mode** on. Cannot be exempted on Free; if a friend's browser gets challenged on `fetch`, turn it off (decision 5) | yes | Security → Settings → Bot traffic                                                     |
 | 5   | **Always Use HTTPS** and **minimum TLS 1.2**                                                          | yes   | SSL/TLS → Edge Certificates                                                                 |
 | 6   | **HSTS**: max-age 12 months, includeSubDomains off (other `cr0ky.com` subdomains may not be HTTPS), preload off, No-Sniff on. Only after HTTPS works everywhere | yes | SSL/TLS → Edge Certificates → HSTS                                                |
 | 7   | Worker route **fail closed** (section 4, step 8)                                                      | yes   | Workers & Pages → crokychords → Settings → Domains & Routes                                 |
 | 8   | `workers.dev` off, Version URLs off (config: `workers_dev = false`)                                   | yes   | same                                                                                        |
 | 9   | Security headers on the static pages: add a `_headers` file to the asset directory (CSP `default-src 'self'`, `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy`) — the Hono headers only cover `/api/*`. `apps/web` has `copyPublicDir: false`, so the build must emit it explicitly | yes | follow-up issue in `apps/web` |
-| 10  | **Turnstile**: free (20 widgets) but there is no public form in v1 (invites are a dashboard action); not installed | yes | open decision 6                                                                   |
+| 10  | **Turnstile**: free (20 widgets) but there is no public form in v1 (invites are a dashboard action); not installed | yes | decision 6                                                                   |
 | 11  | Not free, not needed: Cloudflare Managed Ruleset / OWASP (Pro), Super Bot Fight Mode (Pro), more rate-limit rules and Managed Challenge action (Pro), Access beyond 50 users | no | — |
 
 Sources: [WAF plans](https://developers.cloudflare.com/waf/), [WAF get started](https://developers.cloudflare.com/waf/get-started/)
@@ -525,25 +525,27 @@ rclone sync r2:crokychords-saves "backups/r2" --dry-run   # then without --dry-r
   database; `rclone copy backups/r2 r2:crokychords-saves` with a write token.
 - Backups hold personal data: keep them on an encrypted disk and out of any shared folder.
 
-## 10. Open decisions (maintainer)
+## 10. Decisions (maintainer, 2026-10-20)
 
-1. **Worker name**: `crokychords` (recommended, one Worker is the whole app) or keep
-   `crokychords-api`. Decide before the first deploy.
-2. **Login methods**: One-time PIN only (zero setup, recommended for v1) or also GitHub and/or
-   Google (each needs an OAuth app registered by the maintainer). The `online-v1.md` open question.
-3. **`ngrams.json` in production**: (a) CI runs the Chordonomicon builder and ships the table as a
-   static asset under `dist/data/` (free, cached; file must stay under 25 MiB; CI downloads 264 MB
-   per build unless cached), or (b) the maintainer uploads the table once to R2 and the Worker
-   serves `/data/ngrams.json` from it (counts as Worker requests; no build-time download).
-   Either way `docs/DATA.md` needs the wording change from section 3.
-4. **Previews**: enable with v1 or after launch (recommended: after; needs the Wrangler bump, the
-   Origin-check change, a second Access application and preview D1/R2).
-5. **Bot Fight Mode**: on (recommended) with the understanding that it cannot be exempted on Free.
-6. **Turnstile**: drop from v1 (no public form). Revisit if a self-service invite page is built.
-7. **Rate limit numbers**: 50 requests per 10 seconds per IP as a start; tune from Security → Events.
-8. **Backup cadence and location**: weekly to the maintainer's encrypted disk, or more often.
-9. **Worker-level Access** ("Protect this Worker behind Access") instead of a hostname application
-   for production. Not recommended for v1; natural for Previews.
+1. **Worker name** — decided: `crokychords`. One Worker is the whole app; set before the first
+   deploy, renaming later would mean a new Worker.
+2. **Login methods** — decided: One-time PIN only in v1. Zero setup, no OAuth apps to register;
+   GitHub/Google can be added later as extra identity providers without touching the Worker.
+3. **`ngrams.json` in production** — decided: the default suggestion table ships as a static asset
+   under `dist/data/` (issue #3 makes it < 500 KB, far below the 25 MiB per-file limit; static
+   requests are free and cached). `docs/DATA.md` gets the wording change from section 3.
+4. **Previews** — decided: per-PR Previews come after go-live. They need the Wrangler bump, the
+   Origin-check change, a second Access application and preview D1/R2 (section 7, phase 2).
+5. **Bot Fight Mode** — decided: on, knowing it cannot be exempted on Free; turn off if a friend's
+   `fetch` gets challenged.
+6. **Turnstile** — decided: not in v1. Invites are a dashboard action, there is no public form.
+7. **Rate limit** — decided: 50 requests per 10 seconds per IP on `/api/*`, action Block for
+   10 seconds (the Free plan's one rule); tune from Security → Events.
+8. **Backups** — decided: weekly, `d1 export` plus rclone mirror, to an encrypted local disk of the
+   maintainer; never as a GitHub Actions artifact.
+9. **Access scope** — decided: a hostname-level self-hosted Access application for
+   `chords.cr0ky.com` (documented AUD, policies and CORS settings). Worker-level Access is reserved
+   for Previews later.
 
 ## 11. Out of scope
 

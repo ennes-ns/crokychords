@@ -18,16 +18,20 @@ en met naamsvermelding. Zie `docs/DATA.md`. De UI toont de bron.
 
 ```
 browser ──HTTPS──▶ Cloudflare Access (login, alleen uitgenodigde e-mails)
-                     ├─ Pages      : apps/web (statisch)
-                     └─ Worker     : apps/api (Hono) ── D1 (accounts, metadata)
-                                                     └─ R2 (saves als JSON)
+                     └─ Worker "crokychords"
+                          ├─ static assets : apps/web (gratis, geen Worker-aanroep)
+                          └─ /api/*        : apps/api (Hono) ── D1 (accounts, metadata)
+                                                             └─ R2 (saves als JSON)
 ```
 
-- **Geen eigen server.** Pages host de web-app, een Worker de API, D1 de accounts en metadata, R2 de saves,
-  Access het inloggen. Alles valt binnen de gratis tier voor een vriendengroep: Workers 100.000 requests per
-  dag, D1 5 GB en 5 miljoen reads per dag, R2 10 GB met 1 miljoen schrijf- en 10 miljoen leesoperaties per
-  maand, Access tot 50 gebruikers. Daardoor vervalt het hele probleem "origin alleen via Cloudflare
-  bereikbaar": er is geen origin.
+- **Geen eigen server, één Worker.** Eén Worker serveert de web-app als static assets en draait de API
+  (`run_worker_first = ["/api/*"]`); D1 houdt de accounts en metadata, R2 de saves, Access het inloggen.
+  Geen Pages: Cloudflare adviseert Workers voor nieuwe projecten, en één origin betekent geen CORS, geen
+  preflights door Access en één Access-app. Alles valt binnen de gratis tier voor een vriendengroep:
+  Workers 100.000 requests per dag (statische requests tellen niet mee), D1 5 GB en 5 miljoen reads per
+  dag, R2 10 GB met 1 miljoen schrijf- en 10 miljoen leesoperaties per maand, Access tot 50 gebruikers.
+  Daardoor vervalt het hele probleem "origin alleen via Cloudflare bereikbaar": er is geen origin.
+  Uitrol: `deploy-v1.md`.
 - **Accounts via Cloudflare Access (Zero Trust).** Inloggen met een code per e-mail (of GitHub/Google);
   alleen uitgenodigde adressen komen erin. Geen eigen wachtwoorden. De Worker controleert de
   `Cf-Access-Jwt-Assertion` (handtekening en audience tegen de Access-certs; nooit de header blind
@@ -63,7 +67,7 @@ browser ──HTTPS──▶ Cloudflare Access (login, alleen uitgenodigde e-mai
 | 1   | `SaveStore`-interface + IndexedDB lokaal (issue, agent)                                | unit-tests                                                     | branch                            |
 | 2   | `apps/api` (Hono op Workers): JWT-check met test-JWKS, saves via `SaveStore` (schijf)  | tests incl. vervalste JWT, te grote save, versieconflict        | branch                            |
 | 3   | Wrangler-config: D1-database, R2-bucket, bindings; lokale dev met `wrangler dev`        | integratietest lokaal (Miniflare)                              | branch                            |
-| 4   | Pages-project + Worker uitrollen op een preview-URL                                    | app werkt, kosten 0                                            | deployment verwijderen            |
+| 4   | Worker (static assets + API) uitrollen op `chords.cr0ky.com` (`deploy-v1.md`)          | app werkt, kosten 0                                            | deployment verwijderen            |
 | 5   | DNS `chords.cr0ky.com`, Access-app met uitnodigingslijst, WAF, rate limit, Turnstile   | uitgenodigd adres komt binnen, ander adres niet                | Access-app uit, DNS terug         |
 | 6   | security-review + vrienden uitnodigen                                                  | checklist groen                                                | Access-lijst leeg = dicht         |
 
