@@ -36,6 +36,9 @@ export interface AssistantPanel {
   button: HTMLButtonElement;
   isOpen(): boolean;
   setOpen(open: boolean): void;
+  /** Hidden (button, panel, Ctrl/Cmd+K) until enabled (issue #100). */
+  isEnabled(): boolean;
+  setEnabled(enabled: boolean): void;
 }
 
 export interface AssistantDeps {
@@ -82,10 +85,11 @@ export function mountAssistant(deps: AssistantDeps): AssistantPanel {
   let proposal: Proposal | null = null;
   let pending = false;
   let available = false;
+  let enabled = false;
 
   const button = h('button', {
     class: 'tool-icon assistant-toggle',
-    props: { type: 'button' },
+    props: { type: 'button', hidden: true },
     attrs: {
       'aria-label': 'Assistant',
       'aria-expanded': 'false',
@@ -250,6 +254,7 @@ export function mountAssistant(deps: AssistantDeps): AssistantPanel {
   };
 
   const setOpen = (open: boolean): void => {
+    if (open && !enabled) return;
     element.hidden = !open;
     button.setAttribute('aria-expanded', String(open));
     button.classList.toggle('active', open);
@@ -283,13 +288,27 @@ export function mountAssistant(deps: AssistantDeps): AssistantPanel {
   });
   renderControls();
 
-  return { element, button, isOpen: () => !element.hidden, setOpen };
+  const setEnabled = (on: boolean): void => {
+    enabled = on;
+    button.hidden = !on;
+    if (!on && !element.hidden) setOpen(false);
+  };
+
+  return {
+    element,
+    button,
+    isOpen: () => !element.hidden,
+    setOpen,
+    isEnabled: () => enabled,
+    setEnabled,
+  };
 }
 
-/** Ctrl/Cmd+K anywhere toggles the panel. Returns the unbind. */
+/** Ctrl/Cmd+K anywhere toggles the panel while it is enabled. Returns the unbind. */
 export function bindAssistantKey(target: EventTarget, panel: AssistantPanel): () => void {
   const down = (e: Event): void => {
     if (!(e instanceof KeyboardEvent)) return;
+    if (!panel.isEnabled()) return;
     if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'k') return;
     e.preventDefault();
     panel.setOpen(!panel.isOpen());

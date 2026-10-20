@@ -4,6 +4,7 @@ import {
   AssistantError,
   HttpAssistantClient,
   OFFLINE_REASON,
+  assistantVisible,
   unavailableClient,
 } from '../src/assistant/client';
 
@@ -83,5 +84,29 @@ describe('HttpAssistantClient', () => {
       /cannot be reached/,
     );
     await expect(unavailableClient().ask(question())).rejects.toThrow(/online version/);
+  });
+});
+
+describe('assistant visibility (issue #100)', () => {
+  it('with the API: only when GET /assistant says enabled', async () => {
+    expect(await client([Response.json({ enabled: true, available: true })]).c.enabled()).toBe(
+      true,
+    );
+    expect(await client([Response.json({ enabled: false, available: false })]).c.enabled()).toBe(
+      false,
+    );
+    expect(await client([Response.json({ available: true })]).c.enabled()).toBe(false);
+    expect(await client([error(401, 'unauthorized', 'no')]).c.enabled()).toBe(false);
+    expect(await client([new Error('down')]).c.enabled()).toBe(false);
+    const on = client([Response.json({ enabled: true })]).c;
+    expect(await assistantVisible({ VITE_ASSISTANT: 'off' }, on)).toBe(true);
+    const off = client([Response.json({ enabled: false })]).c;
+    expect(await assistantVisible({ VITE_ASSISTANT: 'on' }, off)).toBe(false);
+  });
+
+  it('without the API: hidden unless VITE_ASSISTANT=on', async () => {
+    expect(await assistantVisible({}, null)).toBe(false);
+    expect(await assistantVisible({ VITE_ASSISTANT: 'off' }, null)).toBe(false);
+    expect(await assistantVisible({ VITE_ASSISTANT: 'on' }, null)).toBe(true);
   });
 });

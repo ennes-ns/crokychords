@@ -63,7 +63,12 @@ function setup(vars: Partial<Env> = {}, replies: Reply[] = [answer('Done.')]) {
       return Promise.resolve(Response.json(reply.json, { status: reply.status ?? 200 }));
     },
   });
-  const bindings = { ...env, ANTHROPIC_API_KEY: 'test-key-not-real', ...vars };
+  const bindings = {
+    ...env,
+    ANTHROPIC_API_KEY: 'test-key-not-real',
+    ASSISTANT_ENABLED: 'true',
+    ...vars,
+  };
   const request = (path: string, init: RequestInit = {}, as = token) =>
     Promise.resolve(app.request(`https://api.example.test${path}`, authed(as, init), bindings));
   const ask = (body: unknown, as = token) =>
@@ -91,6 +96,7 @@ describe('GET /api/assistant', () => {
     const res = await request('/api/assistant');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
+      enabled: true,
       available: true,
       model: 'claude-sonnet-5-5',
       limits: { per_minute: 6, per_day: 50 },
@@ -100,7 +106,21 @@ describe('GET /api/assistant', () => {
 
   it('is unavailable without a key', async () => {
     const { request } = setup({ ANTHROPIC_API_KEY: '' });
-    expect(await (await request('/api/assistant')).json()).toMatchObject({ available: false });
+    expect(await (await request('/api/assistant')).json()).toMatchObject({
+      enabled: false,
+      available: false,
+    });
+  });
+
+  it('is disabled unless ASSISTANT_ENABLED is "true" (the wrangler.toml default is "false")', async () => {
+    expect(env.ASSISTANT_ENABLED).toBe('false');
+    for (const value of ['false', '', 'yes']) {
+      const { request } = setup({ ASSISTANT_ENABLED: value });
+      expect(await (await request('/api/assistant')).json()).toMatchObject({
+        enabled: false,
+        available: false,
+      });
+    }
   });
 
   it('needs an Access token like every API route', async () => {
@@ -172,6 +192,14 @@ describe('POST /api/assistant', () => {
 
   it('is unavailable without a key, before the body is even read', async () => {
     const { ask, sent } = setup({ ANTHROPIC_API_KEY: '' });
+    const res = await ask('not json');
+    expect(res.status).toBe(503);
+    expect(await code(res)).toBe('assistant_unavailable');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('is unavailable while ASSISTANT_ENABLED is off, even with a key', async () => {
+    const { ask, sent } = setup({ ASSISTANT_ENABLED: 'false' });
     const res = await ask('not json');
     expect(res.status).toBe(503);
     expect(await code(res)).toBe('assistant_unavailable');
@@ -284,6 +312,7 @@ describe('POST /api/assistant', () => {
 describe('assistant helpers', () => {
   it('reads its configuration with defaults for missing or bad values', () => {
     expect(assistantConfig({ DB: env.DB })).toEqual({
+      enabled: false,
       key: null,
       model: 'claude-sonnet-5-5',
       budgetMicroUsd: 1_000_000,
@@ -300,7 +329,17 @@ describe('assistant helpers', () => {
         ASSISTANT_USER_DAILY_REQUESTS: '-3',
         ASSISTANT_MODEL: 'claude-haiku-5-5',
       }),
-    ).toMatchObject({ key: 'k', budgetMicroUsd: 1_000_000, perDay: 50, model: 'claude-haiku-5-5' });
+    ).toMatchObject({
+      enabled: false,
+      key: 'k',
+      budgetMicroUsd: 1_000_000,
+      perDay: 50,
+      model: 'claude-haiku-5-5',
+    });
+    expect(
+      assistantConfig({ DB: env.DB, ANTHROPIC_API_KEY: 'k', ASSISTANT_ENABLED: 'true' }).enabled,
+    ).toBe(true);
+    expect(assistantConfig({ DB: env.DB, ASSISTANT_ENABLED: 'true' }).enabled).toBe(false);
   });
 
   it('estimates the cost per model, unknown models at the highest rate', () => {
