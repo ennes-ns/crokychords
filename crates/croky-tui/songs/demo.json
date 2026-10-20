@@ -1,5 +1,5 @@
 {
-  "schema": 2,
+  "schema": 4,
   "title": "Demo",
   "key": {
     "tonic": "A",
@@ -168,5 +168,11 @@
       "muted": true,
       "transpose": 0
     }
-  ]
+  ],
+  "melody": {
+    "channel": 3,
+    "muted": false,
+    "notes": []
+  },
+  "patterns": []
 }

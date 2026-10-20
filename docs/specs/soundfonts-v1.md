@@ -231,7 +231,8 @@ Piano and Pad stay all-synth (they work without any download). Band keeps its pi
 (`C<ch> <program>`) at tick 0, right after the name and channel-prefix meta events; without
 entries the file is byte-identical to before. The web export passes the program of every
 track's current instrument (§7). Format 0 (schema-1 songs) ignores the option. The Rust port
-has no MIDI writer, so its goldens do not change.
+(`crates/croky-core`, `MidiOptions.programs`) writes the same bytes (parity goldens
+`format1-programs*`, issue #66); the terminal app exports with the default preset's programs.
 
 ## 10. Tests
 

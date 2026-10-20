@@ -1,0 +1,30 @@
+ Croky Chords   Axis · C major · 120 BPM · 4/4 · 4 chords · 16 beats  v3
+┌ Progression ─────────────────────────────────────────────────────────────────────────────────────┐
+│ 1           2           3           4                                                            │
+│ I         │ V         │ vi        │ IV        │›+         ┊                                      │
+│ C         │ G         │ Am        │ F         │ add       ┊                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Next chord · adds at the end ──────────────────────────────┐┌ Band · t select · m mute ──────────┐
+│ ▸ I        C         66.7% ██████████████████████████████  ││ ▸ Chords  sustain       ch1        │
+│   V        G         25.3% ███████████                     ││   Bass    bass-quarters ch2        │
+│   vi       Am         3.5% ██                              ││   Arp     arp-up-8      ch3  muted │
+│   ii       Dm         2.3% █                               ││   Melody  0 notes       ch4        │
+│   iii      E┌ Saved progressions (3) ──────────────────────────────────────────────┐─────────────┘
+│   I/1      C│   Axis                          v3    2026-10-20 12:34 UTC  ● open   │─────────────┐
+│   iv       F│ ▸ Night drive                   v12   2026-10-19 08:00 UTC           │irtual)      │
+│   II       D│   Sketch                        v1    2026-10-01 23:59 UTC           │             │
+│   after: V v│                                                                      │             │
+│   ↑/↓ choose│   1 unreadable file(s) skipped                                       │             │
+│             │   Enter open · n new song · d delete · Esc close                     │             │
+│             └──────────────────────────────────────────────────────────────────────┘             │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+│                                                            ││                                    │
+└────────────────────────────────────────────────────────────┘└────────────────────────────────────┘
+ ? help  ←/→ select  ↑/↓ Enter pick  1-7 triad  [ ] length  ( ) loop  Space play  o saves  q quit
+ picks replace the selected chord; on the + slot they add

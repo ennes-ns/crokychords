@@ -1,0 +1,24 @@
+ Croky Chords   Axis · C major · 120 BPM · 4/4 · 10 chords · 40 beats  v3
+┌ Progression ─────────────────────────────────────────────────────────────────┐
+│ 1           2           3           4           5           6                │
+│ I         │ V         │ vi        │ IV        │ I         │ V         │      │
+│ C         │ G         │ Am        │ F         │ C         │ G         │      │
+│ 7           8           9           10                                       │
+│ IV        │ I         │ V         │ IV        │›+         ┊                  │
+│ F         │ C         │ G         │ F         │ add       ┊                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌ Next chord · adds at the end ──────────┐┌ Band · t select · m mute ──────────┐
+│ ▸ I        C         67.6% ██████████  ││ ▸ Chords  sustain       ch1        │
+│   V        G         19.0% ███         ││   Bass    bass-quarters ch2        │
+│   vi       Am         7.9% █           ││   Arp     arp-up-8      ch3  muted │
+│   ii       Dm         2.5%             ││   Melody  0 notes       ch4        │
+│   iii      Em         1.2%             │└────────────────────────────────────┘
+│   II       D          0.7%             │┌ MIDI ──────────────────────────────┐
+│   iv       Fm         0.6%             ││ out   croky-tui:out (virtual)      │
+│   III      E          0.5%             ││ now   ○ stopped                    │
+│   after: I V IV                        ││ loop  whole song                   │
+│   ↑/↓ choose · Enter adds              ││ late  –                            │
+│                                        ││ sched SCHED_FIFO 40                │
+└────────────────────────────────────────┘└────────────────────────────────────┘
+ ? help  ←/→ select  ↑/↓ Enter pick  1-7 triad  [ ] length  ( ) loop  Space play
+ → added IV (F)

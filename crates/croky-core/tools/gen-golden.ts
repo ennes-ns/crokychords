@@ -868,6 +868,24 @@ midiCase('error-track-channel', banded(spec, band), {}, 'track0Channel16');
 midiCase('format1-velocity-clamped', banded(spec, band), {}, 'track0Velocity0');
 midiCase('format1-fixture-v4', fixtureV4, {});
 midiCase('format1-fixture-v4-all', fixtureV4, { includeMuted: true, ppq: 240 });
+// Program Change per track (`programs`, soundfonts-v1 §9).
+const [chordsId, bassId, arpId] = band.map((t) => t.id) as [string, string, string];
+midiCase('format1-programs', banded(melodic, band), {
+  programs: { [chordsId]: 0, [bassId]: 32, melody: 73, 'trk-unknown': 5 },
+});
+midiCase('format1-programs-all', banded(melodic, band), {
+  includeMuted: true,
+  programs: { [chordsId]: 127, [bassId]: 38, [arpId]: 4, melody: 0 },
+});
+midiCase('format1-programs-fixture', fixtureV4, {
+  programs: { 'trk-chords01': 6, 'trk-bass0001': 45, 'trk-arp00001': 73, melody: 71 },
+});
+midiCase('format1-programs-empty', banded(spec, band), { programs: {} });
+midiCase('format1-programs-muted-skipped', banded(spec, band), { programs: { [arpId]: 128 } });
+midiCase('format0-programs-ignored', axis, { programs: { [chordsId]: 5 } });
+midiCase('error-program-128', banded(spec, band), { programs: { [bassId]: 128 } });
+midiCase('error-program-fraction', banded(spec, band), { programs: { [chordsId]: 1.5 } });
+midiCase('error-program-negative', banded(melodic, band), { programs: { melody: -1 } });
 writeLines('midi.jsonl', midiLines);
 
 // parseNgramTable errors: mutations of the seed table.

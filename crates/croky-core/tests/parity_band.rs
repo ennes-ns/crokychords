@@ -210,6 +210,15 @@ fn midi_options(v: &Value) -> MidiOptions {
             .and_then(Value::as_str)
             .map(str::to_string),
         include_muted: v.get("includeMuted") == Some(&json!(true)),
+        programs: v
+            .get("programs")
+            .and_then(Value::as_object)
+            .map(|m| {
+                m.iter()
+                    .map(|(id, p)| (id.clone(), p.as_f64().expect("a number")))
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -253,5 +262,5 @@ fn midi_files_are_byte_identical() {
         );
         files += 1;
     }
-    assert!(files >= 15, "{files} files");
+    assert!(files >= 21, "{files} files");
 }
