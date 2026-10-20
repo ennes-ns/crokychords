@@ -113,6 +113,37 @@ export async function verifyAccessJwt(
   jwks: JwksSource,
   now?: Date,
 ): Promise<AccessIdentity> {
+  const payload = await verifyAccessToken(token, config, jwks, now);
+  const email = payload['email'];
+  if (typeof email !== 'string' || email.trim() === '') throw new AuthError('no email claim');
+  return { email: email.trim().toLowerCase(), claims: payload };
+}
+
+/**
+ * Verify an Access JWT of a user or of an Access service token (docs/specs/moderation-v1.md
+ * §3.1): the same checks as `verifyAccessJwt`, but a service token's JWT carries `common_name`
+ * (its client id) instead of `email`, so either claim is enough. Returns the identity's name.
+ */
+export async function verifyAccessServiceJwt(
+  token: string,
+  config: AccessConfig,
+  jwks: JwksSource,
+  now?: Date,
+): Promise<string> {
+  const payload = await verifyAccessToken(token, config, jwks, now);
+  for (const claim of ['common_name', 'email']) {
+    const value = payload[claim];
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  }
+  throw new AuthError('no common_name or email claim');
+}
+
+async function verifyAccessToken(
+  token: string,
+  config: AccessConfig,
+  jwks: JwksSource,
+  now?: Date,
+): Promise<JWTPayload> {
   let kid: string | undefined;
   try {
     const header = decodeProtectedHeader(token);
@@ -124,7 +155,6 @@ export async function verifyAccessJwt(
   }
 
   const jwk = await findKey(jwks, kid);
-  let payload: JWTPayload;
   try {
     const key = await importJWK({ ...jwk, alg: 'RS256' }, 'RS256');
     const result = await jwtVerify(token, key, {
@@ -135,14 +165,10 @@ export async function verifyAccessJwt(
       clockTolerance: CLOCK_TOLERANCE_SECONDS,
       ...(now === undefined ? {} : { currentDate: now }),
     });
-    payload = result.payload;
+    return result.payload;
   } catch (e) {
     throw new AuthError(e instanceof Error ? e.message : 'verification failed');
   }
-
-  const email = payload['email'];
-  if (typeof email !== 'string' || email.trim() === '') throw new AuthError('no email claim');
-  return { email: email.trim().toLowerCase(), claims: payload };
 }
 
 async function findKey(jwks: JwksSource, kid: string | undefined): Promise<JWK> {

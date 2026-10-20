@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
-import { ACCESS_JWT_HEADER, AuthError, verifyAccessJwt } from './auth';
+import { ACCESS_JWT_HEADER, AuthError, verifyAccessJwt, verifyAccessServiceJwt } from './auth';
 import type { JwksSource } from './auth';
 import type { AssistantEnv } from './assistant';
 import { registerAssistant } from './assistant';
@@ -12,13 +12,15 @@ import type { CommunityEnv } from './community';
 import { isMaintainer, registerCommunity } from './community';
 import { displayHandle } from './communityStore';
 import { ApiError } from './errors';
+import type { GuardRunner, ModerationEnv } from './moderation';
+import { isJobPath, registerModeration, requireModerationToken } from './moderation';
 import { LIMITS, SCHEMA_VERSION, describeIssues, isSaveId, saveInputSchema } from './record';
 import type { SaveRecord } from './record';
 import { Storage } from './storage';
 import type { User } from './storage';
 
 /** Bindings, vars and secrets of the Worker (see wrangler.toml and docs/specs/api-v1.md §2). */
-export interface Env extends AssistantEnv, CommunityEnv, BackupEnv {
+export interface Env extends AssistantEnv, CommunityEnv, BackupEnv, ModerationEnv {
   DB: D1Database;
   SAVES: R2Bucket;
   /** The built web app (wrangler.toml `[assets]`); not used by the API routes. */
@@ -37,6 +39,8 @@ export interface AppDeps {
   now?: () => Date;
   /** `fetch` for the model API (docs/specs/assistant-v1.md §B2), for tests. */
   fetch?: (input: string, init: RequestInit) => Promise<Response>;
+  /** The text moderation model (docs/specs/moderation-v1.md §3.1), for tests; default Workers AI. */
+  guard?: GuardRunner | undefined;
 }
 
 export type AppEnv = { Bindings: Env; Variables: { user: User; storage: Storage } };
@@ -92,6 +96,19 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     }
     const token = c.req.header(ACCESS_JWT_HEADER);
     if (token === undefined || token === '') throw unauthorized();
+    if (isJobPath(c.req.path)) {
+      // The moderation job (docs/specs/moderation-v1.md §3.1): an Access service token at the
+      // edge (its JWT has no e-mail) plus the bearer token; no user is created.
+      try {
+        await verifyAccessServiceJwt(token, { teamDomain, audience }, deps.jwks(teamDomain), now());
+      } catch (e) {
+        if (e instanceof AuthError) throw unauthorized();
+        throw e;
+      }
+      await requireModerationToken(c);
+      await next();
+      return;
+    }
     let email: string;
     try {
       ({ email } = await verifyAccessJwt(
@@ -221,7 +238,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     readBody: readBounded,
   });
 
-  registerCommunity(app, { now, readBody: readBounded });
+  registerCommunity(app, { now, readBody: readBounded, guard: deps.guard });
+  registerModeration(app, { now, readBody: readBounded, guard: deps.guard });
 
   registerBackupRoutes(app, { now });
 

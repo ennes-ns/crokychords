@@ -1,6 +1,7 @@
 /**
  * The community bank's routes (docs/specs/community-v1.md §3): upload and own samples, share and
- * unshare, the bank, take, handles, and the maintainer's review queue. Human review first: a
+ * unshare, the bank, take, handles, and the maintainer's review queue with the automatic
+ * recommendation, reports and appeals of docs/specs/moderation-v1.md. Human review first: a
  * share stays `pending` until the maintainer lists or rejects it here; nothing changes a share
  * automatically. Logs never contain sample bytes, names or e-mails.
  */
@@ -17,6 +18,8 @@ import {
   joinTags,
 } from './communityStore';
 import { ApiError } from './errors';
+import type { ModerationDeps } from './moderation';
+import { hardDeleteRoute } from './moderation';
 import { describeIssues } from './record';
 
 export interface CommunityEnv {
@@ -24,10 +27,7 @@ export interface CommunityEnv {
   ADMIN_EMAILS?: string;
 }
 
-export interface CommunityDeps {
-  now: () => Date;
-  readBody: (req: Request, max: number) => Promise<Uint8Array>;
-}
+export type CommunityDeps = ModerationDeps;
 
 /** Whether `email` is one of the maintainers in `ADMIN_EMAILS`. */
 export function isMaintainer(adminEmails: string | undefined, email: string): boolean {
@@ -151,6 +151,7 @@ export const decisionBodySchema = z.discriminatedUnion('action', [
     reason: z.enum(REJECT_REASONS),
     revision: revisionSchema,
   }),
+  z.object({ action: z.literal('dismiss'), revision: revisionSchema }),
 ]);
 
 export const releaseQuerySchema = z.object({ slot: z.enum(SAMPLER_SLOTS) });
@@ -457,8 +458,8 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
   app.get('/api/moderation/queue', async (c) => {
     requireMaintainer(c);
     const state = c.req.query('state') ?? 'pending';
-    if (state !== 'pending' && state !== 'listed') {
-      throw new ApiError('invalid_request', 'state is pending or listed');
+    if (state !== 'pending' && state !== 'listed' && state !== 'reported') {
+      throw new ApiError('invalid_request', 'state is pending, listed or reported');
     }
     return c.json({ items: await store(c).queue(state) });
   });
@@ -475,9 +476,16 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
         'conflict',
         item.revision !== decision.revision
           ? 'the owner changed the share since you loaded it; reload and look again'
-          : `the share is ${item.state}; it cannot be decided that way`,
+          : decision.action === 'dismiss'
+            ? 'there are no open reports on a listed share to dismiss'
+            : `the share is ${item.state}; it cannot be decided that way`,
       );
     }
     return c.json({ item: await s.queueItem(id) });
+  });
+
+  app.post('/api/moderation/:id/delete', async (c) => {
+    requireMaintainer(c);
+    return hardDeleteRoute(c, deps, sampleIdParam(c.req.param('id')));
   });
 }
