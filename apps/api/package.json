@@ -1,0 +1,25 @@
+{
+  "name": "@crokychords/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Croky Chords API: a Cloudflare Worker (Hono) that stores progressions in R2 with metadata in D1, behind Cloudflare Access.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply DB --local && wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@crokychords/core": "workspace:*",
+    "hono": "^4.13.13",
+    "jose": "^6.2.13",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.12.21",
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "@types/node": "^22.20.5",
+    "wrangler": "4.72.0"
+  }
+}
