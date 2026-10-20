@@ -268,7 +268,8 @@ returns `429`. Rollback: disable the rule or the toggle.
 
 ### 10. CI/CD **[dashboard]** + workflow PR
 
-See section 7. Rollback: delete the GitHub secrets; CI cannot deploy any more.
+See section 7 (workflow done, #21). Enable with the variable `DEPLOY_ENABLED=true`. Rollback: set
+`DEPLOY_ENABLED` to `false` or delete the GitHub secrets; CI cannot deploy any more.
 
 ### 11. Backups
 
@@ -337,73 +338,58 @@ Sources: [WAF plans](https://developers.cloudflare.com/waf/), [WAF get started](
 
 ## 7. CI/CD from GitHub Actions
 
+Status: **done** — `.github/workflows/deploy.yml` (#21). It is inert until the maintainer sets the
+repository variable `DEPLOY_ENABLED` to `true`; until then every run is skipped.
+
 ### What the maintainer creates **[dashboard]**
 
-1. **Cloudflare API token** (Cloudflare dashboard → Account API tokens → Create Token → Custom):
-   - Account → **Workers Scripts: Edit** (deploy)
-   - Account → **D1: Edit** (`migrations apply --remote` from CI)
-   - Account → **Account Settings: Read** (Wrangler account lookup)
-   - Zone → **Workers Routes: Edit**, zone resources limited to `cr0ky.com` (custom domain)
-   - Account resources: this account only. Optional: TTL and client-IP filter.
+1. **Cloudflare API token**: <https://dash.cloudflare.com/profile/api-tokens> → Create Token →
+   _Create Custom Token_, name `crokychords-ci`, with exactly these permissions:
+   - Account → **Workers Scripts** → **Edit** (`wrangler deploy`, static assets included)
+   - Account → **D1** → **Edit** (`wrangler d1 migrations apply DB --remote`)
+   - Account → **Account Settings** → **Read** (Wrangler account lookup)
+   - Zone → **Workers Routes** → **Edit** (the custom domain `chords.cr0ky.com`)
+   - Account Resources: _Include_ → this account only. Zone Resources: _Include_ → _Specific zone_ →
+     `cr0ky.com`. Optional: client-IP filtering and a TTL.
+
    Deploying a Worker with D1/R2 bindings needs no extra permissions on those resources
    ([authorization](https://developers.cloudflare.com/workers/authorization/)). R2 and Zero Trust
-   permissions are not needed in CI.
-2. **GitHub repository secrets** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
-   (`gh secret set CLOUDFLARE_API_TOKEN`, `gh secret set CLOUDFLARE_ACCOUNT_ID`). Put them in a
-   GitHub **environment** `production` with required reviewers if a manual gate is wanted.
-3. The token used to push `.github/workflows/*` must have the `workflow` scope:
+   permissions are not needed in CI. The token value is shown once; it goes straight into step 2.
+2. **GitHub environment `production`** (repository Settings → Environments → New environment →
+   `production`). The deploy job runs in it, so its runs are listed under Environments. Optional:
+   required reviewers for a manual gate, and _Deployment branches_ limited to `main`.
+3. **Secrets** (repository or `production` environment secrets; both are visible to the job):
+   - `CLOUDFLARE_API_TOKEN`: the token from step 1.
+   - `CLOUDFLARE_ACCOUNT_ID`: the account id (Cloudflare dashboard → Workers & Pages → Account
+     details, or `pnpm exec wrangler whoami`).
+
+   ```sh
+   gh secret set CLOUDFLARE_API_TOKEN --env production
+   gh secret set CLOUDFLARE_ACCOUNT_ID --env production
+   ```
+
+4. **Repository variable** `DEPLOY_ENABLED` = `true` (Settings → Secrets and variables → Actions →
+   Variables → New repository variable, or `gh variable set DEPLOY_ENABLED --body true`). Set it
+   only after steps 1–8 of the runbook: the first deploy must find the D1 database id and the real
+   hostname in `wrangler.toml`. Setting it to anything else (or deleting it) switches CI deploys off
+   again without touching the secrets.
+5. The token used to push `.github/workflows/*` must have the `workflow` scope:
    `gh auth refresh -h github.com -s workflow` (already noted in `docs/WORKFLOW.md`).
 
-### Workflow outline (`.github/workflows/deploy.yml`, separate PR)
+### Workflow (`.github/workflows/deploy.yml`)
 
-```yaml
-name: Deploy
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
-
-permissions:
-  contents: read
-
-jobs:
-  deploy:
-    name: Deploy to Cloudflare
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check # lint, format, typecheck, tests, builds (web before api)
-      - name: Apply D1 migrations
-        uses: cloudflare/wrangler-action@v4 # pin the current major from the action's README
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/api
-          command: d1 migrations apply crokychords --remote
-      - name: Deploy Worker (assets + API)
-        uses: cloudflare/wrangler-action@v4
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/api
-          command: deploy
-```
-
-Notes: `wrangler-action` installs the Wrangler version from `apps/api/package.json` when one is
-present. Migrations run before the deploy so new code never meets an old schema; a failed migration
-stops the job before the deploy. Secrets (`ACCESS_*`) are not touched by CI.
+- Triggers: push to `main` and `workflow_dispatch` (Actions → Deploy → Run workflow, to redeploy
+  after enabling). Job `deploy` has `if: vars.DEPLOY_ENABLED == 'true'`, `environment: production`,
+  `permissions: contents: read`, concurrency group `deploy` with `cancel-in-progress: false` (a
+  running deploy is never interrupted; the next one queues).
+- Steps: checkout → pnpm + Node from `.nvmrc` (as `ci.yml`) → `pnpm install --frozen-lockfile` →
+  `pnpm build` with `VITE_SYNC=on` (`pnpm -r build` builds web before api because the api depends
+  on `@crokychords/web`) → `cloudflare/wrangler-action@v4` in `apps/api` with
+  `d1 migrations apply DB --remote` → the same action with `deploy`.
+- The action uses the Wrangler already installed from `apps/api/package.json`. Migrations run before
+  the deploy so new code never meets an old schema; a failed migration stops the job before the
+  deploy. Secrets (`ACCESS_*`) are not touched by CI.
+- The workflow does not rerun `pnpm check`; the CI workflow runs it on the same push and on every PR.
 
 ### Preview per pull request (phase 2, after launch)
 
