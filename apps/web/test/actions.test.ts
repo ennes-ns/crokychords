@@ -1,6 +1,6 @@
 import { createSong, patternPreset } from '@crokychords/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createActions } from '../src/actions';
+import { createActions, nextCursorStop } from '../src/actions';
 import { AudioEngine } from '../src/audio/synth';
 import type { MidiAccessLike } from '../src/midi/webmidi';
 import { MidiOut } from '../src/midi/webmidi';
@@ -390,5 +390,44 @@ describe('actions', () => {
     const { store, actions } = setup();
     await actions.enableMidi();
     expect(store.state.midiStatus).toBe('unsupported');
+  });
+});
+
+describe('nextCursorStop (issue #82)', () => {
+  const song = createSong({
+    chords: [
+      { token: 'I', beats: 2.5 },
+      { token: 'V', beats: 4 },
+    ],
+  });
+
+  it('is the next whole beat, chord start or loop end, whichever comes first', () => {
+    expect(nextCursorStop(song, 0, false, null)).toBe(1);
+    expect(nextCursorStop(song, 2.1, false, null)).toBe(2.5); // chord start
+    expect(nextCursorStop(song, 2.5, false, null)).toBe(3);
+    expect(nextCursorStop(song, 5.9, false, null)).toBe(6);
+    expect(nextCursorStop(song, 6.2, true, null)).toBe(6.5); // loop end (the song end)
+    expect(nextCursorStop(song, 1.2, true, { start: 0, end: 1.75 })).toBe(1.75);
+  });
+
+  it('updates the store at those stops, not on every animation frame', async () => {
+    const raf = vi.fn(() => 1);
+    vi.stubGlobal('requestAnimationFrame', raf);
+    const store = new Store(initialState(song));
+    const actions = createActions(store, new AudioEngine(), new MidiOut(null));
+    const cursors: number[] = [];
+    store.subscribe((state, previous) => {
+      if (state.cursor !== previous.cursor) cursors.push(state.cursor);
+    });
+    actions.togglePlay();
+    await vi.waitFor(() => expect(store.state.playing).toBe(true));
+    expect(actions.playhead()?.beat).toBeGreaterThanOrEqual(0);
+    await vi.waitFor(() => expect(cursors.some((c) => c >= 1)).toBe(true), { timeout: 2000 });
+    actions.stop();
+    expect(raf).not.toHaveBeenCalled();
+    // At 120 BPM about two stops per second, so a handful of updates, not dozens.
+    expect(cursors.length).toBeLessThan(6);
+    expect(actions.playhead()).toBeNull();
+    vi.unstubAllGlobals();
   });
 });

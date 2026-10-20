@@ -32,6 +32,7 @@ import {
   setMasterMode,
   setMasterVolume,
 } from './graph';
+import { IdleSuspender } from './idle';
 import type {
   Drum,
   Instrument,
@@ -67,6 +68,12 @@ export { MASTER_GAIN, MIX_GAIN } from './graph';
 const STOP_RELEASE = 0.03;
 /** Release time of a voice stolen to stay within an instrument's voice budget (seconds). */
 export const STEAL_RELEASE = 0.02;
+/**
+ * A released voice stops `release × RELEASE_TAIL` after its release starts. The release falls
+ * with τ = release / 4, so by then it is 4.8 τ down (about −42 dB): inaudible, and much shorter
+ * than running the oscillators on for twice the release (issue #82).
+ */
+export const RELEASE_TAIL = 1.2;
 /** Bus id of the drum kit. */
 export const DRUM_BUS = 'drums';
 
@@ -244,7 +251,7 @@ export class Synth {
   #prune(): void {
     const now = this.#ctx.currentTime;
     for (const voice of this.#voices) {
-      if (voice.end + voice.release * 2 < now) this.#voices.delete(voice);
+      if (voice.end + voice.release * RELEASE_TAIL < now) this.#voices.delete(voice);
     }
   }
 
@@ -380,7 +387,7 @@ export class Synth {
     voice.end = at;
     const g = voice.gain.gain;
     g.cancelScheduledValues(at);
-    let stopAt = at + release * 2;
+    let stopAt = at + release * RELEASE_TAIL;
     if (at <= voice.start) {
       // Released before it started (Stop during the lookahead window): never sound.
       g.setValueAtTime(0, at);
@@ -436,6 +443,12 @@ export class AudioEngine {
   readonly samples: SoundfontBank;
   #ctx: AudioContext | null = null;
   #synth: Synth | null = null;
+  #playing: () => boolean = () => false;
+  /** Suspends the context while nothing plays or sounds (issue #82). */
+  readonly #idle = new IdleSuspender(
+    () => this.#ctx,
+    () => this.#playing() || (this.#synth?.voiceCount ?? 0) > 0,
+  );
 
   /** `storage` keeps the sound settings across reloads (localStorage in the app). */
   constructor(storage: SoundStorage | null = null, options: EngineOptions = {}) {
@@ -478,7 +491,10 @@ export class AudioEngine {
     return this.#ctx !== null && this.#ctx.state === 'running';
   }
 
-  /** Create or resume the context. Call from a user gesture (click, key press). */
+  /**
+   * Create or resume the context. Call from a user gesture (click, key press) the first time;
+   * later calls also wake a context suspended for idling.
+   */
   async start(): Promise<boolean> {
     if (typeof AudioContext === 'undefined') return false;
     if (this.#ctx === null) {
@@ -491,14 +507,33 @@ export class AudioEngine {
       void this.samples.attach((bytes) => ctx.decodeAudioData(bytes));
       this.prefetch();
     }
-    if (this.#ctx.state === 'suspended') {
-      try {
-        await this.#ctx.resume();
-      } catch {
-        return false;
-      }
-    }
-    return this.ready;
+    return this.#idle.wake();
+  }
+
+  /**
+   * Make an existing context run again (it may be suspended for idling) and say whether notes
+   * can be scheduled on it now. Notes scheduled while the resume is pending play once it runs.
+   */
+  wake(): boolean {
+    const ctx = this.#ctx;
+    if (ctx === null || ctx.state === 'closed') return false;
+    void this.#idle.wake();
+    return true;
+  }
+
+  /** Tell the engine whether the transport plays (it never suspends while it does). */
+  setPlaying(playing: () => boolean): void {
+    this.#playing = playing;
+  }
+
+  /** Playback stopped: suspend the context once the tails are over. */
+  idle(): void {
+    if (this.#ctx !== null) this.#idle.touch();
+  }
+
+  /** The page was hidden: suspend now when nothing plays or sounds. */
+  hidden(): void {
+    this.#idle.check();
   }
 
   /**

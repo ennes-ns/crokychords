@@ -27,7 +27,14 @@ import {
 } from '../melody';
 import type { AppState, Store } from '../state';
 import type { GridLayout } from './grid';
-import { beatToRowPosition, chordSegments, gridLayout, placePlayhead, xToBeat } from './grid';
+import {
+  anchorPlayhead,
+  beatToRowPosition,
+  chordSegments,
+  gridLayout,
+  removePlayhead,
+  xToBeat,
+} from './grid';
 
 /** How a note's tooltip names its relation to the chord under it. */
 export const HARMONY_LABELS: Record<MelodyHarmony, string> = {
@@ -238,6 +245,7 @@ export function mountMelody(
   let tracks: HTMLElement[] = [];
   let last: unknown[] = [];
   let lastHead: unknown[] = [];
+  let lastPlayhead: unknown[] = [];
   /** Tint spans, recomputed only when the chords, the key or the row length change. */
   let toneSpans: ToneSpan[] = [];
   let toneInputs: unknown[] = [];
@@ -504,15 +512,17 @@ export function mountMelody(
         : 'N: edit the melody with the keyboard · click to add a note · double-click to delete';
   };
 
+  /** Re-anchored only when the cursor, the timing or the rows change (issue #82). */
   const renderPlayhead = (state: AppState): void => {
     if (!state.playing) {
-      playhead.remove();
+      lastPlayhead = [];
+      removePlayhead(playhead);
       return;
     }
-    const { row, fraction } = beatToRowPosition(state.cursor, layout);
-    const track = tracks[Math.min(row, tracks.length - 1)];
-    if (track === undefined) return;
-    placePlayhead(playhead, track, row >= tracks.length ? 1 : fraction);
+    const inputs = [state.cursor, state.song, state.loop, state.loopRange, tracks];
+    if (inputs.every((value, i) => value === lastPlayhead[i])) return;
+    lastPlayhead = inputs;
+    anchorPlayhead(playhead, tracks, layout, state, actions.playhead());
   };
 
   const render = (state: AppState): void => {

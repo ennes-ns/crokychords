@@ -4,10 +4,10 @@
  */
 import type { Song } from '@crokychords/core';
 import { chordAtBeat, isRestToken, songKey, totalBeats } from '@crokychords/core';
-import type { Actions } from '../actions';
+import type { Actions, Playhead } from '../actions';
 import { h, replaceChildren } from '../dom';
 import type { LoopRange } from '../loop';
-import { barRange, extendRange, spanBars } from '../loop';
+import { barRange, extendRange, loopBounds, spanBars } from '../loop';
 import { MIN_BEATS, barLength, chordStarts, insertLength, setChordBeats } from '../edit';
 import { colorDegree, degreeHue, tokenName } from '../music';
 import { TAB_SLOTS_ATTR } from '../shortcuts';
@@ -72,16 +72,113 @@ function trackWidth(track: HTMLElement): number {
   return width;
 }
 
+/** Where a playhead glides to (fraction of the track) and in how many seconds. */
+export interface PlayheadMotion {
+  to: number;
+  seconds: number;
+  /** Seconds before it starts (right after Play). */
+  delay?: number;
+}
+
+/** The running glide of each playhead, replaced on every re-anchor. */
+const glides = new WeakMap<HTMLElement, Animation>();
+
 /**
  * Put a playhead at `fraction` (0..1) of `track`. It moves by `transform` on its own composited
- * layer, so playback never invalidates layout (issue #61). The Pixel theme snaps to whole pixels;
- * other themes keep sub-pixel positions for smooth motion.
+ * layer, so playback never invalidates layout (issue #61). With a `motion` it then glides on its
+ * own as a Web Animation, so the compositor moves it and the main thread does nothing per frame
+ * (issue #82). The Pixel theme snaps to whole pixels (a `steps()` glide); other themes keep
+ * sub-pixel positions for smooth motion.
  */
-export function placePlayhead(playhead: HTMLElement, track: HTMLElement, fraction: number): void {
+export function placePlayhead(
+  playhead: HTMLElement,
+  track: HTMLElement,
+  fraction: number,
+  motion?: PlayheadMotion,
+): void {
   if (playhead.parentElement !== track) track.append(playhead);
-  const x = fraction * trackWidth(track);
+  const width = trackWidth(track);
   const snap = document.documentElement.dataset.theme === 'pixel';
-  playhead.style.transform = `translateX(${snap ? Math.round(x) : x}px)`;
+  const px = (f: number): number => (snap ? Math.round(f * width) : f * width);
+  const x = px(fraction);
+  playhead.style.transform = `translateX(${x}px)`;
+  glides.get(playhead)?.cancel();
+  glides.delete(playhead);
+  if (motion === undefined || motion.seconds <= 0 || typeof playhead.animate !== 'function') return;
+  const to = px(motion.to);
+  if (to === x) return;
+  const glide = playhead.animate(
+    [{ transform: `translateX(${x}px)` }, { transform: `translateX(${to}px)` }],
+    {
+      duration: motion.seconds * 1000,
+      delay: (motion.delay ?? 0) * 1000,
+      easing: snap ? `steps(${Math.round(Math.abs(to - x))}, end)` : 'linear',
+      fill: 'forwards',
+    },
+  );
+  glides.set(playhead, glide);
+}
+
+/** Take a playhead off the grid (stopped) and end its glide. */
+export function removePlayhead(playhead: HTMLElement): void {
+  glides.get(playhead)?.cancel();
+  glides.delete(playhead);
+  playhead.remove();
+}
+
+/** One leg of the playhead: its row, where it is and where it glides to (row fractions). */
+export interface PlayheadRun {
+  row: number;
+  from: number;
+  to: number;
+  /** Beats the glide takes. */
+  beats: number;
+}
+
+/**
+ * The playhead at `beat` and the leg it glides until the next re-anchor: to the row end, or to
+ * `end` (the loop end while looping, else the song end) when that comes first. Past the last of
+ * `rows` it parks at the end of the last row.
+ */
+export function playheadRun(
+  beat: number,
+  layout: GridLayout,
+  rows: number,
+  end: number,
+): PlayheadRun {
+  const { row, fraction } = beatToRowPosition(beat, layout);
+  if (row >= rows) return { row: Math.max(0, rows - 1), from: 1, to: 1, beats: 0 };
+  const rowEnd = (row + 1) * layout.rowBeats;
+  const stop = Math.max(beat, Math.min(rowEnd, end));
+  return {
+    row,
+    from: fraction,
+    to: (stop - row * layout.rowBeats) / layout.rowBeats,
+    beats: stop - beat,
+  };
+}
+
+/**
+ * Re-anchor a view's playhead on `tracks`: from the live position (`live`, else the store's
+ * `cursor`), gliding along the current row at the song's tempo.
+ */
+export function anchorPlayhead(
+  playhead: HTMLElement,
+  tracks: readonly HTMLElement[],
+  layout: GridLayout,
+  state: AppState,
+  live: Playhead | null,
+): void {
+  const total = totalBeats(state.song);
+  const end = state.loop ? loopBounds(state.loopRange, total).end : total;
+  const run = playheadRun(live?.beat ?? state.cursor, layout, tracks.length, end);
+  const track = tracks[run.row];
+  if (track === undefined) return;
+  placePlayhead(playhead, track, run.from, {
+    to: run.to,
+    seconds: (run.beats * 60) / state.song.tempo,
+    delay: live?.wait ?? 0,
+  });
 }
 
 export function beatToX(
@@ -222,6 +319,7 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
   let layout = gridLayout(store.state.song);
   let last: unknown[] = [];
   let lastLoop: unknown[] = [];
+  let lastHead: unknown[] = [];
   /** The bar a drag over the bar numbers started on. */
   let dragBar: number | null = null;
 
@@ -446,15 +544,17 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
     }
   };
 
+  /** Re-anchored only when the cursor, the timing or the rows change (issue #82). */
   const renderPlayhead = (state: AppState): void => {
     if (!state.playing) {
-      playhead.remove();
+      lastHead = [];
+      removePlayhead(playhead);
       return;
     }
-    const { row, fraction } = beatToRowPosition(state.cursor, layout);
-    const track = tracks[Math.min(row, tracks.length - 1)];
-    if (track === undefined) return;
-    placePlayhead(playhead, track, row >= tracks.length ? 1 : fraction);
+    const inputs = [state.cursor, state.song, state.loop, state.loopRange, tracks];
+    if (inputs.every((value, i) => value === lastHead[i])) return;
+    lastHead = inputs;
+    anchorPlayhead(playhead, tracks, layout, state, actions.playhead());
   };
 
   const render = (state: AppState): void => {

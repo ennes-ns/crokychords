@@ -39,6 +39,7 @@ import {
 } from './band';
 import {
   chordStart,
+  chordStarts,
   clampSelection,
   insertAfter,
   moveSelection,
@@ -48,7 +49,7 @@ import {
 } from './edit';
 import type { KeyAction } from './keyboard';
 import type { LoopRange } from './loop';
-import { playStart, withLoopEnd, withLoopStart } from './loop';
+import { loopBounds, playStart, withLoopEnd, withLoopStart } from './loop';
 import type { MelodyGrid } from './melody';
 import {
   noteIndexAt,
@@ -73,6 +74,42 @@ import { computeSuggestions } from './views/suggest';
 
 /** Delay before an audition starts, so its attack is not clipped (seconds). */
 const AUDITION_DELAY_S = 0.01;
+/** Slack after a cursor boundary before the store is updated, so it is surely passed (ms). */
+const CURSOR_SLACK_MS = 5;
+
+/**
+ * The next beat after `beat` at which the store's `cursor` has to change while playing (issue
+ * #82): the next whole beat (the Fire's playhead), the next chord start (the playing chord) or
+ * the loop end (the jump back), whichever comes first. The views move the playhead between
+ * these updates on their own.
+ */
+export function nextCursorStop(
+  song: Song,
+  beat: number,
+  loop: boolean,
+  range: LoopRange | null,
+): number {
+  let next = Math.floor(beat + 1e-9) + 1;
+  for (const start of chordStarts(song)) {
+    if (start > beat + 1e-9) {
+      next = Math.min(next, start);
+      break;
+    }
+  }
+  if (loop) {
+    const { end } = loopBounds(range, totalBeats(song));
+    if (end > beat + 1e-9) next = Math.min(next, end);
+  }
+  return next;
+}
+
+/** The live playhead: where it is and how long until it moves (right after Play). */
+export interface Playhead {
+  /** Song beats. */
+  beat: number;
+  /** Seconds before it starts moving. */
+  wait: number;
+}
 
 export interface Actions {
   /** Select a chord, or the "+" slot after the last chord (`null`). */
@@ -142,6 +179,11 @@ export interface Actions {
   exportMidi(): void;
   /** Create/resume the AudioContext (call from a user gesture). */
   startAudio(): Promise<boolean>;
+  /**
+   * The playhead now (live from the audio clock), or null when stopped. The views animate the
+   * playhead from it; the store's `cursor` only changes at beats, chord starts and the loop end.
+   */
+  playhead(): Playhead | null;
   key(action: KeyAction): void;
   /** Which lane the editing keys act on. */
   setFocus(focus: Focus): void;
@@ -207,32 +249,49 @@ export function createActions(
     () => audio.sound.drums,
     () => breakcore?.plan() ?? null,
   );
-  let frame: number | null = null;
+  audio.setPlaying(() => scheduler.playing);
+  let follower: number | null = null;
   let auditionHandle: NoteHandle | null = null;
 
+  /**
+   * Put the playhead into the store and sleep until the next beat, chord start or loop end
+   * (instead of a store update on every animation frame, issue #82).
+   */
   const follow = (): void => {
+    follower = null;
     const position = scheduler.position();
-    if (position === null) {
-      frame = null;
-      return;
-    }
-    store.set({ cursor: position });
-    frame = requestAnimationFrame(follow);
+    if (position === null) return;
+    if (position !== store.state.cursor) store.set({ cursor: position });
+    const { song, loop, loopRange } = store.state;
+    const next = nextCursorStop(song, position, loop, loopRange);
+    const seconds = scheduler.wait() + (next - position) * scheduler.secondsPerBeat;
+    const ms = seconds * 1000 + CURSOR_SLACK_MS;
+    follower = window.setTimeout(follow, Math.max(CURSOR_SLACK_MS, ms));
+  };
+
+  /** Follow again from now (an edit moved the next boundary, e.g. the tempo or the loop). */
+  const refollow = (): void => {
+    if (follower === null) return;
+    window.clearTimeout(follower);
+    follower = window.setTimeout(follow, 0);
   };
 
   const stopped = (): void => {
-    if (frame !== null) cancelAnimationFrame(frame);
-    frame = null;
+    if (follower !== null) window.clearTimeout(follower);
+    follower = null;
     store.set({ playing: false });
+    audio.idle();
   };
   scheduler.onEnd = stopped;
 
   store.subscribe((state, previous) => {
     if (state.loop !== previous.loop || state.loopRange !== previous.loopRange) {
       scheduler.setLoop(state.loop, state.loopRange);
+      refollow();
     }
     if (state.song === previous.song) return;
     scheduler.update(state.song);
+    refollow();
     silenceMelody(previous.song, state.song);
     const before = songTracks(previous.song);
     const after = songTracks(state.song);
@@ -460,7 +519,8 @@ export function createActions(
       const secondsPerBeat = 60 / song.tempo;
       const ctx = audio.context;
       const synth = audio.synth;
-      if (audio.ready && ctx !== null && synth !== null) {
+      // Wake a context suspended for idling; the notes play once it runs.
+      if (ctx !== null && synth !== null && audio.wake()) {
         const t0 = ctx.currentTime + AUDITION_DELAY_S;
         const handles = events.map((e) =>
           synth.playNote(e.note, t0 + e.start * secondsPerBeat, e.duration * secondsPerBeat, {
@@ -506,6 +566,11 @@ export function createActions(
       return ok;
     },
 
+    playhead() {
+      const beat = scheduler.position();
+      return beat === null ? null : { beat, wait: scheduler.wait() };
+    },
+
     setFocus(focus) {
       if (store.state.focus !== focus) store.set({ focus });
     },
@@ -533,7 +598,7 @@ export function createActions(
       const seconds = (Math.min(note.length, NOTE_AUDITION_BEATS) * 60) / song.tempo;
       const ctx = audio.context;
       const synth = audio.synth;
-      if (audio.ready && ctx !== null && synth !== null) {
+      if (ctx !== null && synth !== null && audio.wake()) {
         synth.playNote(pitch, ctx.currentTime + AUDITION_DELAY_S, seconds, {
           velocity: MELODY_VELOCITY,
           track: MELODY_TRACK_ID,
@@ -716,7 +781,7 @@ export function createActions(
     scheduler.start(song, { fromBeat, loop, range: loopRange });
     if (!scheduler.playing) return;
     store.set({ playing: true, cursor: scheduler.position() ?? fromBeat });
-    if (frame === null) frame = requestAnimationFrame(follow);
+    if (follower === null) follow();
   }
 
   return actions;
