@@ -85,6 +85,8 @@ export class SyncEngine {
   #stopped = false;
   /** Remote saves already reported as unreadable (logged once each). */
   #unreadable = new Set<string>();
+  /** Original id → the copy kept for its open conflict, until the remote version is stored. */
+  #copies = new Map<string, string>();
 
   constructor(options: SyncEngineOptions) {
     this.#client = options.client;
@@ -386,14 +388,30 @@ export class SyncEngine {
         local: local.version,
         rejected: 0,
       }));
+      this.#copies.delete(local.id);
       return;
     }
-    const copyId = this.#newId();
-    const song = { ...local.song, title: conflictTitle(local.song.title) };
-    await this.#local.put(makeRecord(song, { id: copyId, version: 1, now: this.#now() }));
+    const copyId = await this.#keepCopy(local);
+    // An editor save may win this write (#localRace): the copy stays remembered for the retry.
     await this.#local.put(parseSaveRecord({ ...remote, version: local.version + 1 }));
     await this.#map(local.id, remote.version, local.version + 1);
+    this.#copies.delete(local.id);
     await this.#notify(local.id, copyId);
+  }
+
+  /**
+   * Save the losing local version as the conflict's copy. A conflict that is retried after a lost
+   * local race updates the copy it already made instead of creating another one.
+   */
+  async #keepCopy(local: SaveRecord): Promise<string> {
+    const known = this.#copies.get(local.id);
+    const existing = known === undefined ? null : await this.#local.get(known);
+    const copyId = existing?.id ?? this.#newId();
+    const song = { ...local.song, title: conflictTitle(local.song.title) };
+    const version = (existing?.version ?? 0) + 1;
+    await this.#local.put(makeRecord(song, { id: copyId, version, now: this.#now() }));
+    this.#copies.set(local.id, copyId);
+    return copyId;
   }
 
   /** Store a remote record locally as the next local version and map the two. */
