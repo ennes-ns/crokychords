@@ -55,3 +55,7 @@ Run `pnpm check` before every commit. Fix formatting with `pnpm format`.
 2. Tests for every new exported function; fixture round-trip stays green.
 3. Spec in `docs/specs/` updated if behaviour deviates from it; ADR added for architecture changes.
 4. Review findings addressed or explicitly declined in the PR description.
+
+## Local checks
+
+- Headless Chromium runs for screenshots or playback checks must use `--mute-audio`; never play sound on the maintainer's machine.
