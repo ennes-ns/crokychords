@@ -77,8 +77,12 @@ function fakeActions(): Actions {
   return {
     select: vi.fn(),
     insert: noop,
+    replaceSelected: noop,
+    place: noop,
+    setPlaceMode: noop,
     appendDefault: vi.fn(),
     addDegree: noop,
+    replaceDegree: noop,
     removeSelected: noop,
     resizeSelected: noop,
     setSelectedToken: noop,

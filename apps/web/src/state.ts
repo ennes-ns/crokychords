@@ -10,6 +10,8 @@ export interface MidiPortInfo {
 export type TableStatus = 'loading' | 'seed-only' | 'loaded' | 'error';
 export type MidiStatus = 'off' | 'pending' | 'ready' | 'unsupported' | 'denied';
 export type SuggestMode = 'context' | 'popular';
+/** What a Next chord click does: insert after the selection or replace the selected chord. */
+export type PlaceMode = 'insert' | 'replace';
 
 export interface AppState {
   song: Song;
@@ -33,6 +35,7 @@ export interface AppState {
   ngrams: NgramTable | null;
   suggestMode: SuggestMode;
   diatonicOnly: boolean;
+  placeMode: PlaceMode;
   /** The AudioContext exists and is running (it needs a user gesture). */
   audioReady: boolean;
 }
@@ -54,6 +57,7 @@ export function initialState(song: Song = createSong()): AppState {
     ngrams: null,
     suggestMode: 'context',
     diatonicOnly: false,
+    placeMode: 'insert',
     audioReady: false,
   };
 }

@@ -2,6 +2,7 @@ import type { Degree } from '@crokychords/core';
 
 export type KeyAction =
   | { type: 'degree'; degree: Degree }
+  | { type: 'replaceDegree'; degree: Degree }
   | { type: 'remove' }
   | { type: 'resize'; delta: number }
   | { type: 'move'; delta: number }
@@ -43,6 +44,10 @@ export function keyAction(e: KeyLike): KeyAction | null {
 
   const degree = DEGREE_KEYS[e.key];
   if (degree !== undefined && !e.shiftKey) return { type: 'degree', degree };
+  // Shift+digit: `key` is layout-dependent ('!', '@', ...), so match the physical key.
+  const digit = /^(?:Digit|Numpad)([1-7])$/.exec(e.code)?.[1];
+  const shifted = e.shiftKey && digit !== undefined ? DEGREE_KEYS[digit] : undefined;
+  if (shifted !== undefined) return { type: 'replaceDegree', degree: shifted };
 
   if (e.code === 'BracketLeft' || e.key === '[' || e.key === '{') {
     return { type: 'resize', delta: e.shiftKey ? -0.25 : -1 };

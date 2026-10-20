@@ -61,7 +61,8 @@ change (debounced 250 ms), load on boot, "New" resets. Undo/redo on `song` only.
 - Rows of bars; bar width scales with meter; chords rendered as blocks spanning `beats`.
 - Click empty space at a beat → adds the selected suggestion or `I` with 4 beats (or the
   remaining space in the bar, whichever is smaller). Keyboard `1`–`7` adds the diatonic
-  triad of that degree after the selection. `Backspace` removes the
+  triad of that degree after the selection; `Shift+1`–`7` replaces the selected chord with it
+  (same length and position). `Backspace` removes the
   selected chord. `[` / `]` shorten/lengthen by one beat, `Shift+[`/`]` by a quarter beat.
   `←`/`→` move selection, `Space` play/stop, `Esc` deselect.
 - Each block shows the token (e.g. `IV`) and the lead-sheet name (e.g. `F`) from `chordName`.
@@ -74,7 +75,10 @@ change (debounced 250 ms), load on boot, "New" resets. Undo/redo on `song` only.
   `suggestNext(table, mode, context, { limit: 16 })`.
 - Show token, lead-sheet name, percentage, and a thin bar; header says which context was
   used ("after IV, I" / "any position" for the unigram row).
-- Click → insert after the selection (4 beats or remaining bar). Hover → audition the chord
+- Click → insert after the selection (4 beats or remaining bar). An **Insert | Replace** toggle
+  sets the click action; Shift+click always replaces the selected chord (token only: length and
+  position stay). The hint line names the active mode; in Replace mode the context excludes the
+  selected chord. With nothing selected, Replace falls back to insert. Hover → audition the chord
   for 600 ms through the synth (and MIDI out if enabled).
 - Toggle "Popular" (unigram) vs "In context" (context); toggle "diatonic only" filter.
 

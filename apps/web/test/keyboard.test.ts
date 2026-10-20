@@ -20,6 +20,15 @@ describe('keyAction', () => {
     expect(keyAction(press('4', { ctrlKey: true }))).toBeNull();
   });
 
+  it('maps Shift+1–7 to replacing with that degree (by physical key)', () => {
+    const shift = (key: string, code: string) => press(key, { code, shiftKey: true });
+    expect(keyAction(shift('!', 'Digit1'))).toEqual({ type: 'replaceDegree', degree: 1 });
+    expect(keyAction(shift('&', 'Digit7'))).toEqual({ type: 'replaceDegree', degree: 7 });
+    expect(keyAction(shift('4', 'Numpad4'))).toEqual({ type: 'replaceDegree', degree: 4 });
+    expect(keyAction(shift('*', 'Digit8'))).toBeNull();
+    expect(keyAction(press('!', { code: 'Digit1', shiftKey: true, ctrlKey: true }))).toBeNull();
+  });
+
   it('maps brackets to resizing (Shift for quarter beats)', () => {
     expect(keyAction(press('[', { code: 'BracketLeft' }))).toEqual({ type: 'resize', delta: -1 });
     expect(keyAction(press(']', { code: 'BracketRight' }))).toEqual({ type: 'resize', delta: 1 });

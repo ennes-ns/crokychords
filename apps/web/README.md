@@ -38,6 +38,7 @@ font (Departure Mono, SIL OFL 1.1) is bundled in `public/fonts/` with its licenc
 | Key | Action |
 |-----|--------|
 | `1` – `7` | Add the diatonic triad of that degree after the selection (`ii`, `vii°`, `III` in minor, ...) |
+| `Shift+1` – `Shift+7` | Replace the selected chord with that triad (keeps its length and position) |
 | `←` / `→` | Select the previous / next chord (and hear it) |
 | `Backspace` / `Delete` | Remove the selected chord |
 | `[` / `]` | Shorten / lengthen the selected chord by one beat |
@@ -51,7 +52,9 @@ font (Departure Mono, SIL OFL 1.1) is bundled in `public/fonts/` with its licenc
 Mouse: click a chord to select it; drag the right edge of the selected chord to resize it (snaps
 to beats, hold `Shift` for quarter beats); click empty space after the last chord to append the
 top suggestion. In the Next chord panel, hover a chord to hear it and click to insert it after
-the selection. **In context** suggests from the chords up to the selection (or the whole song when
+the selection; Shift+click replaces the selected chord instead (same length and position). The
+**Insert | Replace** toggle sets what a plain click does, and the line under the list says which
+mode is active. While replacing, suggestions follow the chords before the selection. **In context** suggests from the chords up to the selection (or the whole song when
 nothing is selected); **Popular** shows the most common chords of the mode. The chord editor
 below the grid changes degree, accidental, quality, extension, sus, adds, alterations, inversion
 and applied (secondary) function; only combinations with a valid token are offered.
