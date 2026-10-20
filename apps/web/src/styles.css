@@ -397,7 +397,7 @@ h2 {
 .melody-track {
   position: relative;
   display: flex;
-  height: 150px;
+  height: 210px;
   background: var(--panel);
   border: var(--border-w) solid var(--line);
   border-radius: var(--radius);
