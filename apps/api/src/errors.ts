@@ -10,8 +10,13 @@ export const ERROR_STATUS = {
   conflict: 409,
   payload_too_large: 413,
   unsupported_media_type: 415,
+  rate_limited: 429,
+  budget_exhausted: 429,
   server_misconfigured: 500,
   internal: 500,
+  assistant_failed: 502,
+  assistant_unavailable: 503,
+  assistant_busy: 503,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;
