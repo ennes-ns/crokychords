@@ -44,6 +44,38 @@ tokens. The wordmark's own tagline is `NEXT CHORD · PLAY · EXPORT`. Render `ba
 2× of 1600×440) from the repository root with `node docs/readme/render-banner.mjs`, which inlines
 `croky-mark.svg` at the `<!-- @mark -->` placeholder and calls `rsvg-convert -z 2`.
 
+### Banner concepts (`docs/readme/concept-a.*`, `concept-b.*`)
+
+Two candidate replacements for `banner.png`, both 1600×440 (rendered at 2×) on `#121212`, no
+gradients, glow, pills or slogan. Both derive Croky from the pixel master in the croky asset
+repository (`master/croky-64.txt` + `master/palette.json`, which match the sticker reference
+`brand/croky-sticker-ref.jpg`: grey hooked beak, white eye ring, red tail), so the bird keeps the
+reference's colours and proportions. The asset files themselves are not copied here.
+
+- **A, vector mark + grotesk.** `tools/brand/trace_mark.py` traces each colour layer of the master
+  into a few flat shapes (smooth outline with a uniform 1.6-unit rim, geometric eye, hand-drawn
+  hooked beak). Wordmark: Schibsted Grotesk Bold (SIL OFL, `docs/readme/fonts/`), one colour
+  (`#f2e5bc`), tracking −0.035 em, outlined to paths; three quiet words in `#7d786c`.
+- **B, pixel mark on a chord perch.** `tools/brand/concept_b.py` lays everything on one grid of
+  5 px cells: the master pixels 1:1 (`crispEdges`), a perch of four chord blocks I V vi IV using
+  the editor's degree colours (`hsl(hue 45% 26%)` fill, `hsl(hue 45% 38%)` edge, numerals in
+  `hsl(hue 30% 85%)`, hues from `DEGREE_HUES` in `apps/web/src/music.ts`), and a hand-drawn
+  bitmap wordmark (cap height 15 cells, stroke 3) in `#f2e5bc`.
+
+Typography and colour: Croky Chords uses the Pyrrhura brand palette above, not the croky UI style
+(`design-system/STYLE.md` in the asset repository: olive-black surfaces, mono tracked wordmark);
+CROKY.md says not to mix the two, so its tokens are not used here.
+
+```bash
+eval "$(mise env -s bash)"
+M=<croky asset repo>/master
+uv run --with pillow --with numpy python -I tools/brand/trace_mark.py $M/croky-64.txt $M/palette.json /tmp/mark.frag "" "#2b2622"
+uv run --with fonttools python -I tools/brand/concept_a.py /tmp/mark.frag "docs/readme/fonts/SchibstedGrotesk[wght].ttf" docs/readme/concept-a.svg
+python3 -I tools/brand/concept_b.py $M/croky-64.txt $M/palette.json docs/readme/concept-b.svg
+rsvg-convert -z 2 docs/readme/concept-a.svg -o docs/readme/concept-a.png
+rsvg-convert -z 2 docs/readme/concept-b.svg -o docs/readme/concept-b.png
+```
+
 ## Palette (the "Pyrrhura" palette from `crokycraft-website/www/css/base.css`)
 
 | Token | Hex | Where it comes from / use |
