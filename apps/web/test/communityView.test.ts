@@ -384,6 +384,77 @@ describe('Community tab', () => {
     expect(row(orphan.id)).toBeNull();
   });
 
+  it('reports a sample of someone else with a reason; own samples have no Report', async () => {
+    const t = await open();
+    t.api.bank = [...t.api.bank, listed('Mine', { own: true })];
+    t.field<HTMLButtonElement>('community-go').click();
+    await settle();
+    const list = t.field('community-list');
+    const row = (name: string) =>
+      [...list.querySelectorAll<HTMLElement>('.community-item')].find(
+        (li) => li.querySelector('.community-name')?.textContent === name,
+      );
+    expect(row('Mine')?.querySelector('[data-field="report"]')).toBeNull();
+    const item = row('Dusty pad');
+    if (item === undefined) throw new Error('no item');
+    t.field<HTMLButtonElement>('report', item).click();
+    const reason = t.field<HTMLSelectElement>('report-reason', item);
+    const send = t.field<HTMLButtonElement>('report-send', item);
+    expect(send.disabled).toBe(true);
+    expect([...reason.options].map((o) => o.value)).not.toContain('quality');
+    // Cancel goes back to the button.
+    t.field<HTMLButtonElement>('report-cancel', item).click();
+    t.field<HTMLButtonElement>('report', item).click();
+    t.api.fail.set(
+      'report',
+      new CommunityError(
+        'rejected',
+        'This sample is no longer in the community bank.',
+        'not_listed',
+      ),
+    );
+    const again = t.field<HTMLSelectElement>('report-reason', item);
+    again.value = 'violence';
+    again.dispatchEvent(new Event('change'));
+    t.field<HTMLButtonElement>('report-send', item).click();
+    await settle();
+    expect(t.field('community-status').textContent).toBe(
+      'This sample is no longer in the community bank.',
+    );
+    t.field<HTMLButtonElement>('report-send', item).click();
+    await settle();
+    expect(t.api.named('report').map((c) => c.args)).toEqual([
+      [t.api.bank[0]?.id, 'violence'],
+      [t.api.bank[0]?.id, 'violence'],
+    ]);
+    expect(item.textContent).toContain('Reported, thank you');
+    expect(t.field('community-status').hidden).toBe(true);
+  });
+
+  it('requests a review of a rejected sample once', async () => {
+    const t = await setup();
+    await t.audio.samplers.load('sampler-1', file(6));
+    await settle();
+    const [id = ''] = [...t.api.own.keys()];
+    await t.api.share(id, { licence: true, name: 'Rejected one' });
+    const sample = t.api.own.get(id);
+    if (sample?.share) {
+      sample.share.state = 'rejected';
+      sample.share.reason = 'speech';
+    }
+    t.field<HTMLButtonElement>('tab-community').click();
+    await settle();
+    const row = () => t.field('mine').querySelector<HTMLElement>(`[data-id="${id}"]`);
+    expect(row()?.textContent).toContain('Not listed: speech');
+    const appeal = row()?.querySelector<HTMLButtonElement>('[data-field="appeal"]');
+    expect(appeal?.hidden).toBe(false);
+    appeal?.click();
+    await settle();
+    expect(t.api.named('appeal').map((c) => c.args[0])).toEqual([id]);
+    expect(row()?.textContent).toContain('Checking… (review requested)');
+    expect(row()?.querySelector<HTMLButtonElement>('[data-field="appeal"]')?.hidden).toBe(true);
+  });
+
   it('changes the handle and shows sign-in problems', async () => {
     const { api, field } = await open();
     field<HTMLButtonElement>('handle-edit').click();
@@ -416,8 +487,17 @@ describe('helpers', () => {
     ]);
     expect(parseTags('no_under!scores')).toEqual(['nounderscores']);
     expect(shareStatus(null).text).toBe('');
-    const base = { reason: null, shared_at: '', listed_at: null, unlisted_at: null };
+    const base = {
+      reason: null,
+      shared_at: '',
+      listed_at: null,
+      unlisted_at: null,
+      appealed_at: null,
+    };
     expect(shareStatus({ ...base, state: 'pending' }).text).toBe('Checking…');
+    expect(shareStatus({ ...base, state: 'pending', appealed_at: 'x' }).text).toBe(
+      'Checking… (review requested)',
+    );
     expect(shareStatus({ ...base, state: 'listed' }).text).toBe('Shared');
     expect(shareStatus({ ...base, state: 'unlisted' }).text).toBe('Not shared');
     expect(shareStatus({ ...base, state: 'rejected', reason: 'hate' }).text).toBe(

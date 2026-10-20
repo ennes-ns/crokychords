@@ -1,6 +1,6 @@
 /**
- * The community bank's client (docs/specs/community-v1.md §4.1): one method per route of the
- * Worker, every failure a `CommunityError` with a sentence the panel shows as is. Requests carry
+ * The community bank's client (docs/specs/community-v1.md §4.1, docs/specs/moderation-v1.md
+ * §3.2–§3.3): one method per route of the Worker, every failure a `CommunityError` with a sentence the panel shows as is. Requests carry
  * the Access cookie and never follow redirects, so an expired session reads as "signed out".
  */
 import type { SamplerId } from '../audio/instruments';
@@ -13,6 +13,8 @@ export interface Share {
   shared_at: string;
   listed_at: string | null;
   unlisted_at: string | null;
+  /** When the owner asked for a second review (only once). */
+  appealed_at: string | null;
 }
 
 export interface OwnSample {
@@ -49,7 +51,30 @@ export interface QueueItem extends Omit<CommunitySample, 'listed_at'> {
   owner_id: string;
   /** The share's revision; a decision names it, so a renamed share is looked at again. */
   revision: number;
+  /** The automatic checks' recommendation; null when not checked yet. */
+  auto: AutoVerdict | null;
+  reports: { open: number; reasons: Record<string, number> };
+  /** The owner's request for a second review, with the category of the rejection. */
+  appeal: { at: string; of: string | null } | null;
 }
+
+/** What the scheduled checks recommend (docs/specs/moderation-v1.md §3.3); never a decision. */
+export interface AutoVerdict {
+  /** `ok` | `flag:<category>`. */
+  verdict: string;
+  checked_at: string;
+  /** False when the owner changed the share since the check. */
+  current: boolean;
+  scores: Record<string, number>;
+  reasons: string[];
+  notes: string[];
+  /** Waveform peaks, 0–1. */
+  peaks: number[];
+  models: Record<string, string>;
+  policy: string;
+}
+
+export type QueueView = 'pending' | 'listed' | 'reported';
 
 export interface CommunityPage {
   samples: CommunitySample[];
@@ -74,7 +99,8 @@ export interface UploadMeta {
 
 export type Decision =
   | { action: 'list'; revision: number }
-  | { action: 'reject'; reason: RejectReason; revision: number };
+  | { action: 'reject'; reason: RejectReason; revision: number }
+  | { action: 'dismiss'; revision: number };
 
 /** Rejection categories and what the owner reads (docs/specs/community-v1.md §2). */
 export const REJECT_LABELS = {
@@ -90,6 +116,8 @@ export const REJECT_LABELS = {
 } as const;
 export type RejectReason = keyof typeof REJECT_LABELS;
 export const REJECT_REASONS = Object.keys(REJECT_LABELS) as RejectReason[];
+/** What a user can report a listed sample for (every category but `quality`). */
+export const REPORT_REASONS = REJECT_REASONS.filter((r) => r !== 'quality');
 
 /** The label of a rejection category (unknown ones as they are). */
 export function rejectLabel(reason: string | null): string {
@@ -127,6 +155,7 @@ const MESSAGES: Record<string, string> = {
   not_found: 'The sample is not on the server any more.',
   forbidden: 'This is for the maintainer only.',
   handle_taken: 'Someone else already uses this name.',
+  rate_limited: 'You have sent many reports today. Thank you; try again tomorrow.',
 };
 
 export const SIGNED_OUT_MESSAGE = 'Sign in again to use the community bank (reload the page).';
@@ -171,8 +200,14 @@ export interface CommunityClient {
   /** The slot no longer holds the taken sample. */
   release(id: string, slot: SamplerId): Promise<void>;
   bytes(id: string): Promise<ArrayBuffer>;
-  queue(state?: 'pending' | 'listed'): Promise<QueueItem[]>;
+  queue(state?: QueueView): Promise<QueueItem[]>;
   decide(id: string, decision: Decision): Promise<QueueItem>;
+  /** Report a listed sample of someone else (it stays listed until the maintainer decides). */
+  report(id: string, reason: RejectReason): Promise<void>;
+  /** The owner's one request for a second review of a rejected share. */
+  appeal(id: string): Promise<OwnSample>;
+  /** The maintainer's hard delete; `id` is repeated as the confirmation. */
+  hardDelete(id: string): Promise<void>;
   /** URL of a sample's bytes (the review page's player). */
   sampleUrl(id: string): string;
 }
@@ -220,12 +255,14 @@ function parseShare(v: unknown): Share | null {
     strOrNull(v['listed_at']) &&
     strOrNull(v['unlisted_at'])
   ) {
+    const appealed = v['appealed_at'];
     return {
       state: v['state'],
       reason: v['reason'],
       shared_at: v['shared_at'],
       listed_at: v['listed_at'],
       unlisted_at: v['unlisted_at'],
+      appealed_at: typeof appealed === 'string' ? appealed : null,
     };
   }
   throw malformed('share');
@@ -273,6 +310,48 @@ export function parseCommunitySample(v: unknown): CommunitySample {
   return { ...core, owner, listed_at, own };
 }
 
+function numberMap(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (isRecord(v)) for (const [k, n] of Object.entries(v)) if (num(n)) out[k] = n;
+  return out;
+}
+
+function stringMap(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (isRecord(v)) for (const [k, n] of Object.entries(v)) if (str(n)) out[k] = n;
+  return out;
+}
+
+function stringList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter(str) : [];
+}
+
+/** The recommendation; anything malformed reads as "not checked" rather than breaking the queue. */
+export function parseAuto(v: unknown): AutoVerdict | null {
+  if (!isRecord(v) || !str(v['verdict']) || !str(v['checked_at'])) return null;
+  return {
+    verdict: v['verdict'],
+    checked_at: v['checked_at'],
+    current: v['current'] === true,
+    scores: numberMap(v['scores']),
+    reasons: stringList(v['reasons']),
+    notes: stringList(v['notes']),
+    peaks: Array.isArray(v['peaks']) ? v['peaks'].filter(num) : [],
+    models: stringMap(v['models']),
+    policy: str(v['policy']) ? v['policy'] : '',
+  };
+}
+
+function parseReports(v: unknown): QueueItem['reports'] {
+  if (!isRecord(v)) return { open: 0, reasons: {} };
+  return { open: num(v['open']) ? v['open'] : 0, reasons: numberMap(v['reasons']) };
+}
+
+function parseAppeal(v: unknown): QueueItem['appeal'] {
+  if (!isRecord(v) || !str(v['at'])) return null;
+  return { at: v['at'], of: str(v['of']) ? v['of'] : null };
+}
+
 export function parseQueueItem(v: unknown): QueueItem {
   if (!isRecord(v)) throw malformed('queue item');
   const core = parseCore(v, 'queue item');
@@ -288,7 +367,19 @@ export function parseQueueItem(v: unknown): QueueItem {
   ) {
     throw malformed('queue item');
   }
-  return { ...core, owner, listed_at, own, state: v['state'], shared_at, owner_id, revision };
+  return {
+    ...core,
+    owner,
+    listed_at,
+    own,
+    state: v['state'],
+    shared_at,
+    owner_id,
+    revision,
+    auto: parseAuto(v['auto']),
+    reports: parseReports(v['reports']),
+    appeal: parseAppeal(v['appeal']),
+  };
 }
 
 function field(body: unknown, key: string): unknown {
@@ -393,7 +484,7 @@ export class HttpCommunityClient implements CommunityClient {
     return response.arrayBuffer();
   }
 
-  async queue(state: 'pending' | 'listed' = 'pending'): Promise<QueueItem[]> {
+  async queue(state: QueueView = 'pending'): Promise<QueueItem[]> {
     const items = field(await this.#json('GET', `/moderation/queue?state=${state}`), 'items');
     if (!Array.isArray(items)) throw malformed('queue');
     return items.map(parseQueueItem);
@@ -402,6 +493,19 @@ export class HttpCommunityClient implements CommunityClient {
   async decide(id: string, decision: Decision): Promise<QueueItem> {
     const body = await this.#json('POST', `/moderation/${encodeURIComponent(id)}`, decision);
     return parseQueueItem(field(body, 'item'));
+  }
+
+  async report(id: string, reason: RejectReason): Promise<void> {
+    await this.#json('POST', `${this.#sample(id)}/report`, { reason });
+  }
+
+  async appeal(id: string): Promise<OwnSample> {
+    const body = await this.#json('POST', `${this.#sample(id)}/appeal`);
+    return parseOwnSample(field(body, 'sample'));
+  }
+
+  async hardDelete(id: string): Promise<void> {
+    await this.#json('POST', `/moderation/${encodeURIComponent(id)}/delete`, { confirm: id });
   }
 
   sampleUrl(id: string): string {
@@ -492,7 +596,7 @@ export class HttpCommunityClient implements CommunityClient {
     ) {
       return new CommunityError('signed-out', SIGNED_OUT_MESSAGE, code);
     }
-    if (status >= 500 || status === 429 || code === null) {
+    if (status >= 500 || (status === 429 && code !== 'rate_limited') || code === null) {
       return new CommunityError(
         'server',
         `The server failed (HTTP ${status}); try again later.`,

@@ -1,7 +1,8 @@
 /**
  * An in-memory community bank behind the `CommunityClient` interface (docs/specs/community-v1.md
  * §3), for the view and sync tests: own samples with their shares, the listed bank, takes, the
- * queue. `fail` makes the next calls of a method reject.
+ * queue, reports, appeals and hard deletes (docs/specs/moderation-v1.md). `fail` makes the next
+ * calls of a method reject.
  */
 import type { SamplerId } from '../src/audio/instruments';
 import type {
@@ -12,6 +13,8 @@ import type {
   Me,
   OwnSample,
   QueueItem,
+  QueueView,
+  RejectReason,
   UploadMeta,
 } from '../src/sync/community';
 import { CommunityError } from '../src/sync/community';
@@ -139,6 +142,7 @@ export class FakeCommunity implements CommunityClient {
         shared_at: '2026-10-21T10:00:00.000Z',
         listed_at: null,
         unlisted_at: null,
+        appealed_at: sample.share?.appealed_at ?? null,
       };
       return strip(sample);
     });
@@ -205,10 +209,12 @@ export class FakeCommunity implements CommunityClient {
     });
   }
 
-  queue(state: 'pending' | 'listed' = 'pending'): Promise<QueueItem[]> {
+  queue(state: QueueView = 'pending'): Promise<QueueItem[]> {
     return this.#run(() => {
       this.#call('queue', state);
-      return this.queueItems.filter((i) => i.state === state);
+      return this.queueItems.filter((i) =>
+        state === 'reported' ? i.state === 'listed' && i.reports.open > 0 : i.state === state,
+      );
     });
   }
 
@@ -218,7 +224,36 @@ export class FakeCommunity implements CommunityClient {
       const item = this.queueItems.find((i) => i.id === id);
       if (item === undefined) throw new CommunityError('rejected', 'no share', 'not_found');
       this.queueItems = this.queueItems.filter((i) => i.id !== id);
-      return { ...item, state: decision.action === 'list' ? 'listed' : 'rejected' };
+      return {
+        ...item,
+        state: decision.action === 'reject' ? 'rejected' : 'listed',
+        reports: { open: 0, reasons: {} },
+      };
+    });
+  }
+
+  report(id: string, reason: RejectReason): Promise<void> {
+    return this.#run(() => {
+      this.#call('report', id, reason);
+    });
+  }
+
+  appeal(id: string): Promise<OwnSample> {
+    return this.#run(() => {
+      this.#call('appeal', id);
+      const sample = this.own.get(id);
+      if (sample?.share?.state !== 'rejected' || sample.share.appealed_at !== null) {
+        throw new CommunityError('rejected', 'A review can be requested only once.', 'conflict');
+      }
+      sample.share = { ...sample.share, state: 'pending', reason: null, appealed_at: 'now' };
+      return strip(sample);
+    });
+  }
+
+  hardDelete(id: string): Promise<void> {
+    return this.#run(() => {
+      this.#call('hardDelete', id);
+      this.queueItems = this.queueItems.filter((i) => i.id !== id);
     });
   }
 
@@ -259,6 +294,9 @@ export function queueItem(name: string, extra: Partial<QueueItem> = {}): QueueIt
     shared_at: '2026-10-21T09:00:00.000Z',
     owner_id: 'u-1',
     revision: 1,
+    auto: null,
+    reports: { open: 0, reasons: {} },
+    appeal: null,
     ...extra,
   };
 }
