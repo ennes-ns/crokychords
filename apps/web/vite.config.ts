@@ -6,28 +6,34 @@ import { defineConfig } from 'vite';
 const root = fileURLToPath(new URL('.', import.meta.url));
 
 /**
- * Copies public/brand/ (logo, favicon) into the build. The rest of public/ stays out: it holds
- * the git-ignored data/ngrams.json, which must never end up in a build (see docs/DATA.md).
+ * Directories of public/ that go into a build as a whole: brand/ (logo, favicon, the toolbar mark)
+ * and fonts/ (the bundled theme fonts with their licence files). The rest of public/ stays out: it
+ * holds the git-ignored data/ngrams.json, which must never end up in a build (see docs/DATA.md).
  */
-function copyBrand(): Plugin {
-  const dir = new URL('public/brand/', import.meta.url);
+export const SHIPPED_PUBLIC_DIRS = ['brand', 'fonts'] as const;
+
+/** Emit every file of the given public/ directories, keeping their paths. */
+function shipPublicDirs(dirs: readonly string[]): Plugin {
   return {
-    name: 'crokychords-copy-brand',
+    name: 'crokychords:ship-public-dirs',
     apply: 'build',
     generateBundle() {
-      for (const name of readdirSync(dir)) {
-        this.emitFile({
-          type: 'asset',
-          fileName: `brand/${name}`,
-          source: readFileSync(new URL(name, dir)),
-        });
+      for (const name of dirs) {
+        const dir = new URL(`public/${name}/`, import.meta.url);
+        for (const file of readdirSync(dir)) {
+          this.emitFile({
+            type: 'asset',
+            fileName: `${name}/${file}`,
+            source: readFileSync(new URL(file, dir)),
+          });
+        }
       }
     },
   };
 }
 
 /** Files from public/ that do go into a build (see docs/specs/data-default-table.md). */
-const SHIPPED_PUBLIC_FILES = ['data/default.json', '_headers'];
+export const SHIPPED_PUBLIC_FILES = ['data/default.json', '_headers'] as const;
 
 /** Emit only the allow-listed public files, so a local full ngrams.json never ships. */
 function shipPublicFiles(files: readonly string[]): Plugin {
@@ -45,14 +51,14 @@ function shipPublicFiles(files: readonly string[]): Plugin {
 
 export default defineConfig({
   root,
-  plugins: [copyBrand(), shipPublicFiles(SHIPPED_PUBLIC_FILES)],
+  plugins: [shipPublicDirs(SHIPPED_PUBLIC_DIRS), shipPublicFiles(SHIPPED_PUBLIC_FILES)],
   server: { port: 5173, strictPort: true },
   preview: { port: 4173 },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    // public/ is not copied as a whole: only brand/ (copyBrand) and SHIPPED_PUBLIC_FILES
-    // (shipPublicFiles) go into a build, so a local full data/ngrams.json never ships.
+    // public/ is not copied as a whole: only SHIPPED_PUBLIC_DIRS (shipPublicDirs) and
+    // SHIPPED_PUBLIC_FILES (shipPublicFiles) go into a build, so a local full data/ngrams.json never ships.
     copyPublicDir: false,
   },
 });

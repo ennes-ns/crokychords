@@ -102,7 +102,7 @@ Glyphs a font lacks (▾ ▶ ▲ ▼ ♮) fall back to the next family in the st
 | Shapes         | radius 0 everywhere, 2 px borders, a hard 2 px bevel on controls instead of soft shadows                                     |
 | Grid           | bar and beat lines solid 1 px (no dashes), so the grid reads as pixels                                                      |
 | Effects        | no glow on the playhead or selection, hard offset shadow on the audio overlay, transitions in `steps()`                     |
-| Mark           | `croky-pixel.svg` (pixel-perfect vector of the 64 px original) at 32 px, square, `image-rendering: pixelated`                 |
+| Mark           | `croky-mark.svg` (the pixel mark from the 32 px master, see `docs/BRAND.md`) at 32 px, square, `image-rendering: pixelated` |
 | Type           | Departure Mono: 13 px for the UI, 11 px for small labels and panel headings, 22 px for the wordmark                         |
 
 The mark swaps image through `content: var(--mark-image)` on the existing `<img>` (Default:

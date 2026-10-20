@@ -88,7 +88,7 @@ export const pixelTheme: Theme = {
     '--motion-easing': 'steps(2, end)',
     '--mark-size': '32px',
     '--mark-radius': '0',
-    '--mark-image': "url('/brand/croky-pixel.svg')",
+    '--mark-image': "url('/brand/croky-mark.svg')",
     '--mark-rendering': 'pixelated',
     '--space-workspace': '14px',
     '--space-panel': '12px',

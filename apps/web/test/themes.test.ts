@@ -20,6 +20,10 @@ const publicFiles = Object.keys(import.meta.glob('../public/fonts/*')).map((p) =
   p.replace('../public/fonts/', ''),
 );
 
+const brandFiles = Object.keys(import.meta.glob('../public/brand/*')).map((p) =>
+  p.replace('../public/', '/'),
+);
+
 function luminance(hex: string): number {
   const n = Number.parseInt(hex.slice(1), 16);
   const channel = (c: number): number => {
@@ -63,6 +67,15 @@ describe('theme registry', () => {
         expect(publicFiles).toContain(font.file);
         expect(publicFiles).toContain(font.licence);
       }
+    },
+  );
+
+  it.each(THEMES.map((t): [string, Theme] => [t.id, t]))(
+    '%s only points its mark at a shipped brand file',
+    (_id, theme) => {
+      const url = /^url\('([^']+)'\)$/.exec(theme.tokens['--mark-image'])?.[1];
+      if (url !== undefined) expect(brandFiles).toContain(url);
+      else expect(theme.tokens['--mark-image']).toBe('normal');
     },
   );
 });
