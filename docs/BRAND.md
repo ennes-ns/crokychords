@@ -1,9 +1,9 @@
 # Brand: Croky
 
-Croky is the owner's parrot, a green-cheeked conure (*Pyrrhura molinae*). Every Croky project
+Croky is the project's mascot, a green-cheeked conure (*Pyrrhura molinae*). Every Croky project
 (CrokyCraft, croky-horizon, Croky Chords, …) uses the same mascot and palette. The reference art
 is the CrokyCraft server icon (`crokycraft-website/data/server-icon.png`, 64×64 pixel art). The
-vector art in this repo is a **trace of that original** (owner's own artwork), produced with the
+vector art in this repo is a **trace of that original** (original artwork of the project), produced with the
 scripts in `tools/brand/`.
 
 ## Files (`apps/web/public/brand/`)

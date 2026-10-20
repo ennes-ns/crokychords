@@ -21,7 +21,7 @@ one PR. Status: `idea` → `spec ready` → `in progress` → `in review` → `d
 | Tracks v1 (A: core): pattern presets, per-track renderer, song schema 2, multi-track MIDI | `specs/tracks-v1.md` | done |
 | Tracks v1 (B: web): Band panel, per-track synth, per-channel Web MIDI, format-1 export | `specs/tracks-v1.md` | done |
 | Brand: Croky logomark/wordmark/favicon, `BRAND.md` | `BRAND.md` | done |
-| Run a real Hooktheory API crawl with the owner's credentials; validate token mapping against the fixture | — | idea (needs `.env`) |
+| Run a real Hooktheory API crawl with API credentials; validate token mapping against the fixture | — | idea (needs `.env`) |
 
 ## Phase 2 — Hookpad parity where it matters
 
