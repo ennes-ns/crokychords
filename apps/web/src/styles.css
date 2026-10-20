@@ -612,7 +612,7 @@ button.icon.danger:hover:not(:disabled) {
   color: var(--muted);
 }
 
-/* Magic Chords */
+/* Next chord panel */
 
 .suggest {
   position: sticky;

@@ -9,7 +9,7 @@ import {
   tryParseToken,
 } from '../src/token';
 import { MODES } from '../src/theory';
-import fixture from './fixtures/tokens-hooktheory.json';
+import fixture from './fixtures/tokens-roman-v1.json';
 
 const base: Chord = {
   degree: 1,

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Music theory, chord tokens, song model, n-gram chord suggestions and a MIDI writer for Croky Chords.",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "main": "./src/index.ts",

@@ -9,7 +9,7 @@ collaboration process in `docs/WORKFLOW.md`.
 | Part            | State                                                                                                                                                  |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `packages/core` | Done: theory, chord tokens, song model (schema 2 with tracks), n-gram suggestions with backoff, MIDI writer. 408 tests.                                 |
-| `packages/data` | Done: Chordonomicon n-gram builder, chord-symbol parser, token-format helpers. Python, uv, pytest.                                                      |
+| `packages/data` | Done: Chordonomicon n-gram builder, chord-symbol parser, token-format helpers. Python, uv, pytest. 236 tests.                                           |
 | `apps/web`      | Done for v1: chord grid, suggestion panel, playback (Web Audio), multi-track "band" panel, `.mid` export, Web MIDI out. 135 tests.                      |
 | Brand           | Done: logomark, wordmark, favicon (`apps/web/public/brand/`), `docs/BRAND.md`.                                                                          |
 | CI              | `.github/workflows/ci.yml`: `pnpm check` and `data tests`, both required on `main`.                                                                    |
@@ -21,8 +21,8 @@ collaboration process in `docs/WORKFLOW.md`.
 
 - `main` is the default branch and is protected: changes arrive through pull requests with green CI;
   linear history, no force pushes.
-- `claude/hookpad-magic-chords-tool-jlqq58` is the branch on which the first phases were built; it is
-  kept as history and is no longer used.
+- The original development branch, on which the first phases were built, is kept as history and
+  is no longer used.
 - Work is tracked in GitHub Issues (labels `ready`, `blocked`, `in-review`, `maintainer`, `size:*`); see `docs/WORKFLOW.md`.
 
 ## Design in one page
@@ -53,6 +53,11 @@ collaboration process in `docs/WORKFLOW.md`.
 - Online version on `chords.cr0ky.com`, entirely on Cloudflare's free tier (Pages, Workers, D1, R2,
   Access); self-hosting is the fallback (`docs/specs/online-v1.md`, issue #6).
 - Reviews on every PR: CI, the reviewer agent, then the maintainer. No third-party review apps.
+
+## Changes
+
+- 2026-10-20 (issue #2): product-own vocabulary ("Next chord" panel, "In context"/"Popular"), personal
+  data pipelines removed, fixture renamed to `tokens-roman-v1.json`, MIT licence added.
 
 ## How to continue
 

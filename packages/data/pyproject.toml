@@ -3,6 +3,7 @@ name = "crokychords-data"
 version = "0.1.0"
 description = "Builds the n-gram chord-suggestion tables (ngrams.json) that @crokychords/core loads."
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = []
 
 [dependency-groups]

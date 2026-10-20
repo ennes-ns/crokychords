@@ -1,7 +1,7 @@
 """Render `roman-numeral-v1` tokens (see README.md) from structured chord fields.
 
-Shared by the Hooktheory API mapper and the Chordonomicon builder so both emit exactly
-the same spelling as `sind.to_token` does for the Trends dump:
+Used by the Chordonomicon builder (and any future builder) so every source emits exactly
+the same spelling:
 
     prefix? numeral ext? sus* add* alt* ('/' target)? ('/' inversion)?
 

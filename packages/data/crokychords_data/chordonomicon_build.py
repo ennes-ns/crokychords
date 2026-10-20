@@ -1,4 +1,4 @@
-"""Build ngrams.json from the Chordonomicon dataset (CC-BY-NC-4.0, non-commercial only).
+"""Build ngrams.json from the Chordonomicon dataset (see docs/DATA.md for attribution).
 
 Chordonomicon (https://huggingface.co/datasets/ailsntua/Chordonomicon) has ~680k songs
 with absolute chord symbols per section:
@@ -439,7 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--limit", type=int, help="only process the first N rows")
     ap.add_argument("--max-context", type=int, default=4, help="longest context in chords (default 4)")
     ap.add_argument("--sections", choices=("split", "song"), default="split",
-                    help="split: every <tag> block is its own sequence, like Hooktheory's sections "
+                    help="split: every <tag> block is its own sequence "
                          "(default); song: one sequence per song")
     ap.add_argument("--section-types", help="only use these section kinds, e.g. verse,chorus")
     ap.add_argument("--key-per-section", action="store_true", help="estimate the key per section, not per song")
@@ -479,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
                 + (f" Genres: {','.join(sorted(opts.genres))}." if opts.genres else "")
                 + (f" First {args.limit} rows." if args.limit else "")
             ),
-            "license": "CC-BY-NC-4.0 (Chordonomicon, Kantarelis et al. 2024). Non-commercial use only.",
+            "license": "CC BY-NC 4.0 (Chordonomicon, Kantarelis et al. 2024)",
             "url": "https://huggingface.co/datasets/ailsntua/Chordonomicon",
         },
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),

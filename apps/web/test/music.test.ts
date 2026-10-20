@@ -21,7 +21,7 @@ describe('triadChord', () => {
 // The web app relies on core's diatonic helpers with the (degree, mode) argument order for the
 // 1-7 keys, the chord editor and the diatonic filter.
 describe('diatonic triads (core, as used by the web app)', () => {
-  it('follows the Hookpad numeral conventions per mode', () => {
+  it('follows the numeral conventions per mode', () => {
     const tokens = (mode: Mode) => DEGREES.map((d) => diatonicTriadToken(d, mode));
     expect(tokens('major')).toEqual(['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']);
     expect(tokens('minor')).toEqual(['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII']);

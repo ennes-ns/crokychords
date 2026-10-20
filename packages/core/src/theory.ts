@@ -26,7 +26,7 @@ export const MODES: readonly Mode[] = [
 
 type ScaleSteps = readonly [number, number, number, number, number, number, number];
 
-/** Semitones from the tonic for scale degrees 1-7. Identical to `sind.py` SCALES. */
+/** Semitones from the tonic for scale degrees 1-7, per mode. */
 export const SCALES: Record<Mode, ScaleSteps> = {
   major: [0, 2, 4, 5, 7, 9, 11],
   dorian: [0, 2, 3, 5, 7, 9, 10],

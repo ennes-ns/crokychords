@@ -14,7 +14,7 @@ import {
 import type { Key } from '../src/theory';
 import { MODES } from '../src/theory';
 import { parseToken } from '../src/token';
-import fixture from './fixtures/tokens-hooktheory.json';
+import fixture from './fixtures/tokens-roman-v1.json';
 
 const C: Key = { tonic: 0, mode: 'major' };
 const A_MINOR: Key = { tonic: 9, mode: 'minor' };

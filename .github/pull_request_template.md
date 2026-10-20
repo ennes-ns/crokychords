@@ -14,7 +14,7 @@
 
 - [ ] `pnpm check` green locally
 - [ ] `uv run pytest` green (if `packages/data` changed)
-- [ ] Fixture round-trip (`tokens-hooktheory.json`) still green (if tokens changed)
+- [ ] Fixture round-trip (`tokens-roman-v1.json`) still green (if tokens changed)
 - [ ] No data files, caches or secrets in the diff
 
 ## Review

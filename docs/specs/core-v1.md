@@ -9,7 +9,7 @@ model with the Roman-numeral token format, the song model, the n-gram suggestion
 a Standard MIDI File writer.
 
 Read first: `README.md` (root), `packages/data/README.md` (the `ngrams.json` schema and the
-token format, which this package must parse **exactly**), `docs/RECON.md` §3.
+token format, which this package must parse **exactly**).
 
 ## 1. Package layout
 
@@ -29,7 +29,7 @@ packages/core/
 │   ├── midi.ts
 │   └── data/seed-ngrams.json
 └── test/
-    ├── fixtures/tokens-hooktheory.json   (exists) every token per mode, must parse
+    ├── fixtures/tokens-roman-v1.json     (exists) every token per mode, must parse
     ├── theory.test.ts
     ├── token.test.ts
     ├── chords.test.ts
@@ -56,7 +56,7 @@ export type Mode = 'major' | 'minor' | 'dorian' | 'phrygian' | 'lydian' | 'mixol
                  | 'locrian' | 'harmonicMinor' | 'phrygianDominant';
 export const MODES: readonly Mode[];
 export const SCALES: Record<Mode, readonly [number, number, number, number, number, number, number]>;
-// identical semitone tables to packages/data/crokychords_data/sind.py SCALES
+// semitone tables per mode; the data package must agree with these
 export interface Key { tonic: PitchClass; mode: Mode }
 export type Degree = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export function degreePitch(mode: Mode, degree: Degree): number;     // semitones from tonic
@@ -74,7 +74,7 @@ Keep it small; no key-signature spelling beyond `noteName`. Tonic spelling by mo
 ## 3. Chord model (`chords.ts`)
 
 The chord model is **quality-based and key-relative**. It is derived from the token alone
-and is independent of Hookpad's "borrowed mode" indices (several of those map to the same
+and is independent of any source-specific "borrowed mode" indices (several of those map to the same
 sounding chord; see the collision report in `packages/data`).
 
 ```ts
@@ -132,7 +132,7 @@ export function voiceChord(chord: Chord, key: Key, opts?: { bassOctave?: number;
 
 ## 4. Tokens (`token.ts`)
 
-Grammar (must accept every string in `test/fixtures/tokens-hooktheory.json` and reproduce it
+Grammar (must accept every string in `test/fixtures/tokens-roman-v1.json` and reproduce it
 byte-for-byte with `formatToken(parseToken(t)) === t`):
 
 ```
@@ -229,7 +229,7 @@ Algorithm ("stupid backoff", deterministic):
    `modes[mode].ngrams`. If present and the sum of its counts ≥ `minContextCount`, use it.
    If the mode is missing from the table, return `[]`.
 3. Normalise counts to probabilities over the whole row (before applying `filter` and
-   `limit`, so probabilities stay comparable to what Hooktheory displays), sort by count
+   `limit`, so probabilities stay comparable across filters), sort by count
    descending, tie-break alphabetically by token, apply `filter`, take `limit`.
 4. `contextUsed` = the tokens actually matched (so the UI can show "based on IV, I").
 
@@ -239,7 +239,7 @@ Also export `popularChords(table, mode, limit)` = the unigram row, same shape, a
 ### Seed table
 
 `src/data/seed-ngrams.json` must be **hand-written from general knowledge of pop harmony**,
-not copied from any Hooktheory data (do not open `packages/data/out/` or `downloads/`).
+not copied from any built table (do not open `packages/data/out/` or `downloads/`).
 Mark it clearly: `source.name = "seed"`, `description = "Hand-seeded starter table so the app works without a data build. Approximate counts, not measurements."`
 Cover `major` and `minor` only, `maxContext: 2`. Include: unigrams for the diatonic triads
 plus `V7`, `ii7`, `IVmaj7`, `Imaj7`, `vi7`, `bVII`, `iv`, `V/V`, `V/vi`, `Vsus4`, `I/1`,

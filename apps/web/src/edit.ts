@@ -1,4 +1,4 @@
-/** Pure song-editing operations used by the grid, the keyboard and the Magic Chords panel. */
+/** Pure song-editing operations used by the grid, the keyboard and the Next chord panel. */
 import type { Song, SongChord } from '@crokychords/core';
 import { totalBeats } from '@crokychords/core';
 

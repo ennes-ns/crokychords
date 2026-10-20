@@ -16,7 +16,7 @@ Working rules:
 - TypeScript strict as configured: no `any`, no `as unknown as`, no `eslint-disable`, no
   weakening of tsconfig/eslint. `packages/core` must stay free of DOM and Node APIs.
 - The token format `roman-numeral-v1` is law; the fixture
-  `packages/core/test/fixtures/tokens-hooktheory.json` must keep round-tripping.
+  `packages/core/test/fixtures/tokens-roman-v1.json` must keep round-tripping.
 - Write tests alongside the code (vitest). Every exported function gets at least one test.
 - Run from the repo root: `pnpm install`, `pnpm format`, then `pnpm check`. Everything must
   pass before you report. Read failures carefully; do not skip or delete tests to get green.

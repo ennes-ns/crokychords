@@ -1,5 +1,5 @@
 /** Toolbar: title, key/mode/tempo/meter, transport, history, export, MIDI out, table status. */
-import type { Mode } from '@crokychords/core';
+import type { Mode, NgramTable } from '@crokychords/core';
 import { MODES, parseNoteName, toPitchClass } from '@crokychords/core';
 import type { Actions } from '../actions';
 import { channelMap, channelMapLabel, songTracks } from '../band';
@@ -24,6 +24,16 @@ export function tableSummary(state: AppState): string {
       ? `no data for ${MODE_LABELS[mode].toLowerCase()}`
       : `${sections.toLocaleString('en-US')} sections (${MODE_LABELS[mode].toLowerCase()})`;
   return `${table.source.name} · ${data}`;
+}
+
+/** The one attribution line the app shows for tables built from Chordonomicon. */
+export const CHORDONOMICON_ATTRIBUTION =
+  'Suggestion data derived from Chordonomicon (CC BY-NC 4.0)';
+
+/** Attribution line for the table status tooltip, or undefined when the source has none. */
+export function tableAttribution(source: NgramTable['source']): string | undefined {
+  if (source.name.toLowerCase().includes('chordonomicon')) return CHORDONOMICON_ATTRIBUTION;
+  return source.license === undefined ? undefined : `License: ${source.license}`;
 }
 
 const STATUS_LABELS: Record<AppState['tableStatus'], string> = {
@@ -207,11 +217,7 @@ export function mountToolbar(root: HTMLElement, store: Store, actions: Actions):
 
     const table = activeTable(state);
     tableBox.className = `table-status ${state.tableStatus}`;
-    tableBox.title = [
-      table.source.description,
-      table.source.license === undefined ? undefined : `License: ${table.source.license}`,
-      state.tableError,
-    ]
+    tableBox.title = [table.source.description, tableAttribution(table.source), state.tableError]
       .filter((s): s is string => typeof s === 'string' && s !== '')
       .join('\n');
     replaceChildren(
