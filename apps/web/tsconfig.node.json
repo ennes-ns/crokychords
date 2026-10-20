@@ -9,6 +9,8 @@
     "vite.config.ts",
     "vitest.config.ts",
     "test/build.test.ts",
-    "test/pianoOffline.test.ts"
+    "test/pianoOffline.test.ts",
+    "test/soundfontOffline.test.ts",
+    "test/soundfontFetch.test.ts"
   ]
 }

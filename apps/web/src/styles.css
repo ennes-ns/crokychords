@@ -877,7 +877,7 @@ h2 {
   display: grid;
   grid-template-columns:
     34px minmax(80px, 1.1fr) minmax(84px, 0.9fr) minmax(120px, 1.5fr) 52px 54px
-    minmax(96px, 1.1fr) minmax(90px, 1fr) 56px 116px;
+    minmax(96px, 1.1fr) minmax(90px, 1fr) 56px minmax(136px, 1.4fr) 116px;
   align-items: center;
   gap: 6px;
   padding: 4px 6px;
@@ -1106,6 +1106,38 @@ button.icon.danger:hover:not(:disabled) {
 
 .pcell.on.head {
   box-shadow: inset 2px 0 0 var(--text);
+}
+
+.band-instrument > select {
+  flex: 1;
+}
+
+/* Loading mark of a SoundFont instrument: a reserved width, so nothing shifts when it shows. */
+.band-load {
+  flex: 0 0 12px;
+  width: 12px;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+}
+
+.band-load.failed {
+  color: var(--danger);
+}
+
+.band-melody {
+  margin-top: 4px;
+}
+
+.band-melody-name {
+  padding: 0 4px;
+  font-size: var(--font-size-sm);
+}
+
+.band-reset {
+  min-height: 0;
+  padding: 0 6px;
+  font-size: var(--font-size-xs);
 }
 
 .band-add {

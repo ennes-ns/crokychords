@@ -1,12 +1,221 @@
 /**
- * Built-in instruments, the drum kit, drum patterns and sound presets as plain data (no Web
- * Audio here; `graph.ts` and `piano.ts` turn this data into nodes). See
- * docs/specs/web-instruments-v1.md.
+ * Built-in instruments, the SoundFont catalogue, the drum kit, drum patterns and sound presets as
+ * plain data (no Web Audio here; `graph.ts`, `piano.ts` and `soundfont.ts` turn this data into
+ * nodes). See docs/specs/web-instruments-v1.md and docs/specs/soundfonts-v1.md.
  */
 import type { TrackRole } from '@crokychords/core';
 
-export type InstrumentId = 'piano' | 'pad' | 'bass' | 'lead';
-export const INSTRUMENT_IDS: readonly InstrumentId[] = ['piano', 'pad', 'bass', 'lead'];
+/** The synthesised instruments. */
+export type SynthId = 'piano' | 'pad' | 'bass' | 'lead';
+export const SYNTH_IDS: readonly SynthId[] = ['piano', 'pad', 'bass', 'lead'];
+
+/** SoundFont instruments: the MIDI.js folder names of FluidR3_GM (tools/soundfonts/manifest.json). */
+export type SoundfontId =
+  | 'acoustic_grand_piano'
+  | 'bright_acoustic_piano'
+  | 'electric_piano_1'
+  | 'harpsichord'
+  | 'vibraphone'
+  | 'church_organ'
+  | 'acoustic_guitar_nylon'
+  | 'acoustic_bass'
+  | 'electric_bass_finger'
+  | 'synth_bass_1'
+  | 'pizzicato_strings'
+  | 'string_ensemble_1'
+  | 'choir_aahs'
+  | 'clarinet'
+  | 'flute';
+
+/** Anything a track can play: a SoundFont instrument or a synth recipe. */
+export type InstrumentId = SynthId | SoundfontId;
+
+export interface SoundfontInstrument {
+  id: SoundfontId;
+  name: string;
+  /** General MIDI program, 0-based (written to the .mid file). */
+  program: number;
+  /** The synth recipe that plays until the samples are loaded. */
+  standIn: SynthId;
+  /** Linear gain at velocity 127 that levels the instruments against each other. */
+  gain: number;
+  /** Largest absolute sample value over the shipped notes (with a small margin). */
+  peak: number;
+  /** Highest shipped note (MIDI); the notes above it are silent in the source. */
+  top: number;
+}
+
+/** docs/specs/soundfonts-v1.md §7; `gain` and `peak` from the shipped files (§6). */
+export const SOUNDFONTS: readonly SoundfontInstrument[] = [
+  {
+    id: 'acoustic_grand_piano',
+    name: 'Acoustic Grand Piano',
+    program: 0,
+    standIn: 'piano',
+    gain: 2.53,
+    peak: 0.105,
+    top: 108,
+  },
+  {
+    id: 'bright_acoustic_piano',
+    name: 'Bright Acoustic Piano',
+    program: 1,
+    standIn: 'piano',
+    gain: 2.68,
+    peak: 0.099,
+    top: 108,
+  },
+  {
+    id: 'electric_piano_1',
+    name: 'Electric Piano 1',
+    program: 4,
+    standIn: 'piano',
+    gain: 1.94,
+    peak: 0.101,
+    top: 108,
+  },
+  {
+    id: 'harpsichord',
+    name: 'Harpsichord',
+    program: 6,
+    standIn: 'piano',
+    gain: 2.12,
+    peak: 0.128,
+    top: 108,
+  },
+  {
+    id: 'vibraphone',
+    name: 'Vibraphone',
+    program: 11,
+    standIn: 'piano',
+    gain: 2.85,
+    peak: 0.103,
+    top: 108,
+  },
+  {
+    id: 'church_organ',
+    name: 'Church Organ',
+    program: 19,
+    standIn: 'pad',
+    gain: 1.79,
+    peak: 0.133,
+    top: 96,
+  },
+  {
+    id: 'acoustic_guitar_nylon',
+    name: 'Acoustic Guitar (nylon)',
+    program: 24,
+    standIn: 'piano',
+    gain: 2.23,
+    peak: 0.134,
+    top: 108,
+  },
+  {
+    id: 'acoustic_bass',
+    name: 'Acoustic Bass',
+    program: 32,
+    standIn: 'bass',
+    gain: 2.14,
+    peak: 0.136,
+    top: 108,
+  },
+  {
+    id: 'electric_bass_finger',
+    name: 'Electric Bass (finger)',
+    program: 33,
+    standIn: 'bass',
+    gain: 1.78,
+    peak: 0.136,
+    top: 84,
+  },
+  {
+    id: 'synth_bass_1',
+    name: 'Synth Bass 1',
+    program: 38,
+    standIn: 'bass',
+    gain: 2.55,
+    peak: 0.109,
+    top: 108,
+  },
+  {
+    id: 'pizzicato_strings',
+    name: 'Pizzicato Strings',
+    program: 45,
+    standIn: 'piano',
+    gain: 1.82,
+    peak: 0.155,
+    top: 96,
+  },
+  {
+    id: 'string_ensemble_1',
+    name: 'String Ensemble 1',
+    program: 48,
+    standIn: 'pad',
+    gain: 1.77,
+    peak: 0.147,
+    top: 96,
+  },
+  {
+    id: 'choir_aahs',
+    name: 'Choir Aahs',
+    program: 52,
+    standIn: 'pad',
+    gain: 1.83,
+    peak: 0.144,
+    top: 96,
+  },
+  {
+    id: 'clarinet',
+    name: 'Clarinet',
+    program: 71,
+    standIn: 'lead',
+    gain: 1.48,
+    peak: 0.131,
+    top: 108,
+  },
+  { id: 'flute', name: 'Flute', program: 73, standIn: 'lead', gain: 1.81, peak: 0.119, top: 108 },
+];
+
+/** General MIDI programs of the synth instruments, for the .mid export. */
+export const SYNTH_PROGRAMS: Readonly<Record<SynthId, number>> = {
+  piano: 0,
+  pad: 89,
+  bass: 38,
+  lead: 80,
+};
+
+export const INSTRUMENT_IDS: readonly InstrumentId[] = [
+  ...SOUNDFONTS.map((s) => s.id),
+  ...SYNTH_IDS,
+];
+
+export function isSynthId(value: unknown): value is SynthId {
+  return SYNTH_IDS.some((id) => id === value);
+}
+
+export function isInstrumentId(value: unknown): value is InstrumentId {
+  return INSTRUMENT_IDS.some((id) => id === value);
+}
+
+/** The SoundFont instrument `id`, or undefined for a synth id. */
+export function soundfont(id: InstrumentId): SoundfontInstrument | undefined {
+  return SOUNDFONTS.find((s) => s.id === id);
+}
+
+/** The synth recipe that plays `id`: itself, or a SoundFont's stand-in. */
+export function standInOf(id: InstrumentId): SynthId {
+  return isSynthId(id) ? id : (soundfont(id)?.standIn ?? 'piano');
+}
+
+/** General MIDI program (0-based) of any instrument. */
+export function gmProgram(id: InstrumentId): number {
+  return isSynthId(id) ? SYNTH_PROGRAMS[id] : (soundfont(id)?.program ?? 0);
+}
+
+/** Display name of any instrument. */
+export function instrumentName(id: InstrumentId): string {
+  return isSynthId(id) ? INSTRUMENTS[id].name : (soundfont(id)?.name ?? id);
+}
 
 export interface OscillatorSpec {
   type: OscillatorType;
@@ -27,7 +236,7 @@ export interface FilterSpec {
 }
 
 export interface Instrument {
-  id: InstrumentId;
+  id: SynthId;
   name: string;
   oscillators: readonly OscillatorSpec[];
   filter: FilterSpec | null;
@@ -112,7 +321,7 @@ export const KEY_TRACK_REF = 261.63;
 /** Peak gain of a full-velocity note at level 1, before the mix bus. */
 export const VOICE_PEAK = 0.32;
 
-export const INSTRUMENTS: Readonly<Record<InstrumentId, Instrument>> = {
+export const INSTRUMENTS: Readonly<Record<SynthId, Instrument>> = {
   /** Piano v2: detuned unison plus inharmonic partials, two-stage decay, hammer noise. */
   piano: {
     id: 'piano',
@@ -371,7 +580,7 @@ export function drumHits(
 // ---------------------------------------------------------------------------------------------
 // Sound presets
 
-export type SoundPresetId = 'piano' | 'band' | 'pad';
+export type SoundPresetId = 'piano' | 'band' | 'pad' | 'chamber' | 'electric';
 
 export interface SoundPreset {
   id: SoundPresetId;
@@ -380,10 +589,11 @@ export interface SoundPreset {
   /** The instrument of the melody lane. */
   lead: InstrumentId;
   drums: DrumPatternId;
-  /** Per-instrument parameter overrides (brightness, room). */
-  params?: Partial<Record<InstrumentId, InstrumentParams>>;
+  /** Per-instrument parameter overrides (brightness, room) of the synth recipes. */
+  params?: Partial<Record<SynthId, InstrumentParams>>;
 }
 
+/** docs/specs/soundfonts-v1.md §8: Piano and Pad stay all-synth, the others use SoundFonts. */
 export const SOUND_PRESETS: readonly SoundPreset[] = [
   {
     id: 'piano',
@@ -395,10 +605,16 @@ export const SOUND_PRESETS: readonly SoundPreset[] = [
   {
     id: 'band',
     name: 'Band',
-    instruments: { chords: 'piano', bass: 'bass', arp: 'piano', pad: 'pad', custom: 'piano' },
+    instruments: {
+      chords: 'acoustic_grand_piano',
+      bass: 'acoustic_bass',
+      arp: 'electric_piano_1',
+      pad: 'string_ensemble_1',
+      custom: 'acoustic_grand_piano',
+    },
     lead: 'lead',
     drums: 'straight',
-    // A little darker and drier so the piano sits behind the drums and the pad.
+    // A little darker and drier so the piano (stand-in) sits behind the drums and the pad.
     params: { piano: { brightness: 0.8, room: 0.6 } },
   },
   {
@@ -407,6 +623,32 @@ export const SOUND_PRESETS: readonly SoundPreset[] = [
     instruments: { chords: 'pad', bass: 'bass', arp: 'piano', pad: 'pad', custom: 'pad' },
     lead: 'lead',
     drums: 'none',
+  },
+  {
+    id: 'chamber',
+    name: 'Chamber',
+    instruments: {
+      chords: 'harpsichord',
+      bass: 'pizzicato_strings',
+      arp: 'flute',
+      pad: 'string_ensemble_1',
+      custom: 'harpsichord',
+    },
+    lead: 'clarinet',
+    drums: 'none',
+  },
+  {
+    id: 'electric',
+    name: 'Electric',
+    instruments: {
+      chords: 'electric_piano_1',
+      bass: 'synth_bass_1',
+      arp: 'acoustic_guitar_nylon',
+      pad: 'church_organ',
+      custom: 'electric_piano_1',
+    },
+    lead: 'lead',
+    drums: 'half-time',
   },
 ];
 
@@ -422,27 +664,37 @@ export function soundPreset(id: SoundPresetId): SoundPreset {
   return preset;
 }
 
+/** The instrument `preset` gives a track of `role`, or the melody lane (`role` null). */
+export function presetChoice(preset: SoundPresetId, role: TrackRole | null): InstrumentId {
+  const p = soundPreset(preset);
+  return role === null ? p.lead : p.instruments[role];
+}
+
 const tuned = new Map<string, Instrument>();
 
-/** `id` with the parameters of `preset` applied; the same object for the same pair. */
+/**
+ * The synth recipe of `id` (a SoundFont's stand-in) with the parameters of `preset` applied;
+ * the same object for the same pair.
+ */
 export function presetInstrument(preset: SoundPresetId, id: InstrumentId): Instrument {
-  const key = `${preset}:${id}`;
+  const synth = standInOf(id);
+  const key = `${preset}:${synth}`;
   let instrument = tuned.get(key);
   if (instrument === undefined) {
-    instrument = withParams(INSTRUMENTS[id], soundPreset(preset).params?.[id]);
+    instrument = withParams(INSTRUMENTS[synth], soundPreset(preset).params?.[synth]);
     tuned.set(key, instrument);
   }
   return instrument;
 }
 
-/** The instrument that plays a track of `role` under `preset`. */
+/** The synth recipe that plays (or stands in for) a track of `role` under `preset`. */
 export function instrumentFor(preset: SoundPresetId, role: TrackRole): Instrument {
-  return presetInstrument(preset, soundPreset(preset).instruments[role]);
+  return presetInstrument(preset, presetChoice(preset, role));
 }
 
-/** The instrument that plays the melody lane under `preset`. */
+/** The synth recipe that plays (or stands in for) the melody lane under `preset`. */
 export function leadFor(preset: SoundPresetId): Instrument {
-  return presetInstrument(preset, soundPreset(preset).lead);
+  return presetInstrument(preset, presetChoice(preset, null));
 }
 
 /**

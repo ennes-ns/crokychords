@@ -110,7 +110,9 @@ sorts by start, then channel, then note (ties keep track order).
 `songToMidi` writes SMF format 1 when the song has tracks: track 0 is the conductor (song
 title or `trackName`, tempo, time and key signature), followed by one chunk per unmuted
 track (all with `includeMuted`) with a track name, a MIDI channel prefix (`FF 20`) and its
-notes on its channel. The format-0 options (`channel`, `velocity`, `gate`, `octave`,
+notes on its channel. `programs` (track id, or `MELODY_TRACK_ID` → General MIDI program
+0–127) adds a Program Change (`C<ch> <program>`) at tick 0 to those tracks; without it the
+file has none. The format-0 options (`channel`, `velocity`, `gate`, `octave`,
 `bassOctave`) are ignored then. A song object without `tracks` still gets the format-0 file.
 
 ```ts

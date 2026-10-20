@@ -77,7 +77,7 @@ async function boot(app: HTMLElement): Promise<void> {
     void engine.start();
   }
 
-  const audio = new AudioEngine(storage);
+  const audio = new AudioEngine(storage, { base: `${import.meta.env.BASE_URL}soundfonts/` });
   const midi = new MidiOut(browserMidiAccess());
   store.set({ breakcore: { ...store.state.breakcore, ...loadBreakcorePrefs(storage) } });
   const breakcore = new BreakcoreController({
@@ -119,7 +119,10 @@ async function boot(app: HTMLElement): Promise<void> {
   grid.addEventListener('pointerdown', () => actions.setFocus('chords'));
   mountChordEditor(editor, store, actions);
   // Short screens start with the Band panel collapsed until the user opens it once.
-  mountBand(band, store, actions, storage, audio.sound, audio.master, { defaultOpen: !compact() });
+  mountBand(band, store, actions, storage, audio.sound, audio.master, {
+    defaultOpen: !compact(),
+    samples: audio.samples,
+  });
   mountSuggest(suggest, store, actions);
   mountSaves(saves, session, engine === null ? {} : { status: syncStatusView(engine) });
 
@@ -159,6 +162,8 @@ async function boot(app: HTMLElement): Promise<void> {
   );
 
   void loadTables(store, (url, init) => fetch(url, init));
+  // The default preset's chords instrument, so real samples are ready by the first Play.
+  audio.prefetch();
 }
 
 const app = document.getElementById('app');

@@ -9,7 +9,7 @@ logic comes from [`@crokychords/core`](../../packages/core/README.md).
 
 ```bash
 pnpm install                            # once, at the repo root
-pnpm dev                                # http://localhost:5173
+pnpm dev                                # http://localhost:5173 (fetches the SoundFonts once)
 pnpm --filter @crokychords/web build    # → apps/web/dist
 pnpm --filter @crokychords/web preview  # serve the build on :4173
 pnpm --filter @crokychords/web test     # vitest + jsdom (audio tests render offline, silently)
@@ -88,9 +88,9 @@ lighter, a flat one step darker. Under each chord, the rows of its root, third, 
 are faintly tinted (the root a little stronger), so a note on a tinted row is a chord tone and one
 on a plain row a passing tone. The header switches the chord-tone tint (`H`, remembered on this
 device), switches the grid between 1/8 and 1/16 notes, mutes the melody and picks its MIDI
-channel (default 4). The melody plays
-through the Lead instrument, goes out over Web MIDI on its channel and is exported as a
-`Melody` track. See [`docs/specs/melody-v1.md`](../../docs/specs/melody-v1.md).
+channel (default 4). The melody plays through its instrument (the preset's choice, Lead by
+default; see the melody row of the Band panel), goes out over Web MIDI on its channel and is
+exported as a `Melody` track. See [`docs/specs/melody-v1.md`](../../docs/specs/melody-v1.md).
 
 Mouse: click empty space to add a note of that row's degree (drag right for its length), drag a
 note to move it, drag its right edge to resize it, double-click it to delete it.
@@ -133,8 +133,14 @@ progression. A new song starts with three: **Chords** (channel 1, sustained), **
 | Ch | MIDI channel 1–16 |
 | Velocity, Gate | Note velocity 1–127 and the sounding fraction of each step (10–100 %) |
 | Transp. | Transpose in semitones, -24..24 |
+| Instrument | The browser sound of this track: a SoundFont instrument or a synth (see below). `…` while its samples load, `!` when they could not be loaded |
 | ✎ | Open the pattern editor under the row (below) |
 | ▲ ▼ ✕ | Reorder, remove (undo brings it back) |
+
+Under the tracks sits the **Melody** row with the same columns: mute and MIDI channel (the same
+song fields as the melody lane's header), an octave shift −2..+2 and a velocity for the
+browser sound, and its instrument. The octave shift and velocity are listening settings like the
+instrument: they change neither the song nor Web MIDI out nor the exported file.
 
 **+ Add track** adds a track of the chosen role with that role's defaults on the next free
 channel. Click a row to select it: `M` mutes it and Next chord auditions (hover a
@@ -165,17 +171,36 @@ octave up), **Fifth**, **Root** and **Bass**.
 Every gesture is one undo step. Song presets are saved and synced with the song (song schema 4,
 `docs/specs/pattern-editor-v1.md`).
 
-### Browser sound: presets and drums
+### Browser sound: presets, instruments and drums
 
-Playback in the browser uses built-in instruments synthesised with Web Audio (no sample
-files). The **Sound** select at the top of the Band panel picks a preset, which decides the
-instrument for every track role:
+Playback in the browser uses two kinds of instruments: **SoundFont** instruments (samples from
+the FluidR3_GM General MIDI SoundFont, loaded on demand; see
+[`docs/specs/soundfonts-v1.md`](../../docs/specs/soundfonts-v1.md)) and **synth** instruments
+synthesised with Web Audio. The **Sound** select at the top of the Band panel picks a preset,
+which gives every track an instrument by its role; after that each track (and the melody) can
+get its own in its **Instrument** column. While a track has its own choice the preset reads
+"Band (custom)"; **Reset** gives every track the preset's instruments again.
 
-| Preset | Chords | Bass | Arp | Pad | Custom | Drums |
-|--------|--------|------|-----|-----|--------|-------|
-| Piano | piano | piano | piano | piano | piano | none |
-| **Band** (default) | piano | bass | piano | pad | piano | straight |
-| Pad | pad | bass | piano | pad | pad | none |
+| Preset | Chords | Bass | Arp | Pad | Custom | Melody | Drums |
+|--------|--------|------|-----|-----|--------|--------|-------|
+| Piano | piano | piano | piano | piano | piano | lead | none |
+| **Band** (default) | Acoustic Grand Piano | Acoustic Bass | Electric Piano 1 | String Ensemble 1 | Acoustic Grand Piano | lead | straight |
+| Pad | pad | bass | piano | pad | pad | lead | none |
+| Chamber | Harpsichord | Pizzicato Strings | Flute | String Ensemble 1 | Harpsichord | Clarinet | none |
+| Electric | Electric Piano 1 | Synth Bass 1 | Acoustic Guitar (nylon) | Church Organ | Electric Piano 1 | lead | half-time |
+
+SoundFont instruments: Acoustic Grand Piano, Bright Acoustic Piano, Electric Piano 1,
+Harpsichord, Vibraphone, Church Organ, Acoustic Guitar (nylon), Acoustic Bass, Electric Bass
+(finger), Synth Bass 1, Pizzicato Strings, String Ensemble 1, Choir Aahs, Clarinet, Flute. An
+instrument loads when it is chosen (or first played); until then its track plays the closest
+synth instrument, so there is always sound. Loaded samples stay in the browser's cache, so a
+second visit does not download them again. Every third note is sampled; the notes between play
+the nearest sample, retuned. At most 32 sample notes sound at once (the oldest fades first).
+
+The samples are not in git: `node tools/soundfonts/fetch.mjs` downloads them into
+`public/soundfonts/` and checks every file against `tools/soundfonts/manifest.json` (`pnpm dev`
+does this on its first start; `--check` only verifies). Without them the app plays the synth
+stand-ins.
 
 - **Piano:** three slightly detuned sines on the fundamental plus slightly stretched
   (inharmonic) partials, a short hammer-noise click, a fast first decay into a long tail (low
@@ -191,16 +216,20 @@ instrument for every track role:
 
 Everything goes through a gentle compressor and a master gain, with enough headroom that a full
 band does not clip. Hovering a suggestion or moving through the chords plays the selected track
-with the current preset. The sound settings are a listening preference: they are saved in
+with its instrument. The sound settings are a listening preference: they are saved in
 `localStorage` (`crokychords.sound`), are not part of undo, and change nothing about Web MIDI
-out or the exported `.mid` file (drums are never sent or exported).
+out (drums are never sent or exported). The exported `.mid` file carries one General MIDI
+Program Change per track for its current instrument, so a GM player picks a matching sound.
 
 To listen to the piano without opening the app, render I–V–vi–IV offline to a WAV file (nothing
 is played while rendering):
 
 ```bash
 PIANO_WAV=/tmp/piano.wav pnpm --filter @crokychords/web exec vitest run test/pianoOffline.test.ts
+SOUNDFONT_WAV=/tmp/presets pnpm --filter @crokychords/web exec vitest run test/soundfontOffline.test.ts
 ```
+
+The second line writes an 8-bar example per preset (`/tmp/presets/<preset>.wav`).
 
 ### Master volume and protection
 

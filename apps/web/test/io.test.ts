@@ -1,5 +1,6 @@
 import { createSong, serializeSong } from '@crokychords/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SoundSettings, trackPrograms } from '../src/audio/sound';
 import { midiBlob, midiFileName } from '../src/midi/download';
 import type { MidiAccessLike, MidiOutputLike } from '../src/midi/webmidi';
 import { MidiOut } from '../src/midi/webmidi';
@@ -106,20 +107,25 @@ describe('MIDI file download', () => {
   it('wraps songToMidi in an audio/midi blob', async () => {
     const blob = midiBlob(createSong({ chords: [{ token: 'I', beats: 4 }] }));
     expect(blob.type).toBe('audio/midi');
-    const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () =>
-        reader.result instanceof ArrayBuffer
-          ? resolve(reader.result)
-          : reject(new Error('no data'));
-      reader.onerror = () => reject(reader.error ?? new Error('read failed'));
-      reader.readAsArrayBuffer(blob);
-    });
-    const bytes = new Uint8Array(buffer);
+    const bytes = new Uint8Array(await readBlob(blob));
     expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('MThd');
     // Format 1: conductor + one track per unmuted layer (default band: chords and bass).
     expect((bytes[8] ?? 0) * 256 + (bytes[9] ?? 0)).toBe(1);
     expect((bytes[10] ?? 0) * 256 + (bytes[11] ?? 0)).toBe(3);
+  });
+
+  it('adds a Program Change per track from the sound settings', async () => {
+    const song = createSong({ chords: [{ token: 'I', beats: 4 }] });
+    const [chords, bass] = song.tracks ?? [];
+    if (chords === undefined || bass === undefined) throw new Error('no default band');
+    const sound = new SoundSettings();
+    sound.setInstrument(bass.id, bass.role, 'electric_bass_finger');
+    const programs = trackPrograms(sound.state, song);
+    const bytes = new Uint8Array(await readBlob(midiBlob(song, programs)));
+    const has = (a: number, b: number): boolean =>
+      bytes.some((x, i) => x === a && bytes[i + 1] === b);
+    expect(has(0xc0 | chords.channel, 0)).toBe(true); // Acoustic Grand Piano
+    expect(has(0xc0 | bass.channel, 33)).toBe(true); // Electric Bass (finger)
   });
 });
 
@@ -226,3 +232,14 @@ describe('MidiOut', () => {
     expect(seen).toEqual([[{ id: 'a', name: 'A' }]]);
   });
 });
+
+/** The bytes of a Blob (jsdom's Blob has no arrayBuffer()). */
+function readBlob(blob: Blob): Promise<ArrayBuffer> {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      reader.result instanceof ArrayBuffer ? resolve(reader.result) : reject(new Error('no data'));
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsArrayBuffer(blob);
+  });
+}

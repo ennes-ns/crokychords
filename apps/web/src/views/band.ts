@@ -1,22 +1,32 @@
 /**
  * Band panel: the browser sound (preset and drum pattern), the master row (protection mode and
  * volume), then one row per track (mute, name,
- * role, pattern, octave, MIDI channel, velocity, gate, transpose, edit pattern, reorder, remove)
- * plus "Add track". The pattern editor (views/pattern.ts) opens under its track's row. Rows are
- * patched in place, so focused
- * inputs and dragged sliders survive store updates; every edit is a song commit (undoable).
+ * role, pattern, octave, MIDI channel, velocity, gate, transpose, instrument, edit pattern,
+ * reorder, remove), the melody row (mute, octave shift, channel, velocity, instrument) plus "Add
+ * track". The pattern editor (views/pattern.ts) opens under its track's row. Rows are patched in
+ * place, so focused
+ * inputs and dragged sliders survive store updates; every song edit is a commit (undoable), the
+ * instruments and the melody's octave shift and velocity are sound settings (not in the song).
  */
 import type { Pattern, Song, Track, TrackRole } from '@crokychords/core';
-import { ROLE_DEFAULTS, TRACK_ROLES, patternDescription } from '@crokychords/core';
+import { MELODY_TRACK_ID, ROLE_DEFAULTS, TRACK_ROLES, patternDescription } from '@crokychords/core';
 import type { Actions } from '../actions';
+import type { InstrumentId } from '../audio/instruments';
 import {
   DRUM_PATTERNS,
+  INSTRUMENTS,
+  SOUNDFONTS,
   SOUND_PRESETS,
+  SYNTH_IDS,
   isDrumPatternId,
+  isInstrumentId,
   isSoundPresetId,
+  soundfont,
 } from '../audio/instruments';
 import { MASTER_MODES, MASTER_MODE_LABELS, isMasterMode } from '../audio/graph';
 import type { SoundSettings } from '../audio/sound';
+import { MELODY_SHIFT_MAX, MELODY_SHIFT_MIN, customTracks } from '../audio/sound';
+import type { SampleStatus } from '../audio/soundfont';
 import type { TrackPatch } from '../band';
 import {
   GATE_MAX,
@@ -38,6 +48,7 @@ import {
   updateTrack,
 } from '../band';
 import { h, option } from '../dom';
+import { songMelody } from '../melody';
 import type { MasterSettings, SongStorage } from '../persist';
 import { loadBandOpen, saveBandOpen } from '../persist';
 import type { AppState, Store } from '../state';
@@ -56,6 +67,7 @@ export const BAND_COLUMNS = [
   'Velocity',
   'Gate',
   'Transp.',
+  'Instrument',
   '',
 ] as const;
 
@@ -91,6 +103,68 @@ interface RowContext {
   actions: Actions;
   /** Role a track was switched to in this session; shows "apply defaults" until used. */
   pendingRole: Map<string, TrackRole>;
+  sound: SoundSettings | null;
+  samples: SampleStatus | null;
+}
+
+/** Instrument select plus its loading mark, for a track or the melody (`role` null). */
+interface InstrumentPicker {
+  cell: HTMLElement;
+  update(track: string, role: TrackRole | null): void;
+}
+
+/** Status mark of a SoundFont instrument: loading, failed, or nothing. */
+export function loadingMark(state: string): { text: string; title: string } {
+  if (state === 'loading') return { text: '…', title: 'Loading the samples' };
+  if (state === 'error') return { text: '!', title: 'Could not load; playing the synth stand-in' };
+  return { text: '', title: '' };
+}
+
+function instrumentPicker(ctx: RowContext): InstrumentPicker {
+  const select = h(
+    'select',
+    { attrs: { 'aria-label': 'Instrument', 'data-field': 'instrument' } },
+    h(
+      'optgroup',
+      { props: { label: 'SoundFont' } },
+      ...SOUNDFONTS.map((s) => option(s.id, s.name)),
+    ),
+    h(
+      'optgroup',
+      { props: { label: 'Synth' } },
+      ...SYNTH_IDS.map((id) => option(id, INSTRUMENTS[id].name)),
+    ),
+  );
+  const mark = h('span', { class: 'band-load', attrs: { 'data-field': 'loading' } });
+  let current: { track: string; role: TrackRole | null } | null = null;
+  select.onchange = () => {
+    const id = select.value;
+    if (current === null || ctx.sound === null || !isInstrumentId(id)) return;
+    ctx.sound.setInstrument(current.track, current.role, id);
+    // Also retries an instrument that failed to load before.
+    const font = soundfont(id);
+    if (font !== undefined) ctx.samples?.load(font.id);
+  };
+  const cell = h('span', { class: 'band-cell band-instrument' }, select, mark);
+  cell.hidden = ctx.sound === null;
+  return {
+    cell,
+    update(track, role) {
+      current = { track, role };
+      const sound = ctx.sound;
+      if (sound === null) return;
+      const id: InstrumentId =
+        role === null ? sound.melodyInstrument() : sound.trackInstrument({ id: track, role });
+      if (select.value !== id) select.value = id;
+      const font = soundfont(id);
+      const status = loadingMark(
+        font === undefined ? 'ready' : (ctx.samples?.state(font.id) ?? ''),
+      );
+      mark.textContent = status.text;
+      mark.title = status.title;
+      mark.classList.toggle('failed', status.text === '!');
+    },
+  };
 }
 
 function setIfIdle(input: HTMLInputElement | HTMLSelectElement, value: string): void {
@@ -261,6 +335,8 @@ function createRow(ctx: RowContext, id: string): RowView {
     actions.openPatternEditor(ctx.store.state.patternEditor === id ? null : id),
   );
   edit.dataset['field'] = 'edit-pattern';
+  const instrument = instrumentPicker(ctx);
+
   const up = iconButton('▲', 'Move up', () => actions.moveTrack(id, -1));
   const down = iconButton('▼', 'Move down', () => actions.moveTrack(id, 1));
   const remove = iconButton('✕', 'Remove track (undo restores it)', () => actions.removeTrack(id));
@@ -278,6 +354,7 @@ function createRow(ctx: RowContext, id: string): RowView {
     h('span', { class: 'band-cell band-slider' }, velocity, velocityValue),
     h('span', { class: 'band-cell band-slider' }, gate, gateValue),
     h('span', { class: 'band-cell' }, transpose),
+    instrument.cell,
     h('span', { class: 'band-cell band-buttons' }, edit, up, down, remove),
   );
   const selectRow = (): void => {
@@ -324,19 +401,131 @@ function createRow(ctx: RowContext, id: string): RowView {
       setIfIdle(gate, String(t.gate));
       gateValue.textContent = gateLabel(t.gate);
       setIfIdle(transpose, String(t.transpose));
+      instrument.update(t.id, t.role);
       up.disabled = index === 0;
       down.disabled = index === count - 1;
     },
   };
 }
 
-/** Sound preset and drum pattern selects; they only change the browser sound, not the MIDI. */
-export function soundControls(sound: SoundSettings): HTMLElement {
+interface MelodyRowView {
+  el: HTMLElement;
+  update(song: Song): void;
+}
+
+/**
+ * The melody lane's row: mute and MIDI channel (song fields, undoable), the octave shift and
+ * velocity of its browser sound and its instrument (sound settings). Same columns as a track.
+ */
+function createMelodyRow(ctx: RowContext): MelodyRowView {
+  const { actions, sound } = ctx;
+  const mute = h('input', {
+    props: { type: 'checkbox' },
+    attrs: { 'aria-label': 'Mute melody', title: 'Mute the melody', 'data-field': 'mute' },
+  });
+  mute.onchange = () => {
+    if (mute.checked !== songMelody(ctx.store.state.song).muted) actions.toggleMelodyMute();
+  };
+  const octave = h('input', {
+    class: 'band-number',
+    props: {
+      type: 'number',
+      min: String(MELODY_SHIFT_MIN),
+      max: String(MELODY_SHIFT_MAX),
+      step: '1',
+      disabled: sound === null,
+    },
+    attrs: {
+      'aria-label': 'Melody octave shift',
+      title: 'Octave shift of the browser sound (the song keeps its notes)',
+      'data-field': 'octave',
+    },
+  });
+  octave.onchange = () => {
+    const value = clampInt(octave.value, MELODY_SHIFT_MIN, MELODY_SHIFT_MAX);
+    if (value !== undefined) sound?.setMelodyOctave(value);
+    octave.value = String(sound?.melody.octave ?? 0);
+  };
+  const channel = h(
+    'select',
+    { attrs: { 'aria-label': 'Melody MIDI channel', 'data-field': 'channel' } },
+    ...Array.from({ length: MIDI_CHANNELS }, (_, i) => option(String(i), String(i + 1))),
+  );
+  channel.onchange = () => actions.setMelodyChannel(Number(channel.value));
+  const velocity = h('input', {
+    class: 'band-range',
+    props: {
+      type: 'range',
+      min: String(VELOCITY_MIN),
+      max: String(VELOCITY_MAX),
+      step: '1',
+      disabled: sound === null,
+    },
+    attrs: {
+      'aria-label': 'Melody velocity',
+      title: 'Velocity of the browser sound',
+      'data-field': 'velocity',
+    },
+  });
+  const velocityValue = h('span', { class: 'band-value' });
+  velocity.oninput = () => sound?.setMelodyVelocity(Number(velocity.value));
+  const instrument = instrumentPicker(ctx);
+
+  const el = h(
+    'div',
+    {
+      class: 'band-row band-melody-row',
+      attrs: { role: 'group', 'aria-label': 'Melody', 'data-track': MELODY_TRACK_ID },
+    },
+    h('span', { class: 'band-cell band-mute' }, mute),
+    h('span', { class: 'band-cell band-melody-name' }, 'Melody'),
+    h('span', { class: 'band-cell' }),
+    h('span', { class: 'band-cell' }),
+    h('span', { class: 'band-cell' }, octave),
+    h('span', { class: 'band-cell' }, channel),
+    h('span', { class: 'band-cell band-slider' }, velocity, velocityValue),
+    h('span', { class: 'band-cell' }),
+    h('span', { class: 'band-cell' }),
+    instrument.cell,
+    h('span', { class: 'band-cell band-buttons' }),
+  );
+  return {
+    el,
+    update(song) {
+      const melody = songMelody(song);
+      el.classList.toggle('muted', melody.muted);
+      mute.checked = melody.muted;
+      setIfIdle(channel, String(melody.channel));
+      const settings = sound?.melody ?? { octave: 0, velocity: 100 };
+      setIfIdle(octave, String(settings.octave));
+      if (document.activeElement !== velocity) velocity.value = String(settings.velocity);
+      velocityValue.textContent = String(settings.velocity);
+      instrument.update(MELODY_TRACK_ID, null);
+    },
+  };
+}
+
+/**
+ * Sound preset and drum pattern selects; they only change the browser sound, not the MIDI. The
+ * preset reads "(custom)" while a track of the current song has its own instrument; "Reset"
+ * gives every track the preset's instruments again.
+ */
+export function soundControls(sound: SoundSettings, store: Store | null = null): HTMLElement {
   const preset = h(
     'select',
     { attrs: { 'aria-label': 'Sound preset', 'data-field': 'sound-preset' } },
     ...SOUND_PRESETS.map((p) => option(p.id, p.name)),
   );
+  const reset = h(
+    'button',
+    {
+      class: 'band-reset',
+      props: { type: 'button', hidden: true },
+      attrs: { title: "Give every track the preset's instruments again", 'data-field': 'reset' },
+    },
+    'Reset',
+  );
+  reset.onclick = () => sound.setPreset(sound.preset);
   const drums = h(
     'select',
     { attrs: { 'aria-label': 'Drums', 'data-field': 'drums' } },
@@ -349,15 +538,25 @@ export function soundControls(sound: SoundSettings): HTMLElement {
     if (isDrumPatternId(drums.value)) sound.setDrums(drums.value);
   };
   const sync = (): void => {
+    const custom = store !== null && customTracks(sound.state, store.state.song).length > 0;
+    for (const o of preset.options) {
+      const name = SOUND_PRESETS.find((p) => p.id === o.value)?.name ?? o.value;
+      o.textContent = custom && o.value === sound.preset ? `${name} (custom)` : name;
+    }
     preset.value = sound.preset;
     drums.value = sound.drums;
+    reset.hidden = !custom;
   };
   sync();
   sound.subscribe(sync);
+  store?.subscribe((state, previous) => {
+    if (state.song !== previous.song) sync();
+  });
   return h(
     'div',
     { class: 'band-sound' },
     h('label', {}, 'Sound ', preset),
+    reset,
     h('label', {}, 'Drums ', drums),
     h('span', { class: 'hint' }, 'Browser playback only; MIDI out and export are unchanged.'),
   );
@@ -403,11 +602,13 @@ export function mountBand(
   storage: SongStorage | null = null,
   sound: SoundSettings | null = null,
   master: MasterSettings | null = null,
-  options: { defaultOpen?: boolean } = {},
+  options: { defaultOpen?: boolean; samples?: SampleStatus | null } = {},
 ): void {
   root.classList.add('panel', 'band');
   let open = loadBandOpen(storage, options.defaultOpen);
-  const ctx: RowContext = { store, actions, pendingRole: new Map() };
+  const samples = options.samples ?? null;
+  const ctx: RowContext = { store, actions, pendingRole: new Map(), sound, samples };
+  const melodyRow = createMelodyRow(ctx);
 
   const toggle = h(
     'button',
@@ -429,7 +630,7 @@ export function mountBand(
   const body = h(
     'div',
     { class: 'band-body', attrs: { id: 'band-body' } },
-    ...(sound === null ? [] : [soundControls(sound)]),
+    ...(sound === null ? [] : [soundControls(sound, store)]),
     ...(master === null ? [] : [masterControls(master)]),
     h(
       'div',
@@ -437,6 +638,7 @@ export function mountBand(
       ...BAND_COLUMNS.map((c) => h('span', { class: 'band-cell' }, c)),
     ),
     rowsEl,
+    h('div', { class: 'band-melody' }, melodyRow.el),
     h('div', { class: 'band-add' }, addRole, add),
     h(
       'p',
@@ -457,11 +659,21 @@ export function mountBand(
   const rows = new Map<string, RowView>();
   const editor = createPatternEditor(store, actions);
   let last: unknown[] = [];
+  /** Bumped when the sound settings or a loading state change (they are not in the store). */
+  let soundVersion = 0;
 
   const render = (state: AppState): void => {
     const tracks = songTracks(state.song);
     const presets = songPatterns(state.song);
-    const inputs = [tracks, state.selectedTrack, open, state.patternEditor, presets];
+    const inputs = [
+      tracks,
+      state.selectedTrack,
+      open,
+      state.patternEditor,
+      presets,
+      songMelody(state.song),
+      soundVersion,
+    ];
     if (inputs.every((v, i) => v === last[i])) return;
     last = inputs;
 
@@ -516,10 +728,17 @@ export function mountBand(
     if (tracks.length === 0) {
       rowsEl.append(h('p', { class: 'hint band-empty' }, 'No tracks: add one to hear the song.'));
     }
+    melodyRow.update(state.song);
   };
 
+  const refresh = (): void => {
+    soundVersion += 1;
+    render(store.state);
+  };
   render(store.state);
   store.subscribe(render);
+  sound?.subscribe(refresh);
+  samples?.subscribe(refresh);
 }
 
 function iconButton(text: string, title: string, onClick: () => void): HTMLButtonElement {

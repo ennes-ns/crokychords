@@ -14,6 +14,7 @@ import {
 import type { BreakcoreController } from './breakcore';
 import type { NoteSink } from './audio/scheduler';
 import { Scheduler } from './audio/scheduler';
+import { trackPrograms } from './audio/sound';
 import type { AudioEngine, NoteHandle } from './audio/synth';
 import type { TrackPatch } from './band';
 import {
@@ -149,7 +150,7 @@ export interface Actions {
   setMelodyCursor(beat: number): void;
   setMelodyChannel(channel: number): void;
   toggleMelodyMute(): void;
-  /** Play one melody note through the lead instrument (and on the melody's MIDI channel). */
+  /** Play one melody note through the melody's instrument (and on the melody's MIDI channel). */
   auditionNote(note: MelodyNote): void;
   melodyKey(action: MelodyKeyAction): void;
 }
@@ -171,10 +172,8 @@ export function createActions(
     playNote: (event, time, duration) => {
       const synth = audio.synth;
       if (synth === null) return;
-      const voice =
-        event.trackId === MELODY_TRACK_ID
-          ? { instrument: synth.leadInstrument() }
-          : { role: roleOf(event.trackId) };
+      // The synth picks each track's instrument from the sound settings (the melody: no role).
+      const voice = event.trackId === MELODY_TRACK_ID ? {} : { role: roleOf(event.trackId) };
       synth.playNote(event.note, time, duration, {
         ...voice,
         velocity: event.velocity,
@@ -497,7 +496,8 @@ export function createActions(
     },
 
     exportMidi() {
-      downloadMidi(store.state.song);
+      const { song } = store.state;
+      downloadMidi(song, trackPrograms(audio.sound.state, song));
     },
 
     async startAudio() {
@@ -535,7 +535,6 @@ export function createActions(
       const synth = audio.synth;
       if (audio.ready && ctx !== null && synth !== null) {
         synth.playNote(pitch, ctx.currentTime + AUDITION_DELAY_S, seconds, {
-          instrument: synth.leadInstrument(),
           velocity: MELODY_VELOCITY,
           track: MELODY_TRACK_ID,
         });

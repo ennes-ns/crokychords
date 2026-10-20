@@ -12,14 +12,18 @@ export function midiFileName(title: string): string {
   return `${base === '' ? DEFAULT_SONG_TITLE : base}.mid`;
 }
 
-/** The song as a Standard MIDI File: format 1 with one track per unmuted layer. */
-export function midiBlob(song: Song): Blob {
-  return new Blob([songToMidi(song)], { type: 'audio/midi' });
+/**
+ * The song as a Standard MIDI File: format 1 with one track per unmuted layer; `programs`
+ * (track id or 'melody' → General MIDI program) adds a Program Change to those tracks.
+ */
+export function midiBlob(song: Song, programs?: Readonly<Record<string, number>>): Blob {
+  const bytes = songToMidi(song, programs === undefined ? {} : { programs });
+  return new Blob([bytes], { type: 'audio/midi' });
 }
 
 /** Download the song as a Standard MIDI File through a temporary <a download>. */
-export function downloadMidi(song: Song): void {
-  const url = URL.createObjectURL(midiBlob(song));
+export function downloadMidi(song: Song, programs?: Readonly<Record<string, number>>): void {
+  const url = URL.createObjectURL(midiBlob(song, programs));
   const a = document.createElement('a');
   a.href = url;
   a.download = midiFileName(song.title);

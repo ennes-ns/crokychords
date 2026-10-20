@@ -353,3 +353,55 @@ describe('songToMidi with tracks (format 1)', () => {
     expect(() => songToMidi(bad)).toThrow(RangeError);
   });
 });
+
+describe('songToMidi: Program Change per track', () => {
+  const song = createSong({
+    title: 'GM',
+    tempo: 120,
+    chords: [{ token: 'I', beats: 1 }],
+    tracks: [createTrack('bass', { id: 'b', channel: 1, pattern: patternPreset('bass-whole') })],
+    melody: {
+      channel: 3,
+      muted: false,
+      notes: [{ beat: 0, length: 1, degree: 1, octave: 0, accidental: 0 }],
+    },
+  });
+  const hex = (bytes: Uint8Array): string =>
+    [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  const conductor =
+    '4d 54 68 64 00 00 00 06 00 01 00 03 01 e0 ' +
+    '4d 54 72 6b 00 00 00 20 00 ff 03 02 47 4d 00 ff 51 03 07 a1 20 00 ff 58 04 04 02 18 08 ' +
+    '00 ff 59 02 00 00 83 60 ff 2f 00 ';
+
+  it('writes C<ch> <program> at tick 0 after the name and channel prefix (golden)', () => {
+    expect(hex(songToMidi(song, { programs: { b: 32, melody: 73 } }))).toBe(
+      conductor +
+        // Bass: name, channel prefix 1, Program Change 32 (Acoustic Bass) on channel 1, C2.
+        '4d 54 72 6b 00 00 00 1d 00 ff 03 04 42 61 73 73 00 ff 20 01 01 00 c1 20 ' +
+        '00 91 24 64 83 30 81 24 40 30 ff 2f 00 ' +
+        // Melody: channel prefix 3, Program Change 73 (Flute) on channel 3, C4.
+        '4d 54 72 6b 00 00 00 1f 00 ff 03 06 4d 65 6c 6f 64 79 00 ff 20 01 03 00 c3 49 ' +
+        '00 93 3c 64 83 48 83 3c 40 18 ff 2f 00',
+    );
+  });
+
+  it('leaves tracks without an entry, and files without programs, unchanged', () => {
+    const plain =
+      conductor +
+      '4d 54 72 6b 00 00 00 1a 00 ff 03 04 42 61 73 73 00 ff 20 01 01 ' +
+      '00 91 24 64 83 30 81 24 40 30 ff 2f 00 ' +
+      '4d 54 72 6b 00 00 00 1c 00 ff 03 06 4d 65 6c 6f 64 79 00 ff 20 01 03 ' +
+      '00 93 3c 64 83 48 83 3c 40 18 ff 2f 00';
+    expect(hex(songToMidi(song))).toBe(plain);
+    expect(hex(songToMidi(song, { programs: {} }))).toBe(plain);
+    const melodyOnly = readSmf(songToMidi(song, { programs: { melody: 0 } }));
+    expect(melodyOnly.tracks[1]?.events.some((e) => (e.status & 0xf0) === 0xc0)).toBe(false);
+    expect(melodyOnly.tracks[2]?.events[2]).toMatchObject({ tick: 0, status: 0xc3, data: [0] });
+  });
+
+  it('rejects programs outside 0..127 and ignores them for format 0', () => {
+    expect(() => songToMidi(song, { programs: { b: 128 } })).toThrow(RangeError);
+    expect(() => songToMidi(song, { programs: { b: 1.5 } })).toThrow(RangeError);
+    expect(songToMidi(schema1(song), { programs: { b: 5 } })).toEqual(songToMidi(schema1(song)));
+  });
+});

@@ -14,4 +14,19 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
     },
   },
+  {
+    // Plain Node scripts (tools/soundfonts/fetch.mjs): the Node globals they use.
+    files: ['tools/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        AbortSignal: 'readonly',
+        TextDecoder: 'readonly',
+        URL: 'readonly',
+        atob: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+      },
+    },
+  },
 );
