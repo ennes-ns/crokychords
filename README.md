@@ -2,8 +2,8 @@
 
 # Croky Chords
 
-A chord-progression editor with data-driven chord suggestions, in the spirit of
-[Hookpad](https://hookpad.hooktheory.com/)'s "Magic Chords", on the road to a DAW MIDI plugin.
+A chord-progression editor that suggests the next chord from statistics over real songs.
+The web app comes first; MIDI export and DAW output exist today and grow into a plugin later.
 
 > **Status:** core, data builders and the web editor are implemented (see `docs/ROADMAP.md`).
 > Multi-channel tracks ("band") are in progress. Start with [`docs/HANDOVER.md`](docs/HANDOVER.md).
@@ -11,7 +11,7 @@ A chord-progression editor with data-driven chord suggestions, in the spirit of
 ## What it does (and will do)
 
 - **Chord grid editor** in the browser: pick a key and tempo, add chords, set their duration in beats.
-- **Magic Chords panel**: given the chords you already have, show which chord most often comes next,
+- **Next-chord panel**: given the chords you already have, show which chord most often comes next,
   with percentages. The suggestions come from an n-gram (Markov) model over Roman-numeral chord
   tokens, trained on real song data.
 - **Playback** via Web Audio, **`.mid` export**, and **Web MIDI out** so the progression can drive a
@@ -24,10 +24,10 @@ A chord-progression editor with data-driven chord suggestions, in the spirit of
 crokychords/
 ├── packages/core/    Pure TypeScript: music theory, chord model, n-gram suggestion engine,
 │                     MIDI file writer, song JSON format. No DOM, fully unit-tested.
-├── apps/web/         Vite + TypeScript web app: chord grid, Magic Chords panel, playback,
+├── apps/web/         Vite + TypeScript web app: chord grid, suggestion panel, playback,
 │                     .mid download, Web MIDI output, localStorage save/load.
 ├── packages/data/    Python scripts that build the n-gram tables (see "Data" below).
-├── docs/             HANDOVER.md, RECON.md, ARCHITECTURE.md, ROADMAP.md, DATA.md, adr/
+├── docs/             HANDOVER.md, WORKFLOW.md, ARCHITECTURE.md, ROADMAP.md, DATA.md, adr/
 └── .claude/          Agents, skills and hooks for the Claude Code workflow.
 ```
 
@@ -66,37 +66,28 @@ probability of each following token. Major and minor keys have separate tables.
 
 ## Data
 
-The suggestion tables can be built from two sources:
-
-- **Hooktheory API** (`packages/data/crokychords_data/hooktheory_fetch.py`). Uses the official
-  [Trends API](https://www.hooktheory.com/api/trends/docs) with your own account; copy
-  `.env.example` to `.env` and fill in `HOOKTHEORY_USERNAME` / `HOOKTHEORY_PASSWORD`. This is
-  exactly the statistic Hookpad's Magic Chords shows. Rate-limited, so the script caches and backs off.
-- **Chordonomicon** (`packages/data/crokychords_data/chordonomicon_build.py`). An open dataset of ~680k songs with
-  chord annotations. Chords are absolute (`C G Amin F`), so the script estimates each song's key and
-  converts to Roman numerals before counting n-grams.
+The suggestion tables are built by `packages/data` from **Chordonomicon**
+(`crokychords_data/chordonomicon_build.py`), an open dataset of ~680k songs with chord
+annotations. Chords there are absolute (`C G Amin F`), so the script estimates each song's key and
+converts to Roman numerals before counting n-grams.
 
 A small hand-seeded table ships with `core` so the app works without any download.
 
-**Licensing:** Chordonomicon is CC-BY-NC-4.0, which rules it out for a commercial plugin. Use the
-Hooktheory route (under their terms) or your own data for anything you intend to sell.
-Details in `docs/DATA.md`.
+**Licensing:** Chordonomicon is CC-BY-NC-4.0, which rules it out for a commercial plugin. Use your
+own analyses or a permissively licensed dataset for anything you intend to sell. Details in
+`docs/DATA.md`.
 
 ## Roadmap
 
 1. Finish the scaffold: package manifests, lockfile, CI running `pnpm check`.
 2. `packages/core`: theory, chords, progression model, n-gram suggestions with backoff, MIDI writer.
-3. `apps/web`: editor, Magic Chords panel, playback, export, Web MIDI out.
+3. `apps/web`: editor, suggestion panel, playback, export, Web MIDI out.
 4. `packages/data`: both data builders plus tests.
 5. Documentation and architecture decision records.
 6. Native plugin, most likely Rust + [`nih-plug`](https://github.com/robbert-vdh/nih-plug)
    (CLAP/VST3 MIDI effect). The engine is a small lookup over JSON data, so porting is cheap.
 
 ## Development workflow
-
-The canonical remote is the owner's Forgejo on the mainframe (`git.nschouteren.nl`); GitHub
-(`ennes-ns/crokychords`) is a mirror used by cloud sessions. CI runs on both: `.github/workflows/ci.yml`
-and `.forgejo/workflows/ci.yml` are identical.
 
 This repo is developed with Claude Code. The main session plans and reviews; implementation agents
 work in small pull requests, and every PR gets a code review before merge. Conventions, agent
