@@ -1,99 +1,120 @@
-<p align="center"><img src="apps/web/public/brand/croky-wordmark.svg" alt="Croky Chords" width="720"></p>
+<p align="center">
+  <img src="docs/readme/banner.png" alt="Croky Chords. Write chords. Hear what comes next." width="800">
+</p>
 
-# Croky Chords
+<p align="center">
+  <a href="https://github.com/ennes-ns/crokychords/actions/workflows/ci.yml"><img src="https://github.com/ennes-ns/crokychords/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/node-22-339933" alt="Node 22">
+  <img src="https://img.shields.io/badge/pnpm-10-f69220" alt="pnpm 10">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ecc71" alt="License: MIT"></a>
+</p>
 
-A chord-progression editor that suggests the next chord from statistics over real songs.
-The web app comes first; MIDI export and DAW output exist today and grow into a plugin later.
+Croky Chords is a chord-progression editor for the browser. You lay out chords on a grid, and a
+panel next to it tells you which chord most often comes next in real songs, with percentages. You
+can hear the progression with a small band, export it as a `.mid` file, or send it straight to a
+DAW over Web MIDI.
 
-> **Status:** core, data builders and the web editor are implemented (see `docs/ROADMAP.md`).
-> Multi-channel tracks ("band") are in progress. Start with [`docs/HANDOVER.md`](docs/HANDOVER.md).
+<p align="center">
+  <img src="docs/readme/editor.png" alt="The Croky Chords editor: a chord grid, the next-chord panel and the band panel" width="900">
+</p>
 
-## What it does (and will do)
+## Try it locally
 
-- **Chord grid editor** in the browser: pick a key and tempo, add chords, set their duration in beats.
-- **Next-chord panel**: given the chords you already have, show which chord most often comes next,
-  with percentages. The suggestions come from an n-gram (Markov) model over Roman-numeral chord
-  tokens, trained on real song data.
-- **Playback** via Web Audio, **`.mid` export**, and **Web MIDI out** so the progression can drive a
-  DAW today through a virtual MIDI port (loopMIDI on Windows, IAC on macOS, ALSA virtual port on Linux).
-- **Later:** a native MIDI-effect plugin (CLAP/VST3) with the same suggestion engine inside your DAW.
+```bash
+mise install        # Node 22, pnpm 10 (or install them yourself)
+pnpm install
+pnpm dev            # http://localhost:5173
+```
 
-## Repository layout
+`pnpm check` runs lint, format check, typecheck, tests and build; CI runs the same.
+
+## What it does
+
+<p align="center">
+  <img src="docs/readme/editor.gif" alt="Inserting the suggested chord three times" width="900">
+</p>
+
+- **Grid editor.** Pick a key, tempo and meter; add chords by clicking a suggestion or pressing `1`–`7`;
+  edit degree, quality, extension, inversion and beats in the chord panel. Undo/redo, autosave.
+- **Next-chord suggestions.** After the chords you already have, the most likely next chords with
+  their probability, from an n-gram model over Roman-numeral chord tokens. "Popular" shows the most
+  common chords in the key instead; "diatonic only" filters out borrowed chords. Hover to listen.
+- **Playback.** A band of tracks (chords, bass, arpeggio, …) with pattern presets, octave, velocity,
+  gate and a MIDI channel per track, played by a Web Audio synth.
+- **Export.** Download the progression as a multi-track `.mid` file.
+- **Web MIDI out.** Drive a DAW or hardware synth live through a virtual MIDI port, one channel per track.
+
+<details>
+<summary><b>How the suggestions work</b></summary>
+
+Every chord is a token relative to the key: `I`, `IV`, `vi`, `V7`, `bVII`, `vii°`, `ii7/1`, … One
+grammar everywhere, `roman-numeral-v1` (see [`packages/data/README.md`](packages/data/README.md)).
+
+The suggestion table is an n-gram count per mode: for each context (the last one, two or three
+tokens) it stores how often each next token followed. Lookup uses the longest context that has
+enough observations and backs off to shorter ones, down to the plain chord frequencies.
+
+```ts
+import { seedTable, suggestNext } from '@crokychords/core';
+
+const next = suggestNext(seedTable, 'major', ['I', 'V', 'vi']);
+for (const s of next.slice(0, 3)) {
+  console.log(s.token, `${Math.round(s.probability * 100)}%`, s.contextUsed.join(','));
+}
+// IV 78% V,vi
+// V  10% V,vi
+// I  7%  V,vi
+```
+
+`seedTable` is the small hand-seeded table that ships with `@crokychords/core`; the app loads a
+larger one from `apps/web/public/data/ngrams.json` when present.
+
+</details>
+
+## Where it stands
+
+| Part            | State                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `packages/core` | Done: theory, chord tokens, song model with tracks, n-gram suggestions with backoff, MIDI writer. Unit-tested. |
+| `packages/data` | Done: builds `ngrams.json` from Chordonomicon (Python, uv, pytest).                                           |
+| `apps/web`      | Done for v1: grid editor, next-chord panel, playback with the band panel, `.mid` export, Web MIDI out.        |
+| Brand           | Done: logomark, wordmark, favicon, README banner (`apps/web/public/brand/`, `docs/readme/`, `docs/BRAND.md`). |
+| CI              | `pnpm check` and the data tests, both required on `main`.                                                     |
+| Online version  | Spec only (`docs/specs/online-v1.md`).                                                                        |
+
+## Repository
 
 ```
 crokychords/
-├── packages/core/    Pure TypeScript: music theory, chord model, n-gram suggestion engine,
-│                     MIDI file writer, song JSON format. No DOM, fully unit-tested.
-├── apps/web/         Vite + TypeScript web app: chord grid, suggestion panel, playback,
-│                     .mid download, Web MIDI output, localStorage save/load.
-├── packages/data/    Python scripts that build the n-gram tables (see "Data" below).
-├── docs/             HANDOVER.md, WORKFLOW.md, ARCHITECTURE.md, ROADMAP.md, DATA.md, adr/
-└── .claude/          Agents, skills and hooks for the Claude Code workflow.
+├── packages/core/   Pure TypeScript: theory, chord tokens, song model, suggestions, MIDI writer.
+│                    No DOM or Node APIs, so it can be ported to a native plugin later.
+├── apps/web/        Vite + TypeScript editor: grid, next-chord panel, band, playback, export, MIDI out.
+├── packages/data/   Python builders for the suggestion tables.
+└── docs/            ARCHITECTURE.md, WORKFLOW.md, HANDOVER.md, ROADMAP.md, BRAND.md, specs/, adr/
 ```
-
-`packages/core` and `apps/web` are pnpm workspace packages. `packages/data` is a standalone Python
-project; it only has to produce an `ngrams.json` file that `core` can load.
-
-## Getting started
-
-Requirements: Node 22+ (see `.nvmrc`), pnpm 10 (`corepack enable` gives you the pinned version),
-and Python 3.11+ if you want to rebuild the data.
-
-```bash
-corepack enable
-pnpm install
-pnpm dev          # start the web app
-pnpm check        # lint + format check + typecheck + tests + build
-```
-
-Other scripts: `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format`.
-
-## Chord token format
-
-All data and the suggestion engine speak one token format: Roman numerals relative to the key.
-
-| Token      | Meaning                                  |
-|------------|------------------------------------------|
-| `I`, `IV`  | major triads (uppercase)                 |
-| `ii`, `vi` | minor triads (lowercase)                 |
-| `vii°`     | diminished, `III+` augmented             |
-| `V7`, `ii7`, `Imaj7`, `iiø7`, `vii°7` | seventh chords    |
-| `bVII`, `bVI` | borrowed chords, accidental in front  |
-| `vi/1`, `V/2` | inversions: `/1` first, `/2` second, `/3` third |
-
-An n-gram table maps a comma-separated context (`"IV,I"`, or `""` for unigrams) to the
-probability of each following token. Major and minor keys have separate tables.
 
 ## Data
 
-The suggestion tables are built by `packages/data` from **Chordonomicon**
-(`crokychords_data/chordonomicon_build.py`), an open dataset of ~680k songs with chord
-annotations. Chords there are absolute (`C G Amin F`), so the script estimates each song's key and
-converts to Roman numerals before counting n-grams.
-
-A small hand-seeded table ships with `core` so the app works without any download.
-
-**Licensing:** Chordonomicon is CC-BY-NC-4.0, which rules it out for a commercial plugin. Use your
-own analyses or a permissively licensed dataset for anything you intend to sell. Details in
-`docs/DATA.md`.
+The suggestion tables are built from Chordonomicon, an open dataset of chord annotations for
+hundreds of thousands of songs; the chords are converted to Roman numerals per song before counting.
+The app ships with a small hand-seeded table so it works without a data build. Suggestion data
+derived from Chordonomicon (CC BY-NC 4.0).
 
 ## Roadmap
 
-1. Finish the scaffold: package manifests, lockfile, CI running `pnpm check`.
-2. `packages/core`: theory, chords, progression model, n-gram suggestions with backoff, MIDI writer.
-3. `apps/web`: editor, suggestion panel, playback, export, Web MIDI out.
-4. `packages/data`: both data builders plus tests.
-5. Documentation and architecture decision records.
-6. Native plugin, most likely Rust + [`nih-plug`](https://github.com/robbert-vdh/nih-plug)
-   (CLAP/VST3 MIDI effect). The engine is a small lookup over JSON data, so porting is cheap.
+Plans, not promises:
 
-## Development workflow
+- Built-in instruments and presets for playback.
+- An online version with accounts and cloud saves.
+- Later, a native MIDI-effect plugin (CLAP/VST3) with the same suggestion engine inside your DAW.
 
-This repo is developed with Claude Code. The main session plans and reviews; implementation agents
-work in small pull requests, and every PR gets a code review before merge. Conventions, agent
-definitions and skills live under `.claude/`. Start a new session by reading
-[`docs/HANDOVER.md`](docs/HANDOVER.md).
+## Contributing
+
+Work is tracked in GitHub Issues: `ready` means an agent or a person can start, `blocked` waits for a
+decision, `in-review` has a PR. One issue is one branch is one PR, with green `pnpm check`. The
+process and the review rules are in [`docs/WORKFLOW.md`](docs/WORKFLOW.md); the technical conventions
+in [`CLAUDE.md`](CLAUDE.md).
 
 ## License
 
-Not yet decided. See the licensing note under "Data" before reusing the datasets.
+MIT, see [`LICENSE`](LICENSE).
