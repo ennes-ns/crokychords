@@ -14,6 +14,9 @@ export const defaultTheme: Theme = {
     '--line-strong': '#4a5162',
     '--rest-a': '#22252c',
     '--rest-b': '#262a32',
+    // The accent at 8 % (tones) and 12 % (root), over the lane and its tonic stripe.
+    '--melody-chord-tone': '#f5b04114',
+    '--melody-chord-root': '#f5b0411f',
     '--text': '#e6e8ee',
     '--muted': '#9aa1b2',
     '--accent': '#f5b041',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { KeyLike } from '../src/keyboard';
 import { keyAction } from '../src/keyboard';
-import { melodyKeyAction } from '../src/melodyKeys';
+import { isChordTonesKey, melodyKeyAction } from '../src/melodyKeys';
 
 function key(k: string, extra: Partial<KeyLike> = {}): KeyLike {
   return {
@@ -64,5 +64,17 @@ describe('melodyKeyAction', () => {
     for (const k of ['!', '@', '#', '3'])
       expect(m(k, { shiftKey: true, code: 'Digit3' })).toBeNull();
     expect(m('{', { shiftKey: true, code: 'BracketLeft' })).toBeNull();
+  });
+});
+
+describe('isChordTonesKey', () => {
+  it('takes H only while the melody has focus and leaves it free elsewhere', () => {
+    expect(isChordTonesKey(key('h'), 'melody')).toBe(true);
+    expect(isChordTonesKey(key('H'), 'melody')).toBe(true);
+    expect(isChordTonesKey(key('h'), 'chords')).toBe(false);
+    expect(isChordTonesKey(key('H', { shiftKey: true }), 'melody')).toBe(false);
+    expect(isChordTonesKey(key('h', { ctrlKey: true }), 'melody')).toBe(false);
+    expect(melodyKeyAction(key('h'), 'melody')).toBeNull();
+    expect(keyAction(key('h'))).toBeNull();
   });
 });

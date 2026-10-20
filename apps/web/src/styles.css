@@ -396,8 +396,8 @@ h2 {
   z-index: 2;
 }
 
-/* Melody lane (docs/specs/melody-v1.md): harmony colours come straight from the theme's
-   --ok (chord tone), --accent (scale tone) and --danger (outside) tokens. */
+/* Melody lane (docs/specs/melody-v1.md, B4): notes take their degree's hue with the chord
+   blocks' saturation/lightness pairs; rows holding a tone of the chord above are tinted. */
 
 .melody .panel-head h2 {
   margin: 0;
@@ -449,6 +449,28 @@ h2 {
   background: var(--panel-2);
 }
 
+.melody-tone {
+  position: absolute;
+  /* A transparent top edge keeps the pitch line above the tint visible in opaque themes. */
+  border-top: var(--grid-line-w) solid transparent;
+  background: var(--melody-chord-tone);
+  background-clip: padding-box;
+  pointer-events: none;
+}
+
+.melody-tone.root {
+  background: var(--melody-chord-root);
+}
+
+.melody.hide-tones .melody-tone {
+  display: none;
+}
+
+/* Bar and beat lines stay on top of the tint (they follow it in the DOM). */
+.melody-track .bar {
+  position: relative;
+}
+
 .mnote {
   position: absolute;
   display: flex;
@@ -459,43 +481,27 @@ h2 {
   font-size: var(--font-size-xs);
   font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--text);
-  background: color-mix(in srgb, var(--accent) 45%, var(--panel));
-  border: var(--chord-border-w) solid var(--accent);
+  --hue: 220;
+  color: hsl(var(--hue) var(--chord-ink));
+  background: hsl(var(--hue) var(--chord-fill));
+  border: var(--chord-border-w) solid hsl(var(--hue) var(--chord-edge));
   border-radius: var(--radius);
   cursor: grab;
   z-index: 1;
 }
 
-.mnote.chord-tone {
-  background: color-mix(in srgb, var(--ok) 45%, var(--panel));
-  border-color: var(--ok);
+/* Accidentals: the same hue one step lighter (sharp) or darker (flat). */
+.mnote.sharp {
+  background: hsl(var(--hue) var(--chord-hover));
 }
 
-.mnote.chord-tone.selected {
-  background: var(--ok);
-}
-
-.mnote.scale-tone {
-  background: color-mix(in srgb, var(--accent) 45%, var(--panel));
-  border-color: var(--accent);
-}
-
-.mnote.scale-tone.selected {
-  background: var(--accent);
-}
-
-.mnote.outside {
-  background: color-mix(in srgb, var(--danger) 45%, var(--panel));
-  border-color: var(--danger);
-}
-
-.mnote.outside.selected {
-  background: var(--danger);
+.mnote.flat {
+  background: hsl(var(--hue) var(--suggestion-hover));
 }
 
 .mnote.selected {
-  color: var(--bg);
+  background: hsl(var(--hue) var(--chord-selected));
+  border-color: hsl(var(--hue) var(--chord-ring));
   box-shadow: 0 0 0 var(--focus-w) var(--text);
 }
 
