@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Gate for the Rust workspace (crates/): format, lint, test. Not part of `pnpm check` or CI
-# yet (CI has no cargo job); run it before committing a change under crates/.
+# Gate for the Rust workspace (crates/): format, lint, test. Not part of `pnpm check`; CI runs it
+# in the `rust check` job. Run it before committing a change under crates/.
 # Needs a Rust toolchain (rustfmt, clippy) and the ALSA headers (pkg-config alsa) for midir.
 set -euo pipefail
 cd "$(dirname "$0")/.."
