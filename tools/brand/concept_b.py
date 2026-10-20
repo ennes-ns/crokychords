@@ -1,35 +1,20 @@
 """concept_b.py GRID PALETTE_JSON OUT_SVG  -- pixel Croky on a perch of chord blocks, bitmap wordmark.
 Everything sits on one grid of U=5 px cells (320 x 88 cells)."""
-import sys, json, colorsys
+import os, sys, colorsys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # `python3 -I` drops the script dir
+from croky_pixels import LEG, load_palette, runs
 
 grid_path, pal_path, out = sys.argv[1:4]
 U = 5
 GW, GH = 320, 88
-pal = json.load(open(pal_path))
-LEG = {"K": "outline", "B": "cap", "b": "cap_shade", "W": "eye_white", "P": "pupil", "G": "green",
-       "g": "green_dark", "L": "green_light", "S": "beak", "s": "beak_dark", "C": "cream", "c": "cream_shade",
-       "Y": "yellow", "O": "orange", "R": "red", "r": "red_dark", "F": "feet"}
+pal = load_palette(pal_path)
+
 
 def hsl(h, s, l):
     r, g, b = colorsys.hls_to_rgb(h / 360, l / 100, s / 100)
     return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
-
-def runs(rows, ox, oy, colour_of):
-    """rows: list of strings; returns {colour: [path-d]} with horizontal runs merged, in grid cells."""
-    paths = {}
-    for y, line in enumerate(rows):
-        x = 0
-        while x < len(line):
-            col = colour_of(line[x])
-            if col is None:
-                x += 1
-                continue
-            x2 = x
-            while x2 < len(line) and colour_of(line[x2]) == col:
-                x2 += 1
-            paths.setdefault(col, []).append(f"M{ox + x} {oy + y}h{x2 - x}v1h{x - x2}z")
-            x = x2
-    return paths
 
 # ---- bitmap wordmark: cap height 15, x-height 11, descender 4, stroke 3 -------------------------
 G = {
