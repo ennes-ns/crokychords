@@ -31,11 +31,11 @@ who does what and how work moves.
 Coding is done by **Opus 5.5** (Claude Code cloud sessions or local agents); the main session plans
 and never builds features itself. One label per issue sets the effort:
 
-| Label    | Effort                                                   |
-| -------- | -------------------------------------------------------- |
-| `size:S` | low: docs, renames, one-file fixes                       |
-| `size:M` | normal: one package, spec exists                         |
-| `size:L` | high: several packages or design work, spec required     |
+| Label    | Model and effort                                                        |
+| -------- | ----------------------------------------------------------------------- |
+| `size:S` | Opus 5.5, low effort: docs, renames, one-file fixes                     |
+| `size:M` | Opus 5.5, normal effort: one package, spec exists                       |
+| `size:L` | Opus 5.5, high effort: several packages or design work, spec required   |
 
 Every issue carries a "Setup for the agent" section (see the issue template), so a session can start from
 the issue alone.
