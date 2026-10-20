@@ -27,6 +27,8 @@ import type { SaveStore } from './store/saveStore';
 import { SaveSession } from './store/session';
 import { syncConfig } from './sync/config';
 import { SyncEngine, bindSyncEvents } from './sync/engine';
+import { HttpCommunityClient } from './sync/community';
+import { CommunitySync } from './sync/communitySync';
 import { HttpSyncClient } from './sync/http';
 import { openSyncState } from './sync/state';
 import { syncStatusView } from './sync/statusView';
@@ -92,7 +94,20 @@ async function boot(app: HTMLElement): Promise<void> {
   store.set({ breakcore: { ...store.state.breakcore, ...loadBreakcorePrefs(storage) } });
   // Own audio files: the own break and the sampler slots' samples (docs/specs/sampler-v1.md).
   const sampleStore = await openSampleStore(browserIndexedDb());
-  void audio.samplers.attach(sampleStore);
+  // The community bank (docs/specs/community-v1.md §4): own samples go to R2, shares, the bank.
+  const config = syncConfig(import.meta.env);
+  const community = config.enabled
+    ? new CommunitySync({
+        client: new HttpCommunityClient({
+          baseUrl: config.baseUrl,
+          fetch: (url, init) => fetch(url, init),
+          online: () => navigator.onLine,
+        }),
+        samplers: audio.samplers,
+      })
+    : null;
+  if (community !== null) audio.samplerBank.setRemote((id) => community.download(id));
+  void audio.samplers.attach(sampleStore).then(() => community?.start());
   const breakcore = new BreakcoreController({
     store,
     startAudio: () => audio.start(),
@@ -192,6 +207,7 @@ async function boot(app: HTMLElement): Promise<void> {
     defaultOpen: !compact(),
     samples: audio.samples,
     samplers: audio.samplers,
+    community: community === null ? null : { sync: community, samplers: audio.samplers },
   });
   mountSuggest(suggest, store, actions);
   mountSaves(saves, session, engine === null ? {} : { status: syncStatusView(engine) });

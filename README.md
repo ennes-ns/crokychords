@@ -44,6 +44,10 @@ pnpm dev            # http://localhost:5173
   track draws arpeggios and rhythms and saves them as song presets.
 - **Export.** Download the progression as a multi-track `.mid` file.
 - **Web MIDI out.** Drive a DAW or hardware synth live through a virtual MIDI port, one channel per track.
+- **Sampler and community bank.** Load your own samples into eight sampler slots (root, trim,
+  loop, envelope, filter). In the online version you can share a sample: after the maintainer has
+  listened to it, every signed-in user can audition it and add it to a slot. Unsharing stops new
+  takes; whoever already has it keeps it ([`docs/specs/community-v1.md`](docs/specs/community-v1.md)).
 - **Assistant and command API.** Ask the built-in assistant for a change ("make the second half
   darker") and review it as a diff before applying it; scripts and agents use the same JSON
   commands through `window.croky` or the terminal app ([`docs/howto/agents.md`](docs/howto/agents.md)).

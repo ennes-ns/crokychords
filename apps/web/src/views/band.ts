@@ -58,6 +58,7 @@ import type { MasterSettings, SongStorage } from '../persist';
 import { loadBandOpen, saveBandOpen } from '../persist';
 import type { AppState, Store } from '../state';
 import { createPatternEditor } from './pattern';
+import type { CommunityDeps } from './community';
 import { createSamplerPanel } from './sampler';
 
 const GATE_STEP = 0.05;
@@ -677,6 +678,8 @@ export function mountBand(
     defaultOpen?: boolean;
     samples?: SampleStatus | null;
     samplers?: Samplers | null;
+    /** The community bank in the Sampler panel (docs/specs/community-v1.md §4). */
+    community?: CommunityDeps | null;
   } = {},
 ): void {
   root.classList.add('panel', 'band');
@@ -718,6 +721,7 @@ export function mountBand(
             if (samplerFor !== null) sound?.setInstrument(samplerFor.track, samplerFor.role, id);
           },
           close: closeSampler,
+          community: options.community ?? null,
         });
   /** The slot the open Sampler panel shows, or null when it is closed or the track moved on. */
   const samplerSlotOf = (state: AppState): SamplerId | null => {

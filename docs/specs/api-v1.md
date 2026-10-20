@@ -97,6 +97,11 @@ All responses are JSON (`application/json`) except `204`. Writes take a JSON bod
 
 `SaveMeta` is `{ id, version, updated_at, title }`. `limits` is `{ max_save_bytes, max_saves }`.
 
+The community bank adds `/api/samples*`, `/api/community`, `/api/me/handle` and
+`/api/moderation/*`, and `GET /api/me` gains `handle` and `maintainer`; see
+[`community-v1.md`](community-v1.md) §3 (with its error codes `forbidden`, `sample_limit_reached`,
+`not_listed`, `share_rejected` and `sample_in_use`).
+
 ### Version check (optimistic concurrency)
 
 - `PUT`: the body is a full `SaveRecord` whose `id` equals `:id`. The *base version* is the version

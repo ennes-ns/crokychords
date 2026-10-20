@@ -49,6 +49,32 @@ s16 -compression_level 12 pseudoamen-141.flac`. A user's own break ("Use my own 
 samples of the sampler slots (`docs/specs/sampler-v1.md`) are stored only in that browser's
 IndexedDB, never in git or the build; the sampler tests generate their audio in code.
 
+## Community samples
+
+Users of the online version can share their own sampler samples in the community bank
+(`docs/specs/community-v1.md`). Those files are user content: they live only in the production
+R2 bucket (`samples/<sha256>`), never in git, the build or the tests (the tests generate their
+audio in code).
+
+Before a share, the owner ticks this acknowledgement (licence id `community-v1`, stored with the
+share and its time):
+
+> I made this sound or own the rights to it, and I let every user of Croky Chords use it in their
+> songs, also commercially, for ever. I can unshare it; whoever already has it keeps it.
+
+What it means:
+
+- The owner keeps the copyright. Every other user may use the sample in their own songs and
+  export those songs (also commercially), perpetually and without attribution. Re-sharing the
+  raw sample as a sample of one's own is not part of the grant.
+- Unsharing stops new takes; users who already took the sample keep using it, so the server never
+  deletes a sample while anyone references it.
+- Nothing is listed without the maintainer listening to it first (human review); the maintainer
+  rejects speech, sexual sounds, violence or distress, hate, someone else's recording, ear-damaging
+  loudness, empty or broken files and personal data, and can take a listed sample down.
+- Owners are shown by a handle (the part of the e-mail before `@` or a chosen name), never by
+  their e-mail address.
+
 ## SoundFonts
 
 The browser instruments of `docs/specs/soundfonts-v1.md` play samples that are downloaded at
@@ -76,7 +102,8 @@ build time, never committed:
 ## Licensing
 
 The code is MIT (`LICENSE`). Suggestion data derived from Chordonomicon (CC BY-NC 4.0):
-attribution required, non-commercial. SoundFont samples: see "SoundFonts" above.
+attribution required, non-commercial. SoundFont samples: see "SoundFonts" above. Community
+samples: the `community-v1` grant above.
 
 ## Token mapping caveats
 

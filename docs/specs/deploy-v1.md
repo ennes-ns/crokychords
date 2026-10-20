@@ -372,10 +372,14 @@ repository variable `DEPLOY_ENABLED` to `true`; until then every run is skipped.
    - `CLOUDFLARE_API_TOKEN`: the token from step 1.
    - `CLOUDFLARE_ACCOUNT_ID`: the account id (Cloudflare dashboard → Workers & Pages → Account
      details, or `pnpm exec wrangler whoami`).
+   - `ADMIN_EMAILS` (optional): the maintainer's Access e-mail for the community review queue
+     (`docs/specs/community-v1.md` §3), several comma separated without spaces. The deploy passes
+     it with `--var`; `wrangler.toml` keeps it empty. Unset: nobody is maintainer.
 
    ```sh
    gh secret set CLOUDFLARE_API_TOKEN --env production
    gh secret set CLOUDFLARE_ACCOUNT_ID --env production
+   gh secret set ADMIN_EMAILS --env production   # optional, the review queue's maintainer
    ```
 
 4. **Repository variable** `DEPLOY_ENABLED` = `true` (Settings → Secrets and variables → Actions →

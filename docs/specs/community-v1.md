@@ -86,7 +86,7 @@ with zod. Ids are UUIDs; anything else is `404`.
 | Method | Path | Who | Success | Body |
 |--------|------|-----|---------|------|
 | `POST` | `/api/samples?name=&duration=&channels=&root=&sha256=` | any | `201` new, `200` existing | the raw file; `{ sample: OwnSample }` |
-| `GET` | `/api/samples` | any | `200` | `{ samples: OwnSample[], limits }`, newest first |
+| `GET` | `/api/samples` | any | `200` | `{ samples: OwnSample[], usage: { samples, bytes }, limits }`, newest first |
 | `GET` | `/api/samples/:id` | see below | `200` | the bytes (`Content-Type` of the sample, `ETag: "<sha256>"`) |
 | `DELETE` | `/api/samples/:id` | owner | `204` | — |
 | `POST` | `/api/samples/:id/share` | owner | `200` | `{ licence: true, name?, tags? }` → `{ sample: OwnSample }` |
@@ -221,7 +221,8 @@ A small separate page (its own Vite entry, `src/review/`), not linked for others
 `GET /api/me` and shows `This page is for the maintainer` unless `maintainer` is true (the API
 refuses the queue to everyone else anyway). For every pending share, oldest first: name, owner
 handle, tags, length, size, the date, an `<audio controls>` player (`preload="none"`, nothing
-plays by itself), **List**, a category select and **Reject**. A decided item leaves the list.
+plays by itself), **List**, a category select (no default) and **Reject**, enabled once a
+category is picked. A decided item leaves the list; a failed decision keeps it.
 
 ## 5. Limits and costs
 

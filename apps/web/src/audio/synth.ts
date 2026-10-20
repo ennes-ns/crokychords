@@ -93,6 +93,8 @@ export interface NoteOptions {
   instrument?: Instrument;
   /** Play this instrument (any kind) instead of the track's choice (auditions). */
   instrumentId?: InstrumentId;
+  /** Play these prepared sampler buffers (a community preview, docs/specs/community-v1.md §4.4). */
+  sampler?: { patch: SamplerPatch; prepared: PreparedSample };
   /** MIDI velocity 1-127, default 96. */
   velocity?: number;
   /** Track id: the gain bus the note goes through (default 'default'); 'melody' is the lane. */
@@ -320,6 +322,10 @@ export class Synth {
     this.#prune();
     const track = opts.track ?? 'default';
     const start = Math.max(time, this.#ctx.currentTime);
+    if (opts.sampler !== undefined) {
+      const velocity = opts.velocity ?? 96;
+      return this.#samplerVoice(opts.sampler, note, velocity, start, duration, track);
+    }
     const explicit = opts.instrument;
     if (explicit !== undefined) {
       return this.#synthVoice(explicit, note, opts.velocity ?? 96, start, duration, track);
@@ -595,8 +601,11 @@ export class AudioEngine {
       decode: options.decodeSampler ?? decodeOffline,
       create: createAudioBuffer,
     });
-    this.samplers = new Samplers(this.sound, this.samplerBank, (id, note, velocity, track) =>
-      this.audition(id, note, velocity, track),
+    this.samplers = new Samplers(
+      this.sound,
+      this.samplerBank,
+      (id, note, velocity, track) => this.audition(id, note, velocity, track),
+      (ready, note, velocity) => this.preview(ready, note, velocity),
     );
     // A newly chosen SoundFont instrument (a preset or one track) starts loading at once.
     let inUse = soundfontsInUse(this.sound);
@@ -679,6 +688,31 @@ export class AudioEngine {
       { instrumentId: instrument, velocity, track },
     );
     return handle;
+  }
+
+  /**
+   * Play one note of prepared sampler buffers now, like `audition` (the Community tab's
+   * preview of a sample that is in no slot); null when there is no audio.
+   */
+  preview(
+    ready: { patch: SamplerPatch; prepared: PreparedSample },
+    note: number,
+    velocity = 100,
+  ): NoteHandle | null {
+    if (this.#ctx === null) void this.start();
+    const ctx = this.#ctx;
+    const synth = this.#synth;
+    if (ctx === null || synth === null || !this.wake()) return null;
+    return synth.playNote(
+      note,
+      ctx.currentTime + SAMPLER_AUDITION_DELAY,
+      SAMPLER_AUDITION_SECONDS,
+      {
+        sampler: ready,
+        velocity,
+        track: SAMPLER_AUDITION_TRACK,
+      },
+    );
   }
 
   /** Tell the engine whether the transport plays (it never suspends while it does). */
