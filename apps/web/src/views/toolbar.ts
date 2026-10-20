@@ -5,6 +5,8 @@
 import type { Mode, NgramTable } from '@crokychords/core';
 import { MODES, parseNoteName, toPitchClass } from '@crokychords/core';
 import type { Actions } from '../actions';
+import { BREAK_SPEEDS, isBreakSpeed } from '../audio/breaks';
+import type { BreakcoreController, BreakcoreState } from '../breakcore';
 import { channelMap, channelMapLabel, songTracks } from '../band';
 import type { Child } from '../dom';
 import { h, option, replaceChildren } from '../dom';
@@ -61,6 +63,151 @@ export interface ToolbarOptions {
   storage?: ThemeStorage | null;
   /** Shows the "Connect Fire" button when given. */
   fire?: FireControls;
+  /** Shows the Breakcore controls when given (docs/specs/breakcore-v1.md). */
+  breakcore?: BreakcoreController;
+}
+
+/** The lamp: 8×10 pixels, `#` glass (lit in the state colour), `=` the socket. */
+const LAMP_ROWS = [
+  '..####..',
+  '.######.',
+  '##.##.##',
+  '###..###',
+  '########',
+  '.######.',
+  '..####..',
+  '..====..',
+  '..====..',
+  '...==...',
+];
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** The pixel-art Breakcore lamp as an inline SVG of square pixels (theme colours via CSS). */
+export function breakLamp(doc: Document = document): SVGSVGElement {
+  const svg = doc.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'break-lamp');
+  svg.setAttribute('viewBox', '0 0 8 10');
+  svg.setAttribute('width', '8');
+  svg.setAttribute('height', '10');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('shape-rendering', 'crispEdges');
+  LAMP_ROWS.forEach((row, y) => {
+    [...row].forEach((cell, x) => {
+      if (cell === '.') return;
+      const rect = doc.createElementNS(SVG_NS, 'rect');
+      rect.setAttribute('x', String(x));
+      rect.setAttribute('y', String(y));
+      rect.setAttribute('width', '1');
+      rect.setAttribute('height', '1');
+      rect.setAttribute('class', cell === '#' ? 'glass' : 'socket');
+      svg.append(rect);
+    });
+  });
+  return svg;
+}
+
+const LAMP_TITLES: Record<'off' | BreakcoreState['status'], string> = {
+  off: 'Breakcore (K): a fast chopped break under the progression. Shift+K cycles the intensity.',
+  idle: 'Breakcore is on.',
+  loading: 'Loading the break…',
+  ready: 'Breakcore is on (K to turn off, Shift+K for the intensity).',
+  error: 'The break could not be loaded',
+};
+
+/** Value of the break select that opens the file picker / removes the own break. */
+const PICK_OWN = 'pick';
+const REMOVE_OWN = 'remove';
+
+/** The Breakcore group: toggle with lamp, intensity, speed and the break source. */
+export function breakcoreControls(
+  controller: BreakcoreController,
+  store: Store,
+): {
+  element: HTMLElement;
+  render: (state: BreakcoreState) => void;
+} {
+  const toggle = h('button', {
+    class: 'break-toggle',
+    props: { type: 'button' },
+    attrs: { 'aria-pressed': 'false' },
+  });
+  toggle.append(breakLamp(toggle.ownerDocument), ' Breakcore');
+  toggle.onclick = () => controller.toggle();
+
+  const intensity = h('input', {
+    class: 'break-intensity',
+    props: { type: 'range', min: '0', max: '100', step: '5' },
+    attrs: { 'aria-label': 'Breakcore intensity', title: 'Intensity (Shift+K: 25/50/75/100)' },
+  });
+  intensity.oninput = () => controller.setIntensity(Number(intensity.value));
+  const percent = h('span', { class: 'break-percent' });
+
+  const speed = h(
+    'select',
+    { attrs: { 'aria-label': 'Breakcore speed', title: 'Speed: ×2 turns 16ths into 32nds' } },
+    ...BREAK_SPEEDS.map((s) => option(String(s), `×${s}`)),
+  );
+  speed.onchange = () => {
+    const value = Number(speed.value);
+    if (isBreakSpeed(value)) controller.setSpeed(value);
+  };
+
+  const file = h('input', {
+    class: 'break-file',
+    props: { type: 'file', accept: 'audio/*,.wav,.ogg,.flac,.mp3', hidden: true },
+    attrs: { 'aria-label': 'Use my own break' },
+  });
+  file.onchange = () => {
+    const picked = file.files?.[0];
+    file.value = '';
+    if (picked !== undefined) void controller.useOwn(picked).catch(() => undefined);
+  };
+  const source = h('select', {
+    attrs: { 'aria-label': 'Break', title: 'Which break plays: the bundled one or your own' },
+  });
+  source.onchange = () => {
+    const value = source.value;
+    if (value === PICK_OWN) file.click();
+    else if (value === REMOVE_OWN) void controller.removeOwn();
+    else controller.setSource(value === 'own' ? 'own' : 'bundled');
+    source.value = store.state.breakcore.source;
+  };
+
+  const element = h(
+    'span',
+    { class: 'group breakcore', attrs: { role: 'group', 'aria-label': 'Breakcore' } },
+    toggle,
+    intensity,
+    percent,
+    speed,
+    source,
+    file,
+  );
+
+  const render = (state: BreakcoreState): void => {
+    const lamp = state.enabled ? state.status : 'off';
+    toggle.dataset['lamp'] = lamp;
+    toggle.setAttribute('aria-pressed', String(state.enabled));
+    toggle.title =
+      lamp === 'error' && state.error !== null
+        ? `${LAMP_TITLES.error}: ${state.error}`
+        : LAMP_TITLES[lamp];
+    if (document.activeElement !== intensity) intensity.value = String(state.intensity);
+    percent.textContent = `${state.intensity}%`;
+    speed.value = String(state.speed);
+    replaceChildren(
+      source,
+      option('bundled', 'Bundled break', state.source === 'bundled'),
+      state.ownName === null
+        ? null
+        : option('own', `Own: ${state.ownName}`, state.source === 'own'),
+      option(PICK_OWN, 'Use my own break…'),
+      state.ownName === null ? null : option(REMOVE_OWN, 'Remove own break'),
+    );
+    source.value = state.source;
+  };
+  return { element, render };
 }
 
 const FIRE_LABELS: Record<AppState['fire']['status'], string> = {
@@ -194,6 +341,9 @@ export function mountToolbar(
     actions.exportMidi(),
   );
 
+  const breakcore =
+    options.breakcore === undefined ? null : breakcoreControls(options.breakcore, store);
+
   const midiBox = h('span', { class: 'midi' });
   const channelBox = h('span', { class: 'channel-map', attrs: { 'aria-label': 'MIDI channels' } });
   const tableBox = h('span', { class: 'table-status' });
@@ -241,6 +391,7 @@ export function mountToolbar(
       loopRange,
       clearLoop,
     ),
+    ...(breakcore === null ? [] : [breakcore.element]),
     h('span', { class: 'group' }, undo, redo),
     h('span', { class: 'group' }, newSong, exportMidi),
     h('span', { class: 'group' }, midiBox, channelBox, fireButton),
@@ -321,6 +472,7 @@ export function mountToolbar(
     redo.disabled = !store.canRedo;
     renderMidi(state);
     renderChannels(state);
+    breakcore?.render(state.breakcore);
     if (fireButton !== null) {
       const status = state.fire.status;
       fireButton.textContent = FIRE_LABELS[status];
@@ -370,6 +522,7 @@ export function mountToolbar(
       state.tableStatus,
       state.ngrams,
       state.fire.status,
+      state.breakcore,
     ];
     if (inputs.every((v, i) => v === last[i])) return;
     last = inputs;

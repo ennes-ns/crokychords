@@ -52,6 +52,8 @@ font (Departure Mono, SIL OFL 1.1) is bundled in `public/fonts/` with its licenc
 | `Alt+[` / `Alt+]` | Set the loop start / end at the selected chord |
 | `Esc` | Select the "+" slot (or leave a text field) |
 | `M` | Mute / unmute the selected track (Band panel) |
+| `K` | Breakcore on / off |
+| `Shift+K` | Breakcore intensity 25 → 50 → 75 → 100 % |
 | `Ctrl/Cmd+Z` | Undo (50 steps, song edits only, including track edits) |
 | `Ctrl/Cmd+Shift+Z`, `Ctrl+Y` | Redo |
 
@@ -207,6 +209,22 @@ plays at the normal level; 100 % is about +4 dB) and an optional protection stag
 end of the chain: **Off** (default), **Limiter** (holds peaks under −0.3 dBFS) or **Soft clip**
 (tanh saturation, never above full scale). Both are saved locally (`crokychords.master`), never
 in the song or MIDI. Volume is mouse only.
+
+### Breakcore
+
+The **Breakcore** button in the transport (or `K`) plays a fast, chopped amen-style break under
+the progression; its pixel lamp is grey when off, blinks while the break loads, is green when it
+plays and red when the break could not be loaded (hover it for the reason). The break is a real
+drum-break sample (a CC0 re-made amen-style break, see `docs/DATA.md`, "Samples"), cut into 16
+slices that are re-timed to the song tempo, so it follows any BPM, tempo changes and loop points.
+The slider sets the **intensity** (0 % plays the break straight, 100 % chops every bar with beat
+repeats, 1/16 and 1/32 stutters, reversed, pitched and shuffled slices; `Shift+K` steps through
+25/50/75/100 %), **×2** doubles the speed. The **Break** select plays the bundled break or your
+own: *Use my own break…* takes an audio file (two bars of 4/4, 0.5–20 s, at most 8 MB), which
+is kept in this browser (IndexedDB) and never uploaded. While Breakcore is on the master
+protection is at least the limiter. Intensity, speed and the chosen break are saved locally
+(`crokychords.breakcore`); nothing of it goes to the song, Web MIDI or the `.mid` export. Spec:
+`docs/specs/breakcore-v1.md`.
 
 ## Sending MIDI to a DAW
 

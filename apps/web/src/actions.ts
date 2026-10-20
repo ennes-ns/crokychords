@@ -11,6 +11,7 @@ import {
   songKey,
   totalBeats,
 } from '@crokychords/core';
+import type { BreakcoreController } from './breakcore';
 import type { NoteSink } from './audio/scheduler';
 import { Scheduler } from './audio/scheduler';
 import type { AudioEngine, NoteHandle } from './audio/synth';
@@ -158,7 +159,12 @@ const MAX_ENTRY_LENGTH = 16;
 /** Longest melody audition, in beats. */
 const NOTE_AUDITION_BEATS = 1;
 
-export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): Actions {
+export function createActions(
+  store: Store,
+  audio: AudioEngine,
+  midi: MidiOut,
+  breakcore: BreakcoreController | null = null,
+): Actions {
   const roleOf = (trackId: string): TrackRole =>
     findTrack(store.state.song, trackId)?.role ?? 'chords';
   const synthSink: NoteSink = {
@@ -175,8 +181,12 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
         track: event.trackId,
       });
     },
-    stopAll: () => audio.synth?.stopAll(),
+    stopAll: () => {
+      audio.synth?.stopAll();
+      breakcore?.stopAll();
+    },
     playDrum: (hit, time) => audio.synth?.playDrum(hit.drum, hit.level, time),
+    playBreak: (event, time, seconds) => breakcore?.play(event, time, seconds),
   };
   const midiSink: NoteSink = {
     playNote: (event, time, duration) =>
@@ -196,6 +206,7 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
     () => [synthSink, midiSink],
     undefined,
     () => audio.sound.drums,
+    () => breakcore?.plan() ?? null,
   );
   let frame: number | null = null;
   let auditionHandle: NoteHandle | null = null;
@@ -678,6 +689,12 @@ export function createActions(store: Store, audio: AudioEngine, midi: MidiOut): 
           if (id !== null) actions.toggleMute(id);
           break;
         }
+        case 'toggleBreakcore':
+          breakcore?.toggle();
+          break;
+        case 'cycleBreakIntensity':
+          breakcore?.cycleIntensity();
+          break;
       }
     },
   };

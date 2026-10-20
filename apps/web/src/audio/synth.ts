@@ -19,10 +19,12 @@ import type {
   VoiceNodes,
 } from './graph';
 import {
+  buildBreakBus,
   buildDrum,
   buildMasterBus,
   buildRoom,
   buildVoice,
+  guardedMasterMode,
   noiseBuffer,
   setMasterMode,
   setMasterVolume,
@@ -79,6 +81,10 @@ export class Synth {
   #voices = new Set<Voice>();
   #noise: BufferLike | null = null;
   #room: GainLike | null = null;
+  /** Breakcore (docs/specs/breakcore-v1.md): its bus, and the user's mode under the guard. */
+  #breakBus: GainLike | null = null;
+  #breakGuard = false;
+  #userMode: MasterMode;
 
   /**
    * `preset` is read on every note, so a preset change applies to the next note; `master` is
@@ -92,6 +98,7 @@ export class Synth {
     this.#ctx = ctx;
     this.#preset = preset;
     this.#master = buildMasterBus(ctx, master.mode, master.volume);
+    this.#userMode = master.mode;
   }
 
   /** Current master protection mode. */
@@ -100,7 +107,20 @@ export class Synth {
   }
 
   setMasterMode(mode: MasterMode): void {
-    setMasterMode(this.#master, mode);
+    this.#userMode = mode;
+    setMasterMode(this.#master, guardedMasterMode(mode, this.#breakGuard));
+  }
+
+  /** The Breakcore bus into the master gain (built on first use). */
+  breakBus(): GainLike {
+    this.#breakBus ??= buildBreakBus(this.#ctx, this.#master);
+    return this.#breakBus;
+  }
+
+  /** While Breakcore is on, the master protection is at least the limiter. */
+  setBreakGuard(on: boolean): void {
+    this.#breakGuard = on;
+    this.setMasterMode(this.#userMode);
   }
 
   /** Master volume in percent (0–100, unity at 80). */

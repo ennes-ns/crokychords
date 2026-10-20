@@ -1,6 +1,7 @@
 import './styles.css';
 import { createSong } from '@crokychords/core';
 import { createActions } from './actions';
+import { BreakcoreController, loadBreakcorePrefs } from './breakcore';
 import { AudioEngine } from './audio/synth';
 import { loadTables } from './data/tables';
 import { h } from './dom';
@@ -14,6 +15,7 @@ import { browserStorage } from './persist';
 import { bindShortcuts } from './shortcuts';
 import { Store, initialState } from './state';
 import { browserIndexedDb } from './store/indexedDb';
+import { openSampleStore } from './store/samples';
 import { browserLocalStorage, openSaveStore } from './store/open';
 import type { SaveStore } from './store/saveStore';
 import { SaveSession } from './store/session';
@@ -76,7 +78,22 @@ async function boot(app: HTMLElement): Promise<void> {
 
   const audio = new AudioEngine(storage);
   const midi = new MidiOut(browserMidiAccess());
-  const actions = createActions(store, audio, midi);
+  store.set({ breakcore: { ...store.state.breakcore, ...loadBreakcorePrefs(storage) } });
+  const breakcore = new BreakcoreController({
+    store,
+    startAudio: () => audio.start(),
+    context: () => audio.context,
+    synth: () => audio.synth,
+    samples: await openSampleStore(browserIndexedDb()),
+    fetchBytes: async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`the break did not load (HTTP ${response.status})`);
+      return response.arrayBuffer();
+    },
+    storage,
+  });
+  void breakcore.init();
+  const actions = createActions(store, audio, midi, breakcore);
   const fire = new FireConnection(store, browserFireAccess(), new FireController(store, actions));
   bindFirePageEvents(fire, window);
 
@@ -105,6 +122,7 @@ async function boot(app: HTMLElement): Promise<void> {
   mountToolbar(toolbar, store, actions, {
     storage,
     fire: { connect: () => void fire.connect(), disconnect: () => fire.disconnect() },
+    breakcore,
   });
   mountGrid(grid, store, actions);
   const melodyLane = mountMelody(melody, store, actions, storage);

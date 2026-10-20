@@ -1,5 +1,7 @@
 import type { NgramTable, Song } from '@crokychords/core';
 import { createSong, seedTable } from '@crokychords/core';
+import type { BreakcoreState } from './breakcore';
+import { defaultBreakcore } from './breakcore';
 import { clampSelection } from './edit';
 import type { LoopRange } from './loop';
 import type { MelodyGrid } from './melody';
@@ -71,6 +73,8 @@ export interface AppState {
   /** Octave and length (beats) of new melody notes. */
   melodyOctave: number;
   melodyLength: number;
+  /** Breakcore mode (docs/specs/breakcore-v1.md); a listening setting, never in the song. */
+  breakcore: BreakcoreState;
 }
 
 export function initialState(song: Song = createSong()): AppState {
@@ -99,6 +103,7 @@ export function initialState(song: Song = createSong()): AppState {
     melodyGrid: 0.5,
     melodyOctave: 0,
     melodyLength: 0.5,
+    breakcore: defaultBreakcore(),
   };
 }
 
