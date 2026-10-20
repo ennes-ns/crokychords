@@ -47,6 +47,8 @@ export interface QueueItem extends Omit<CommunitySample, 'listed_at'> {
   state: ShareState;
   shared_at: string;
   owner_id: string;
+  /** The share's revision; a decision names it, so a renamed share is looked at again. */
+  revision: number;
 }
 
 export interface CommunityPage {
@@ -70,7 +72,9 @@ export interface UploadMeta {
   type: string;
 }
 
-export type Decision = { action: 'list' } | { action: 'reject'; reason: RejectReason };
+export type Decision =
+  | { action: 'list'; revision: number }
+  | { action: 'reject'; reason: RejectReason; revision: number };
 
 /** Rejection categories and what the owner reads (docs/specs/community-v1.md §2). */
 export const REJECT_LABELS = {
@@ -114,13 +118,15 @@ export class CommunityError extends Error {
 
 /** What the panel says for an error code of the API. */
 const MESSAGES: Record<string, string> = {
-  sample_limit_reached: 'You have reached the limit of 50 samples or 100 MB on the server.',
+  sample_limit_reached:
+    'You have reached the limit on the server (50 samples or 100 MB). Delete samples you no longer use in the Community tab.',
   not_listed: 'This sample is no longer in the community bank.',
   share_rejected: 'This sample was not accepted for the community bank.',
   payload_too_large: 'The file is larger than 10 MB.',
   unsupported_media_type: 'Only wav, ogg, flac and mp3 files can be shared.',
   not_found: 'The sample is not on the server any more.',
   forbidden: 'This is for the maintainer only.',
+  handle_taken: 'Someone else already uses this name.',
 };
 
 export const SIGNED_OUT_MESSAGE = 'Sign in again to use the community bank (reload the page).';
@@ -162,8 +168,10 @@ export interface CommunityClient {
   unshare(id: string): Promise<OwnSample>;
   browse(options: { q?: string; tag?: string; cursor?: string | null }): Promise<CommunityPage>;
   take(id: string, slot: SamplerId): Promise<CommunitySample>;
+  /** The slot no longer holds the taken sample. */
+  release(id: string, slot: SamplerId): Promise<void>;
   bytes(id: string): Promise<ArrayBuffer>;
-  queue(): Promise<QueueItem[]>;
+  queue(state?: 'pending' | 'listed'): Promise<QueueItem[]>;
   decide(id: string, decision: Decision): Promise<QueueItem>;
   /** URL of a sample's bytes (the review page's player). */
   sampleUrl(id: string): string;
@@ -268,8 +276,9 @@ export function parseCommunitySample(v: unknown): CommunitySample {
 export function parseQueueItem(v: unknown): QueueItem {
   if (!isRecord(v)) throw malformed('queue item');
   const core = parseCore(v, 'queue item');
-  const { owner, listed_at, own, shared_at, owner_id } = v;
+  const { owner, listed_at, own, shared_at, owner_id, revision } = v;
   if (
+    !num(revision) ||
     !str(owner) ||
     !strOrNull(listed_at) ||
     typeof own !== 'boolean' ||
@@ -279,7 +288,7 @@ export function parseQueueItem(v: unknown): QueueItem {
   ) {
     throw malformed('queue item');
   }
-  return { ...core, owner, listed_at, own, state: v['state'], shared_at, owner_id };
+  return { ...core, owner, listed_at, own, state: v['state'], shared_at, owner_id, revision };
 }
 
 function field(body: unknown, key: string): unknown {
@@ -374,14 +383,18 @@ export class HttpCommunityClient implements CommunityClient {
     return parseCommunitySample(field(body, 'sample'));
   }
 
+  async release(id: string, slot: SamplerId): Promise<void> {
+    await this.#json('DELETE', `${this.#sample(id)}/take?slot=${encodeURIComponent(slot)}`);
+  }
+
   async bytes(id: string): Promise<ArrayBuffer> {
     const response = await this.#request('GET', this.#sample(id));
     if (response.status !== 200) throw await this.#failure(response);
     return response.arrayBuffer();
   }
 
-  async queue(): Promise<QueueItem[]> {
-    const items = field(await this.#json('GET', '/moderation/queue'), 'items');
+  async queue(state: 'pending' | 'listed' = 'pending'): Promise<QueueItem[]> {
+    const items = field(await this.#json('GET', `/moderation/queue?state=${state}`), 'items');
     if (!Array.isArray(items)) throw malformed('queue');
     return items.map(parseQueueItem);
   }

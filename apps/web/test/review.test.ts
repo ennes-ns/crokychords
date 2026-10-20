@@ -68,7 +68,7 @@ describe('review queue page', () => {
 
     field<HTMLButtonElement>('list', items[0] ?? root).click();
     await settle();
-    expect(api.named('decide')[0]?.args).toEqual([first.id, { action: 'list' }]);
+    expect(api.named('decide')[0]?.args).toEqual([first.id, { action: 'list', revision: 1 }]);
     expect(root.querySelectorAll('.review-item')).toHaveLength(1);
     expect(field('status').textContent).toBe('Listed: Vocal ah');
 
@@ -87,9 +87,11 @@ describe('review queue page', () => {
     await settle();
     expect(api.named('decide')[1]?.args).toEqual([
       second.id,
-      { action: 'reject', reason: 'speech' },
+      { action: 'reject', reason: 'speech', revision: 1 },
     ]);
-    expect(field('status').textContent).toBe('Rejected (speech): Long talk. Nothing else waiting.');
+    expect(field('status').textContent).toBe(
+      'Rejected (speech): Long talk. Nothing waiting for review.',
+    );
   });
 
   it('keeps an item when its decision fails, and reloads', async () => {
@@ -115,5 +117,39 @@ describe('review queue page', () => {
     field<HTMLButtonElement>('reload').click();
     await settle();
     expect(field('status').textContent).toBe('Nothing waiting for review.');
+  });
+
+  it('shows what is in the bank and takes a listed sample down with a reason', async () => {
+    const api = new FakeCommunity();
+    api.me_ = { handle: 'boss', maintainer: true };
+    const live = queueItem('Live one', {
+      state: 'listed',
+      listed_at: '2026-10-21T11:00:00.000Z',
+      revision: 3,
+    });
+    api.queueItems = [live];
+    const { root, field, ready } = mount(api);
+    await ready;
+    expect(field('status').textContent).toBe('Nothing waiting for review.');
+    field<HTMLButtonElement>('view-listed').click();
+    await settle();
+    expect(api.named('queue').map((c) => c.args[0])).toEqual(['pending', 'listed']);
+    const item = root.querySelector<HTMLElement>('.review-item') ?? root;
+    expect(item.textContent).toContain('listed 2026-10-21 11:00');
+    expect(field<HTMLButtonElement>('list', item).hidden).toBe(true);
+    const reject = field<HTMLButtonElement>('reject', item);
+    expect(reject.textContent).toBe('Take down');
+    const reason = field<HTMLSelectElement>('reason', item);
+    reason.value = 'hate';
+    reason.dispatchEvent(new Event('change'));
+    reject.click();
+    await settle();
+    expect(api.named('decide')[0]?.args).toEqual([
+      live.id,
+      { action: 'reject', reason: 'hate', revision: 3 },
+    ]);
+    expect(field('status').textContent).toBe(
+      'Taken down (hate): Live one. Nothing in the bank yet.',
+    );
   });
 });

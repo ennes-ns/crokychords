@@ -138,13 +138,22 @@ export const handleBodySchema = z.object({
   handle: z
     .string()
     .regex(/^[A-Za-z0-9_.-]{2,24}$/, 'a handle is 2–24 of A-Z, a-z, 0-9, _ . -')
+    .refine((h) => !/^user-/i.test(h), 'handles starting with user- are the defaults')
     .nullable(),
 });
 
+const revisionSchema = z.number().int().min(1);
+
 export const decisionBodySchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('list') }),
-  z.object({ action: z.literal('reject'), reason: z.enum(REJECT_REASONS) }),
+  z.object({ action: z.literal('list'), revision: revisionSchema }),
+  z.object({
+    action: z.literal('reject'),
+    reason: z.enum(REJECT_REASONS),
+    revision: revisionSchema,
+  }),
 ]);
+
+export const releaseQuerySchema = z.object({ slot: z.enum(SAMPLER_SLOTS) });
 
 const communityQuerySchema = z.object({
   q: z.string().trim().max(COMMUNITY_LIMITS.maxQueryLength).optional(),
@@ -159,6 +168,11 @@ const communityQuerySchema = z.object({
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Whether an R2 write failed because the bytes did not match the given checksum. */
+export function isChecksumError(e: unknown): boolean {
+  return e instanceof Error && /sha-?256|checksum|digest|did not match/i.test(e.message);
+}
 
 /** A sample id from the path; anything that is not a UUID is simply not found. */
 function sampleIdParam(id: string): string {
@@ -256,8 +270,10 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
   app.put('/api/me/handle', async (c) => {
     const { handle } = await jsonBody(c, deps, handleBodySchema);
     const user = c.get('user');
-    await store(c).setHandle(user.id, handle);
-    return c.json({ handle: displayHandle(user.email, handle) });
+    if (!(await store(c).setHandle(user.id, handle))) {
+      throw new ApiError('handle_taken', 'someone else already uses this name');
+    }
+    return c.json({ handle: displayHandle(user.id, handle) });
   });
 
   app.get('/api/samples', async (c) => {
@@ -278,7 +294,17 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
     const query = uploadQuerySchema.safeParse(c.req.query());
     if (!query.success) throw new ApiError('invalid_request', describeIssues(query.error));
     const max = COMMUNITY_LIMITS.maxSampleBytes;
-    if (Number(c.req.header('Content-Length') ?? '0') > max) throw uploadTooLarge();
+    const declared = Number(c.req.header('Content-Length') ?? '0');
+    if (declared > max) throw uploadTooLarge();
+    const owner = c.get('user').id;
+    const s = store(c);
+    // Refuse an upload beyond the quota before reading up to 10 MB of it (content the owner
+    // already has is still answered; the insert below is the binding check).
+    const usage = await s.usage(owner);
+    const full =
+      usage.samples >= COMMUNITY_LIMITS.maxSamples ||
+      usage.bytes + Math.max(0, declared) > COMMUNITY_LIMITS.maxTotalBytes;
+    if (full && !(await s.hasContent(owner, query.data.sha256))) throw sampleLimitError();
     let bytes: Uint8Array;
     try {
       bytes = await deps.readBody(c.req.raw, max);
@@ -291,8 +317,6 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
       throw new ApiError('invalid_request', `the file is not a ${family} file`);
     }
     const { name, duration, channels, root, sha256 } = query.data;
-    const owner = c.get('user').id;
-    const s = store(c);
     const inserted = await s.insertSample({
       id: crypto.randomUUID(),
       owner_id: owner,
@@ -312,8 +336,9 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
       await s.putBytes(sha256, bytes, STORED_TYPE[family]);
     } catch (e) {
       if (inserted.status === 'created') await s.dropInserted(owner, inserted.sample.id);
-      console.error('sample upload refused by R2', e instanceof Error ? e.name : typeof e);
-      throw new ApiError('invalid_request', 'the bytes do not match sha256');
+      if (isChecksumError(e))
+        throw new ApiError('invalid_request', 'the bytes do not match sha256');
+      throw e;
     }
     return c.json({ sample: inserted.sample }, inserted.status === 'created' ? 201 : 200);
   });
@@ -399,7 +424,21 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
     if (taken === null) {
       throw new ApiError('not_listed', 'this sample is not in the community bank (any more)');
     }
+    if (taken === 'limit') {
+      throw new ApiError(
+        'sample_limit_reached',
+        `at most ${COMMUNITY_LIMITS.maxRefs} community samples in slots per user`,
+      );
+    }
     return c.json({ sample: taken });
+  });
+
+  app.delete('/api/samples/:id/take', async (c) => {
+    const id = sampleIdParam(c.req.param('id'));
+    const query = releaseQuerySchema.safeParse(c.req.query());
+    if (!query.success) throw new ApiError('invalid_request', describeIssues(query.error));
+    await store(c).release(c.get('user').id, id, query.data.slot);
+    return c.body(null, 204);
   });
 
   app.get('/api/community', async (c) => {
@@ -417,7 +456,11 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
 
   app.get('/api/moderation/queue', async (c) => {
     requireMaintainer(c);
-    return c.json({ items: await store(c).queue() });
+    const state = c.req.query('state') ?? 'pending';
+    if (state !== 'pending' && state !== 'listed') {
+      throw new ApiError('invalid_request', 'state is pending or listed');
+    }
+    return c.json({ items: await store(c).queue(state) });
   });
 
   app.post('/api/moderation/:id', async (c) => {
@@ -427,8 +470,13 @@ export function registerCommunity(app: Hono<AppEnv>, deps: CommunityDeps): void 
     const s = store(c);
     const item = await s.queueItem(id);
     if (item === null) throw new ApiError('not_found', 'no share for this sample');
-    if (!(await s.decide(id, decision, deps.now().toISOString()))) {
-      throw new ApiError('conflict', `the share is ${item.state}; it cannot be decided that way`);
+    if (!(await s.decide(id, decision, decision.revision, deps.now().toISOString()))) {
+      throw new ApiError(
+        'conflict',
+        item.revision !== decision.revision
+          ? 'the owner changed the share since you loaded it; reload and look again'
+          : `the share is ${item.state}; it cannot be decided that way`,
+      );
     }
     return c.json({ item: await s.queueItem(id) });
   });

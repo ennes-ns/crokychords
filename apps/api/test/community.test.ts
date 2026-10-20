@@ -7,7 +7,13 @@ import { env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import type { Env } from '../src/app';
-import { decodeCursor, encodeCursor, isMaintainer, matchesMagic } from '../src/community';
+import {
+  decodeCursor,
+  encodeCursor,
+  isChecksumError,
+  isMaintainer,
+  matchesMagic,
+} from '../src/community';
 import { COMMUNITY_LIMITS, sampleKey } from '../src/communityStore';
 import { ApiError } from '../src/errors';
 import { ORIGIN, authed, makeKey, signToken, staticJwks } from './helpers';
@@ -132,8 +138,21 @@ async function share(api: Api, token: string, id: string, body: object = {}): Pr
   return api(`/api/samples/${id}/share`, authed(token, json({ licence: true, ...body })));
 }
 
+/** A decision; the share's current revision is filled in unless `body` names one. */
 async function decide(api: Api, id: string, body: object): Promise<Response> {
-  return api(`/api/moderation/${id}`, authed(boss, json(body)));
+  const row = await env.DB.prepare('SELECT revision FROM shares WHERE sample_id = ?')
+    .bind(id)
+    .first<{ revision: number }>();
+  return api(
+    `/api/moderation/${id}`,
+    authed(boss, json({ revision: row?.revision ?? 1, ...body })),
+  );
+}
+
+const DEFAULT_HANDLE = /^user-[0-9a-f]{6}$/;
+
+async function handleOf(api: Api, token: string): Promise<string> {
+  return ((await (await api('/api/me', authed(token))).json()) as { handle: string }).handle;
 }
 
 /** Upload, share and list (by the maintainer) one sample of `token`. */
@@ -408,7 +427,9 @@ describe('share, review and unshare', () => {
     const text = await queue.text();
     expect(text).not.toContain('@example.test');
     const { items } = JSON.parse(text) as { items: { id: string; owner: string; state: string }[] };
-    expect(items).toMatchObject([{ id: sample.id, owner: 'alice.smith', state: 'pending' }]);
+    expect(items).toMatchObject([
+      { id: sample.id, owner: await handleOf(api, alice), state: 'pending', revision: 1 },
+    ]);
     // The maintainer may audition a pending sample.
     expect(await readStatus(api(`/api/samples/${sample.id}`, authed(boss)))).toBe(200);
 
@@ -422,7 +443,13 @@ describe('share, review and unshare', () => {
     expect(body).not.toContain('@');
     const page = JSON.parse(body) as { samples: Listed[]; next: string | null };
     expect(page.samples).toMatchObject([
-      { id: sample.id, name: 'Snare', owner: 'alice.smith', tags: ['drums'], own: false },
+      {
+        id: sample.id,
+        name: 'Snare',
+        owner: await handleOf(api, alice),
+        tags: ['drums'],
+        own: false,
+      },
     ]);
     expect(page.next).toBeNull();
     expect((await bank(api, alice)).samples[0]?.own).toBe(true);
@@ -437,7 +464,7 @@ describe('share, review and unshare', () => {
     expect(taken.status).toBe(200);
     expect(((await taken.json()) as { sample: Listed }).sample).toMatchObject({
       id: sample.id,
-      owner: 'alice.smith',
+      owner: await handleOf(api, alice),
     });
     expect((await own(api, alice, sample.id))?.refs).toBe(1);
     // Taking an own sample adds no ref.
@@ -469,14 +496,42 @@ describe('share, review and unshare', () => {
     expect(((await again.json()) as { sample: Own }).sample.share?.state).toBe('unlisted');
   });
 
-  it('a slot holds one ref: taking into it again replaces the old one', async () => {
+  it('releasing a ref lets the owner delete again; refs are per slot and device', async () => {
     const api = client();
-    const first = await listedSample(api, alice, 1);
-    const second = await listedSample(api, alice, 2);
-    await take(api, bob, first.id, 'sampler-1');
-    await take(api, bob, second.id, 'sampler-1');
-    expect((await own(api, alice, first.id))?.refs).toBe(0);
-    expect((await own(api, alice, second.id))?.refs).toBe(1);
+    const sample = await listedSample(api, alice, 1);
+    await take(api, bob, sample.id, 'sampler-1');
+    await take(api, bob, sample.id, 'sampler-1');
+    await take(api, bob, sample.id, 'sampler-5');
+    expect((await own(api, alice, sample.id))?.refs).toBe(2);
+    const release = (slot: string) =>
+      api(`/api/samples/${sample.id}/take?slot=${slot}`, authed(bob, { method: 'DELETE' }));
+    expect((await release('sampler-1')).status).toBe(204);
+    expect((await release('sampler-1')).status).toBe(204);
+    expect((await release('nope')).status).toBe(400);
+    expect((await own(api, alice, sample.id))?.refs).toBe(1);
+    await api(`/api/samples/${sample.id}/share`, authed(alice, { method: 'DELETE' }));
+    const del = () => api(`/api/samples/${sample.id}`, authed(alice, { method: 'DELETE' }));
+    expect((await del()).status).toBe(409);
+    await release('sampler-5');
+    // Without refs bob can no longer read it, and alice can delete it.
+    expect(await readStatus(api(`/api/samples/${sample.id}`, authed(bob)))).toBe(404);
+    expect((await del()).status).toBe(204);
+  });
+
+  it('caps the refs per user', async () => {
+    const api = client();
+    const sample = await listedSample(api, alice, 1);
+    const me = (await (await api('/api/me', authed(bob))).json()) as { id: string };
+    for (let i = 0; i < COMMUNITY_LIMITS.maxRefs; i++) {
+      await env.DB.prepare(
+        "INSERT INTO sample_refs (user_id, sample_id, slot, taken_at) VALUES (?, ?, 'sampler-1', 'now')",
+      )
+        .bind(me.id, `other-${i}`)
+        .run();
+    }
+    const res = await take(api, bob, sample.id);
+    expect(res.status).toBe(403);
+    expect(await code(res)).toBe('sample_limit_reached');
   });
 
   it('sharing again: listed stays as is, unlisted goes back to review, rejected is refused', async () => {
@@ -561,6 +616,34 @@ describe('maintainer only', () => {
       items: unknown[];
     };
     expect(items).toEqual([]);
+  });
+
+  it('refuses a decision on a revision the maintainer did not see', async () => {
+    const api = client();
+    const sample = await upload(api, alice, 1, 'Nice kick');
+    await share(api, alice, sample.id);
+    const queue = (await (await api('/api/moderation/queue', authed(boss))).json()) as {
+      items: { revision: number }[];
+    };
+    const seen = queue.items[0]?.revision ?? 0;
+    // The owner renames it while the maintainer listens.
+    await share(api, alice, sample.id, { name: 'Something else' });
+    const res = await decide(api, sample.id, { action: 'list', revision: seen });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as ErrorJson).error.message).toContain('changed');
+    expect((await own(api, alice, sample.id))?.share?.state).toBe('pending');
+    expect((await decide(api, sample.id, { action: 'list' })).status).toBe(200);
+    expect((await decide(api, sample.id, { action: 'list', revision: 'x' })).status).toBe(400);
+  });
+
+  it('lists the listed shares for a take-down', async () => {
+    const api = client();
+    const sample = await listedSample(api, alice, 1);
+    const res = await api('/api/moderation/queue?state=listed', authed(boss));
+    const { items } = (await res.json()) as { items: { id: string; state: string }[] };
+    expect(items).toMatchObject([{ id: sample.id, state: 'listed' }]);
+    expect((await api('/api/moderation/queue?state=rejected', authed(boss))).status).toBe(400);
+    expect((await decide(api, sample.id, { action: 'reject', reason: 'hate' })).status).toBe(200);
   });
 
   it('isMaintainer splits on commas and spaces and ignores empty entries', () => {
@@ -670,23 +753,45 @@ describe('the bank', () => {
 });
 
 describe('handles', () => {
-  it('defaults to the first part of the e-mail, can be chosen and reset', async () => {
+  it('defaults to a neutral name (never the e-mail), can be chosen, is unique and resets', async () => {
     const api = client();
-    const me = (await (await api('/api/me', authed(alice))).json()) as { handle: string };
-    expect(me.handle).toBe('alice.smith');
+    const me = (await (await api('/api/me', authed(alice))).json()) as {
+      handle: string;
+      id: string;
+    };
+    expect(me.handle).toMatch(DEFAULT_HANDLE);
+    expect(me.handle).toBe(`user-${me.id.replace(/-/g, '').slice(0, 6)}`);
+    expect(me.handle).not.toContain('alice');
     const set = await api('/api/me/handle', authed(alice, json({ handle: 'dusty_loops' }, 'PUT')));
     expect(set.status).toBe(200);
     expect(await set.json()).toEqual({ handle: 'dusty_loops' });
     await listedSample(api, alice, 1);
     expect((await bank(api, bob)).samples[0]?.owner).toBe('dusty_loops');
-    for (const handle of ['x', 'with space', 'a@b.c', 'x'.repeat(25)]) {
+    const taken = await api('/api/me/handle', authed(bob, json({ handle: 'Dusty_Loops' }, 'PUT')));
+    expect(taken.status).toBe(409);
+    expect(await code(taken)).toBe('handle_taken');
+    for (const handle of ['x', 'with space', 'a@b.c', 'x'.repeat(25), 'user-abcdef']) {
       const res = await api('/api/me/handle', authed(alice, json({ handle }, 'PUT')));
       expect(res.status, handle).toBe(400);
     }
     const reset = await api('/api/me/handle', authed(alice, json({ handle: null }, 'PUT')));
-    expect(await reset.json()).toEqual({ handle: 'alice.smith' });
+    expect(await reset.json()).toEqual({ handle: me.handle });
+    // Free again once reset.
+    expect(
+      (await api('/api/me/handle', authed(bob, json({ handle: 'dusty_loops' }, 'PUT')))).status,
+    ).toBe(200);
     const form = await api('/api/me/handle', authed(alice, { method: 'PUT', body: '{}' }));
     expect(form.status).toBe(415);
+  });
+});
+
+describe('R2 errors', () => {
+  it('only a checksum mismatch reads as bad bytes', () => {
+    expect(
+      isChecksumError(new Error('put: The SHA-256 checksum you specified did not match')),
+    ).toBe(true);
+    expect(isChecksumError(new Error('network connection lost'))).toBe(false);
+    expect(isChecksumError('x')).toBe(false);
   });
 });
 

@@ -14,6 +14,8 @@ interface Seen {
   savedAt: string | null;
   /** The slot's own upload (not a community sample). */
   ownId: string | null;
+  /** The community sample the slot took (its ref on the server). */
+  takenId: string | null;
 }
 
 export interface CommunitySyncOptions {
@@ -125,15 +127,21 @@ export class CommunitySync {
       sha256: await this.#digest(stored.bytes),
       type,
     });
-    this.#samplers.setRemote(id, savedAt, { id: uploaded.id, community: false });
+    if (!this.#samplers.setRemote(id, savedAt, { id: uploaded.id, community: false })) {
+      // The slot moved on during the upload: do not leave the upload orphaned.
+      this.#release(uploaded.id);
+      return null;
+    }
     return uploaded.id;
   }
 
   #current(id: SamplerId): Seen {
     const sample = this.#samplers.patch(id).sample;
+    const remote = sample?.remote;
     return {
       savedAt: sample?.savedAt ?? null,
-      ownId: sample?.remote !== undefined && !sample.remote.community ? sample.remote.id : null,
+      ownId: remote !== undefined && !remote.community ? remote.id : null,
+      takenId: remote?.community === true ? remote.id : null,
     };
   }
 
@@ -142,12 +150,24 @@ export class CommunitySync {
     const now = this.#current(id);
     this.#seen.set(id, now);
     if (before?.ownId != null && before.savedAt !== now.savedAt) this.#release(before.ownId);
+    // A slot that drops a taken sample releases its ref, so the owner can delete it again.
+    if (before?.takenId != null && before.savedAt !== now.savedAt) {
+      this.#client.release(before.takenId, id).catch(() => undefined);
+    }
     if (before?.savedAt !== now.savedAt || now.ownId === null) this.#maybeUpload(id);
+  }
+
+  /** Whether a slot holds the server sample `remoteId` (own or taken). */
+  inUse(remoteId: string): boolean {
+    for (const id of SAMPLER_IDS) {
+      if (this.#samplers.patch(id).sample?.remote?.id === remoteId) return true;
+    }
+    return false;
   }
 
   /** Delete an upload no slot uses any more; the server keeps it while it is shared or used. */
   #release(remoteId: string): void {
-    for (const seen of this.#seen.values()) if (seen.ownId === remoteId) return;
+    if (this.inUse(remoteId)) return;
     this.#client.remove(remoteId).catch(() => undefined);
   }
 

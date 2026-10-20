@@ -72,8 +72,8 @@ What it means:
 - Nothing is listed without the maintainer listening to it first (human review); the maintainer
   rejects speech, sexual sounds, violence or distress, hate, someone else's recording, ear-damaging
   loudness, empty or broken files and personal data, and can take a listed sample down.
-- Owners are shown by a handle (the part of the e-mail before `@` or a chosen name), never by
-  their e-mail address.
+- Owners are shown by a handle (a neutral `user-…` default or a chosen, unique name), never by
+  anything derived from their e-mail address.
 
 ## SoundFonts
 

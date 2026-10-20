@@ -190,6 +190,12 @@ export class FakeCommunity implements CommunityClient {
     });
   }
 
+  release(id: string, slot: SamplerId): Promise<void> {
+    return this.#run(() => {
+      this.#call('release', id, slot);
+    });
+  }
+
   bytes(id: string): Promise<ArrayBuffer> {
     return this.#run(() => {
       this.#call('bytes', id);
@@ -199,10 +205,10 @@ export class FakeCommunity implements CommunityClient {
     });
   }
 
-  queue(): Promise<QueueItem[]> {
+  queue(state: 'pending' | 'listed' = 'pending'): Promise<QueueItem[]> {
     return this.#run(() => {
-      this.#call('queue');
-      return [...this.queueItems];
+      this.#call('queue', state);
+      return this.queueItems.filter((i) => i.state === state);
     });
   }
 
@@ -252,6 +258,7 @@ export function queueItem(name: string, extra: Partial<QueueItem> = {}): QueueIt
     state: 'pending',
     shared_at: '2026-10-21T09:00:00.000Z',
     owner_id: 'u-1',
+    revision: 1,
     ...extra,
   };
 }

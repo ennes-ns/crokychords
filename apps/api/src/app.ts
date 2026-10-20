@@ -114,7 +114,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       id: user.id,
       email: user.email,
       created_at: user.created_at,
-      handle: displayHandle(user.email, user.handle),
+      handle: displayHandle(user.id, user.handle),
       maintainer: isMaintainer(c.env.ADMIN_EMAILS, user.email),
       save_count: await c.get('storage').countSaves(user.id),
       limits: { max_save_bytes: LIMITS.maxSaveBytes, max_saves: LIMITS.maxSaves },

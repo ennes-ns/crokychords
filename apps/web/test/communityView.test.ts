@@ -265,6 +265,7 @@ describe('Community tab', () => {
     expect(field('community-list').children).toHaveLength(24);
     expect(field('more').hidden).toBe(false);
     field<HTMLButtonElement>('more').click();
+    expect(field<HTMLButtonElement>('more').disabled).toBe(true);
     await settle();
     expect(field('community-list').children).toHaveLength(30);
     expect(field('more').hidden).toBe(true);
@@ -338,7 +339,7 @@ describe('Community tab', () => {
     expect(field('community-status').classList.contains('error')).toBe(true);
   });
 
-  it('lists Your shares with their state and unshares from there', async () => {
+  it('lists the own samples on the server with their state, unshares and deletes', async () => {
     const t = await setup();
     await t.audio.samplers.load('sampler-1', file(4));
     await t.audio.samplers.load('sampler-2', file(5));
@@ -358,6 +359,29 @@ describe('Community tab', () => {
     await settle();
     expect(t.api.named('unshare').map((c) => c.args[0])).toEqual([b]);
     expect(t.field('mine').textContent).toContain('Not shared');
+    // Still in slot 2: it cannot be deleted from here.
+    const row = (id: string) => t.field('mine').querySelector<HTMLElement>(`[data-id="${id}"]`);
+    expect(row(b ?? '')?.querySelector<HTMLButtonElement>('[data-field="delete"]')?.hidden).toBe(
+      true,
+    );
+
+    // An upload no slot uses (left over from another browser) can be deleted.
+    const orphan = await t.api.upload(new Uint8Array([1, 9]).buffer, {
+      name: 'Old loop',
+      duration: 1,
+      channels: 1,
+      root: 60,
+      sha256: 'orphan',
+      type: 'audio/wav',
+    });
+    t.field<HTMLButtonElement>('tab-edit').click();
+    t.field<HTMLButtonElement>('tab-community').click();
+    await settle();
+    expect(row(orphan.id)?.textContent).toContain('In no slot');
+    row(orphan.id)?.querySelector<HTMLButtonElement>('[data-field="delete"]')?.click();
+    await settle();
+    expect(t.api.named('remove').map((c) => c.args[0])).toEqual([orphan.id]);
+    expect(row(orphan.id)).toBeNull();
   });
 
   it('changes the handle and shows sign-in problems', async () => {

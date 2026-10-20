@@ -106,6 +106,51 @@ describe('CommunitySync: own samples to the server', () => {
     release();
     await settle();
     expect(samplers.patch('sampler-1').sample?.remote?.id).toBe(second);
+    // The late upload of the first file is deleted again, not left orphaned.
+    const ids = [...api.own.keys()];
+    expect(ids).toEqual([second]);
+    expect(api.named('remove')).toHaveLength(1);
+  });
+
+  it('a slot that drops a taken sample releases its ref', async () => {
+    const { samplers, api, sync } = await setup();
+    const sample = listed('Pad');
+    api.bank = [sample];
+    api.files.set(sample.id, new Uint8Array([4, 4]).buffer);
+    await sync.take('sampler-6', sample);
+    await settle();
+    expect(api.named('release')).toHaveLength(0);
+    await samplers.load('sampler-6', file(6));
+    await settle();
+    expect(api.named('release').map((c) => c.args)).toEqual([[sample.id, 'sampler-6']]);
+    // A community sample is never deleted by the taker.
+    expect(api.named('remove')).toHaveLength(0);
+    expect(sync.inUse(sample.id)).toBe(false);
+  });
+
+  it('a failed download is not retried on every edit', async () => {
+    const api = new FakeCommunity();
+    const audio = new AudioEngine(null, { decodeSampler: () => Promise.resolve(tone()) });
+    const sync = new CommunitySync({ client: api, samplers: audio.samplers, digest });
+    audio.samplerBank.setRemote((id) => sync.download(id));
+    audio.sound.setSampler('sampler-2', {
+      ...defaultPatch('sampler-2'),
+      sample: {
+        name: 'gone.wav',
+        frames: tone().length,
+        sampleRate: SAMPLER_RATE,
+        channels: 1,
+        savedAt: '2026-10-21T10:00:00.000Z',
+        remote: { id: fakeId(), community: true, owner: 'dusty' },
+      },
+      end: tone().length,
+    });
+    await audio.samplers.attach(new MemorySampleStore());
+    expect(audio.samplers.state('sampler-2')).toBe('error');
+    audio.samplers.setTune('sampler-2', 7);
+    audio.samplers.setTune('sampler-2', 8);
+    await settle();
+    expect(api.named('bytes')).toHaveLength(1);
   });
 
   it('a failed background upload is not retried on every edit', async () => {

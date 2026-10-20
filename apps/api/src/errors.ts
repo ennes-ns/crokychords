@@ -13,6 +13,7 @@ export const ERROR_STATUS = {
   not_listed: 409,
   share_rejected: 409,
   sample_in_use: 409,
+  handle_taken: 409,
   payload_too_large: 413,
   unsupported_media_type: 415,
   rate_limited: 429,

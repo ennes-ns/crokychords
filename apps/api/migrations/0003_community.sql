@@ -2,8 +2,10 @@
 -- samples/<sha256>, once per content), their shares with the review state, and the slots that
 -- reference a taken sample, so a referenced sample is never deleted.
 
--- A chosen display name; NULL = the part of the e-mail before '@'.
+-- A chosen display name, unique ignoring case; NULL = the neutral default 'user-<6 of the id>'.
 ALTER TABLE users ADD COLUMN handle TEXT;
+
+CREATE UNIQUE INDEX users_by_handle ON users (lower(handle)) WHERE handle IS NOT NULL;
 
 CREATE TABLE samples (
   id TEXT PRIMARY KEY,
@@ -29,6 +31,8 @@ CREATE TABLE shares (
   state TEXT NOT NULL CHECK (state IN ('pending', 'listed', 'unlisted', 'rejected')),
   -- Id of the licence text the owner acknowledged (docs/specs/community-v1.md §6).
   licence_ack TEXT NOT NULL,
+  -- Bumped by every share call (name or tags may change); a decision names the revision it saw.
+  revision INTEGER NOT NULL DEFAULT 1,
   shared_at TEXT NOT NULL,
   listed_at TEXT,
   unlisted_at TEXT,
@@ -39,12 +43,14 @@ CREATE TABLE shares (
 
 CREATE INDEX shares_by_state ON shares (state, listed_at DESC, sample_id);
 
+-- Slots live per browser, so one user may hold several refs per slot (other devices); the web
+-- client releases a ref when its slot drops the sample.
 CREATE TABLE sample_refs (
   user_id TEXT NOT NULL,
-  slot TEXT NOT NULL,
   sample_id TEXT NOT NULL,
+  slot TEXT NOT NULL,
   taken_at TEXT NOT NULL,
-  PRIMARY KEY (user_id, slot)
+  PRIMARY KEY (user_id, sample_id, slot)
 );
 
 CREATE INDEX sample_refs_by_sample ON sample_refs (sample_id);

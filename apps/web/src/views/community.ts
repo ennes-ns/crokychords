@@ -330,9 +330,14 @@ export function createCommunityViews(
   );
   const mineList = h('ul', {
     class: 'community-list mine',
-    attrs: { 'aria-label': 'Your shares', 'data-field': 'mine' },
+    attrs: { 'aria-label': 'Your samples on the server', 'data-field': 'mine' },
   });
-  const mineBox = h('section', { class: 'community-mine' }, h('h4', {}, 'Your shares'), mineList);
+  const mineBox = h(
+    'section',
+    { class: 'community-mine' },
+    h('h4', {}, 'Your samples on the server'),
+    mineList,
+  );
   const tab = h(
     'div',
     { class: 'community-tab', props: { hidden: true }, attrs: { 'data-field': 'community' } },
@@ -348,16 +353,26 @@ export function createCommunityViews(
   let next: string | null = null;
   let loaded = false;
   let query = { q: '', tag: '' };
+  /** Bumped per request, so an older answer (a slow page, a previous search) never lands. */
+  let request = 0;
   const browse = (append: boolean): void => {
+    const mine = ++request;
+    more.disabled = true;
     showStatus('Loading…');
     client.browse({ q: query.q, tag: query.tag, cursor: append ? next : null }).then(
       (page) => {
+        if (mine !== request) return;
         results = append ? [...results, ...page.samples] : page.samples;
         next = page.next;
+        more.disabled = false;
         showStatus(results.length === 0 ? 'Nothing here yet.' : null);
         renderList();
       },
-      (e: unknown) => showStatus(communityMessage(e), true),
+      (e: unknown) => {
+        if (mine !== request) return;
+        more.disabled = false;
+        showStatus(communityMessage(e), true);
+      },
     );
   };
   searchForm.addEventListener('submit', (event) => {
@@ -472,13 +487,20 @@ export function createCommunityViews(
     more.hidden = next === null;
   };
 
+  /**
+   * The own uploads that are shared or in no slot: their state, Unshare for a live share, Delete
+   * for one that no slot uses and that is not shared (frees the quota; the server keeps it while
+   * someone else has it).
+   */
   const renderMine = (): void => {
-    const shared = (mine ?? []).filter((s) => s.share !== null);
-    mineBox.hidden = shared.length === 0;
+    const shown = (mine ?? []).filter((s) => s.share !== null || !sync.inUse(s.id));
+    mineBox.hidden = shown.length === 0;
     mineList.replaceChildren(
-      ...shared.map((sample) => {
-        const { text, title } = shareStatus(sample.share);
+      ...shown.map((sample) => {
+        const shared = shareStatus(sample.share);
+        const used = sync.inUse(sample.id);
         const live = sample.share?.state === 'pending' || sample.share?.state === 'listed';
+        const text = shared.text !== '' ? shared.text : used ? '' : 'In no slot';
         const unshare = h(
           'button',
           { props: { type: 'button', hidden: !live }, attrs: { 'data-field': 'unshare' } },
@@ -491,6 +513,31 @@ export function createCommunityViews(
             showStatus(communityMessage(e), true);
           });
         };
+        const remove = h(
+          'button',
+          {
+            class: 'danger',
+            props: { type: 'button', hidden: live || used },
+            attrs: {
+              title: 'Delete it from the server (whoever already has it keeps it)',
+              'data-field': 'delete',
+            },
+          },
+          'Delete',
+        );
+        remove.onclick = () => {
+          remove.disabled = true;
+          client.remove(sample.id).then(
+            () => {
+              mine = (mine ?? []).filter((s) => s.id !== sample.id);
+              render();
+            },
+            (e: unknown) => {
+              remove.disabled = false;
+              showStatus(communityMessage(e), true);
+            },
+          );
+        };
         return h(
           'li',
           { class: 'community-item', attrs: { 'data-id': sample.id } },
@@ -498,9 +545,10 @@ export function createCommunityViews(
             'span',
             { class: 'community-main' },
             h('span', { class: 'community-name' }, sample.name),
-            h('span', { class: 'share-status', attrs: { title } }, text),
+            h('span', { class: 'share-status', attrs: { title: shared.title } }, text),
           ),
           unshare,
+          remove,
         );
       }),
     );

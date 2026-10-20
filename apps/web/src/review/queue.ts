@@ -1,7 +1,9 @@
 /**
  * The review queue (docs/specs/community-v1.md §4.5): every pending share, oldest first, with a
- * player that never starts by itself, List, and Reject with a category. Only the maintainer sees
- * the queue; a decided item leaves the list. Nothing here decides on its own.
+ * player that never starts by itself, List, and Reject with a category; a second view lists what
+ * is in the bank, for a take-down. Only the maintainer sees it; a decided item leaves the list.
+ * A decision names the revision shown, so a share renamed meanwhile is refused. Nothing here
+ * decides on its own.
  */
 import { h, option } from '../dom';
 import type { CommunityClient, QueueItem } from '../sync/community';
@@ -17,7 +19,7 @@ function day(iso: string): string {
   return iso.slice(0, 16).replace('T', ' ');
 }
 
-/** One queue item with its player and decision buttons. */
+/** One queue item with its player and decision buttons (a listed one: Take down only). */
 function itemView(
   item: QueueItem,
   client: CommunityClient,
@@ -28,9 +30,14 @@ function itemView(
     props: { controls: true, preload: 'none', src: client.sampleUrl(item.id) },
     attrs: { 'aria-label': `Listen to ${item.name}`, 'data-field': 'player' },
   });
+  const listed = item.state === 'listed';
   const list = h(
     'button',
-    { class: 'primary', props: { type: 'button' }, attrs: { 'data-field': 'list' } },
+    {
+      class: 'primary',
+      props: { type: 'button', hidden: listed },
+      attrs: { 'data-field': 'list' },
+    },
     'List',
   );
   const reason = h(
@@ -46,7 +53,7 @@ function itemView(
       props: { type: 'button', disabled: true },
       attrs: { title: 'Pick a reason first; the owner sees it', 'data-field': 'reject' },
     },
-    'Reject',
+    listed ? 'Take down' : 'Reject',
   );
   reason.onchange = () => {
     reject.disabled = reason.value === '';
@@ -65,11 +72,13 @@ function itemView(
       },
     );
   };
-  list.onclick = () => decide({ action: 'list' }, 'Listed');
+  const revision = item.revision;
+  list.onclick = () => decide({ action: 'list', revision }, 'Listed');
   reject.onclick = () => {
     const picked = REJECT_REASONS.find((r) => r === reason.value);
     if (picked !== undefined) {
-      decide({ action: 'reject', reason: picked }, `Rejected (${REJECT_LABELS[picked]})`);
+      const verb = listed ? 'Taken down' : 'Rejected';
+      decide({ action: 'reject', reason: picked, revision }, `${verb} (${REJECT_LABELS[picked]})`);
     }
   };
   return h(
@@ -87,7 +96,7 @@ function itemView(
       h(
         'span',
         {},
-        `shared ${day(item.shared_at)}${item.tags.length > 0 ? ` · ${item.tags.join(', ')}` : ''}`,
+        `${listed && item.listed_at !== null ? `listed ${day(item.listed_at)}` : `shared ${day(item.shared_at)}`}${item.tags.length > 0 ? ` · ${item.tags.join(', ')}` : ''}`,
       ),
     ),
     h('span', { class: 'review-actions' }, list, reason, reject),
@@ -107,6 +116,33 @@ export async function mountReview(root: HTMLElement, client: CommunityClient): P
     { props: { type: 'button' }, attrs: { 'data-field': 'reload' } },
     'Reload',
   );
+  let view: 'pending' | 'listed' = 'pending';
+  const viewButton = (name: 'pending' | 'listed', label: string): HTMLButtonElement => {
+    const button = h(
+      'button',
+      {
+        class: 'sampler-tab',
+        props: { type: 'button' },
+        attrs: { role: 'tab', 'data-field': `view-${name}` },
+      },
+      label,
+    );
+    button.onclick = () => {
+      view = name;
+      void load();
+    };
+    return button;
+  };
+  const views = {
+    pending: viewButton('pending', 'Waiting for review'),
+    listed: viewButton('listed', 'In the bank'),
+  };
+  const tabs = h(
+    'p',
+    { class: 'review-tabs', attrs: { role: 'tablist' } },
+    views.pending,
+    views.listed,
+  );
   root.replaceChildren(
     h('h1', {}, 'Review queue'),
     h(
@@ -115,6 +151,7 @@ export async function mountReview(root: HTMLElement, client: CommunityClient): P
       'Every share waits here until you list or reject it. Nothing is listed, rejected or deleted ' +
         'automatically. Listen before you decide; players never start by themselves.',
     ),
+    tabs,
     status,
     list,
     reload,
@@ -123,14 +160,19 @@ export async function mountReview(root: HTMLElement, client: CommunityClient): P
     status.textContent = message;
     status.classList.toggle('error', error);
   };
-  const count = (): void => {
-    const n = list.children.length;
-    if (n === 0) say('Nothing waiting for review.');
-  };
+  const empty = (): string =>
+    view === 'pending' ? 'Nothing waiting for review.' : 'Nothing in the bank yet.';
+  let request = 0;
   const load = async (): Promise<void> => {
+    const mine = ++request;
+    for (const [name, button] of Object.entries(views)) {
+      button.classList.toggle('active', name === view);
+      button.setAttribute('aria-selected', String(name === view));
+    }
     say('Loading…');
     try {
-      const items = await client.queue();
+      const items = await client.queue(view);
+      if (mine !== request) return;
       list.replaceChildren(
         ...items.map((item) => {
           const el = itemView(
@@ -138,18 +180,18 @@ export async function mountReview(root: HTMLElement, client: CommunityClient): P
             client,
             (message) => {
               el.remove();
-              say(message);
-              if (list.children.length === 0) say(`${message}. Nothing else waiting.`);
+              say(list.children.length === 0 ? `${message}. ${empty()}` : message);
             },
             (message) => say(message, true),
           );
           return el;
         }),
       );
-      if (items.length === 0) count();
-      else say(`${items.length} waiting for review, oldest first.`);
+      if (items.length === 0) say(empty());
+      else if (view === 'pending') say(`${items.length} waiting for review, oldest first.`);
+      else say(`${items.length} in the bank, newest first. Take one down with a reason.`);
     } catch (e) {
-      say(communityMessage(e), true);
+      if (mine === request) say(communityMessage(e), true);
     }
   };
   reload.onclick = () => void load();
@@ -159,11 +201,13 @@ export async function mountReview(root: HTMLElement, client: CommunityClient): P
   } catch (e) {
     say(communityMessage(e), true);
     reload.hidden = true;
+    tabs.hidden = true;
     return;
   }
   if (!me.maintainer) {
     say('This page is for the maintainer.');
     reload.hidden = true;
+    tabs.hidden = true;
     return;
   }
   await load();

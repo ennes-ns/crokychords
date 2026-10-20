@@ -882,6 +882,8 @@ interface Slot {
   peak: number;
   waveform: Map<number, WaveformPeaks>;
   prepared: { key: string; value: PreparedSample } | null;
+  /** The download of this sample's server copy failed (not retried until a reload). */
+  remoteFailed: boolean;
 }
 
 /** The bytes of a picked file (FileReader where Blob.arrayBuffer is missing). */
@@ -985,6 +987,8 @@ export class SamplerBank {
       return Promise.resolve();
     }
     if (slot.savedAt === info.savedAt && slot.state !== 'error') return Promise.resolve();
+    // A failed download is not retried on every edit of the patch (only after a reload).
+    if (slot.savedAt === info.savedAt && slot.remoteFailed) return Promise.resolve();
     const store = this.#store;
     if (store === null) return Promise.resolve();
     return this.#load(id, info.savedAt, async () => {
@@ -994,7 +998,13 @@ export class SamplerBank {
       if (info.remote === undefined || remote === null) {
         throw new Error('the sample is no longer stored');
       }
-      const bytes = await remote(info.remote.id);
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await remote(info.remote.id);
+      } catch (e) {
+        if (slot.savedAt === info.savedAt) slot.remoteFailed = true;
+        throw e;
+      }
       await store.put({
         schema_version: SAMPLE_SCHEMA_VERSION,
         id,
@@ -1132,6 +1142,7 @@ export class SamplerBank {
         peak: 0,
         waveform: new Map(),
         prepared: null,
+        remoteFailed: false,
       };
       this.#slots.set(id, slot);
     }
@@ -1139,6 +1150,7 @@ export class SamplerBank {
   }
 
   #reset(slot: Slot, savedAt: string | null): void {
+    if (slot.savedAt !== savedAt) slot.remoteFailed = false;
     slot.savedAt = savedAt;
     slot.buffer = null;
     slot.peak = 0;

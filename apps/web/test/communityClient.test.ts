@@ -126,6 +126,7 @@ describe('HttpCommunityClient: requests', () => {
 
   it('reads me, the own list, bytes, the queue and decisions', async () => {
     const item = {
+      revision: 2,
       ...listed,
       listed_at: null,
       state: 'pending',
@@ -137,7 +138,7 @@ describe('HttpCommunityClient: requests', () => {
         return respond(200, { handle: 'alice', maintainer: true, email: 'x' });
       if (url.endsWith('/me/handle')) return respond(200, { handle: 'new' });
       if (url.endsWith('/samples')) return respond(200, { samples: [own] });
-      if (url.endsWith('/queue')) return respond(200, { items: [item] });
+      if (url.includes('/queue?state=')) return respond(200, { items: [item] });
       if (url.includes('/moderation/')) return respond(200, { item: { ...item, state: 'listed' } });
       if (url.endsWith(own.id)) return respond(200, undefined, 'audio/wav');
       return respond(204);
@@ -147,9 +148,20 @@ describe('HttpCommunityClient: requests', () => {
     expect(JSON.parse(String(sent[1]?.init.body))).toEqual({ handle: null });
     expect((await c.mine())[0]?.id).toBe(own.id);
     expect(new Uint8Array(await c.bytes(own.id))).toEqual(new Uint8Array([1, 2, 3]));
-    expect((await c.queue())[0]?.state).toBe('pending');
-    expect((await c.decide(own.id, { action: 'reject', reason: 'speech' })).state).toBe('listed');
-    expect(JSON.parse(String(sent[5]?.init.body))).toEqual({ action: 'reject', reason: 'speech' });
+    expect((await c.queue())[0]).toMatchObject({ state: 'pending', revision: 2 });
+    expect(sent[4]?.url).toBe('/api/moderation/queue?state=pending');
+    await c.queue('listed');
+    expect(sent[5]?.url).toBe('/api/moderation/queue?state=listed');
+    const decided = await c.decide(own.id, { action: 'reject', reason: 'speech', revision: 2 });
+    expect(decided.state).toBe('listed');
+    expect(JSON.parse(String(sent[6]?.init.body))).toEqual({
+      action: 'reject',
+      reason: 'speech',
+      revision: 2,
+    });
+    await c.release(own.id, 'sampler-4');
+    expect(sent[7]?.init.method).toBe('DELETE');
+    expect(sent[7]?.url).toBe(`/api/samples/${own.id}/take?slot=sampler-4`);
   });
 });
 
@@ -189,7 +201,7 @@ describe('HttpCommunityClient: failures', () => {
     expect(await code(client(() => error(403, 'sample_limit_reached')).c.mine())).toEqual([
       'rejected',
       'sample_limit_reached',
-      'You have reached the limit of 50 samples or 100 MB on the server.',
+      'You have reached the limit on the server (50 samples or 100 MB). Delete samples you no longer use in the Community tab.',
     ]);
     expect((await code(client(() => error(403, 'forbidden')).c.queue()))[0]).toBe('rejected');
     expect(await code(client(() => error(409, 'not_listed')).c.take('x', 'sampler-1'))).toEqual([

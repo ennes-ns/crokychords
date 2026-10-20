@@ -43,6 +43,8 @@ export const COMMUNITY_LIMITS = {
   /** Sum of the owner's sample sizes (bytes). */
   maxTotalBytes: 100 * 1024 * 1024,
   pageSize: 24,
+  /** Refs per user (8 slots on a handful of devices). */
+  maxRefs: 64,
   queueSize: 100,
   maxNameLength: 64,
   maxTags: 5,
@@ -79,8 +81,8 @@ interface ShareColumns {
 }
 
 interface OwnerColumns {
-  owner_email: string;
   owner_handle: string | null;
+  revision: number | null;
 }
 
 type OwnRow = SampleRow & ShareColumns & { refs: number };
@@ -127,14 +129,17 @@ export interface QueueItem extends Omit<CommunitySample, 'listed_at'> {
   state: ShareState;
   shared_at: string;
   owner_id: string;
+  /** The share's revision; a decision must name it (docs/specs/community-v1.md §3). */
+  revision: number;
 }
 
-/** The display name: the chosen handle, else the e-mail's part before '@' (at most 24 chars). */
-export function displayHandle(email: string, handle: string | null): string {
+/** The display name: the chosen handle, else the neutral `user-<first 6 hex of the id>`. */
+export function displayHandle(userId: string, handle: string | null): string {
   if (handle !== null && handle !== '') return handle;
-  const at = email.indexOf('@');
-  const local = (at < 0 ? email : email.slice(0, at)).slice(0, 24);
-  return local === '' ? 'someone' : local;
+  return `user-${userId
+    .replace(/[^0-9a-f]/gi, '')
+    .slice(0, 6)
+    .toLowerCase()}`;
 }
 
 /** `' a b '` → `['a', 'b']`. */
@@ -187,7 +192,7 @@ function toCommunity(row: ListedRow, viewer: string): CommunitySample {
     duration: row.duration,
     channels: channels(row.channels),
     root: row.root,
-    owner: displayHandle(row.owner_email, row.owner_handle),
+    owner: displayHandle(row.owner_id, row.owner_handle),
     listed_at: row.listed_at ?? '',
     own: row.owner_id === viewer,
   };
@@ -200,6 +205,7 @@ function toQueueItem(row: ListedRow): QueueItem {
     state: row.state ?? 'pending',
     shared_at: row.shared_at ?? '',
     owner_id: row.owner_id,
+    revision: row.revision ?? 1,
   };
 }
 
@@ -211,7 +217,7 @@ const OWN_SELECT =
   '(SELECT COUNT(*) FROM sample_refs r WHERE r.sample_id = s.id AND r.user_id <> s.owner_id) AS refs ' +
   'FROM samples s LEFT JOIN shares sh ON sh.sample_id = s.id';
 const LISTED_SELECT =
-  `SELECT s.*, ${SHARE_COLUMNS}, u.email AS owner_email, u.handle AS owner_handle ` +
+  `SELECT s.*, ${SHARE_COLUMNS}, sh.revision AS revision, u.handle AS owner_handle ` +
   'FROM samples s JOIN shares sh ON sh.sample_id = s.id JOIN users u ON u.id = s.owner_id';
 
 export type InsertResult =
@@ -323,6 +329,15 @@ export class CommunityStore {
     return { samples: row?.samples ?? 0, bytes: row?.bytes ?? 0 };
   }
 
+  /** Whether `owner` already has a sample with this content. */
+  async hasContent(owner: string, sha256: string): Promise<boolean> {
+    const row = await this.db
+      .prepare('SELECT 1 AS ok FROM samples WHERE owner_id = ? AND sha256 = ?')
+      .bind(owner, sha256)
+      .first<{ ok: number }>();
+    return row !== null;
+  }
+
   /** The read rule's inputs for `viewer`, or null for an unknown sample. */
   readInfo(id: string, viewer: string): Promise<ReadInfo | null> {
     return this.db
@@ -385,8 +400,9 @@ export class CommunityStore {
 
   /**
    * Share an own sample: none or unlisted → pending; pending keeps its place in the queue and
-   * takes the new name and tags. Listed and rejected shares are left alone (one batch, so a
-   * decision in between cannot be overwritten).
+   * takes the new name and tags. Every call bumps the revision, so a decision taken on what the
+   * maintainer saw earlier is refused. Listed and rejected shares are left alone (one batch, so
+   * a decision in between cannot be overwritten).
    */
   async share(owner: string, id: string, name: string, tags: string, now: string): Promise<void> {
     await this.db.batch([
@@ -401,7 +417,7 @@ export class CommunityStore {
           'INSERT INTO shares (sample_id, owner_id, state, licence_ack, shared_at) ' +
             "VALUES (?1, ?2, 'pending', ?3, ?4) " +
             'ON CONFLICT (sample_id) DO UPDATE SET ' +
-            "state = 'pending', licence_ack = excluded.licence_ack, unlisted_at = NULL, " +
+            "state = 'pending', licence_ack = excluded.licence_ack, unlisted_at = NULL, revision = shares.revision + 1, " +
             "shared_at = CASE WHEN shares.state = 'unlisted' THEN excluded.shared_at ELSE shares.shared_at END " +
             "WHERE shares.state IN ('pending', 'unlisted')",
         )
@@ -421,23 +437,40 @@ export class CommunityStore {
   }
 
   /**
-   * Put a listed sample into `slot` of `user` (replacing the slot's ref). The listed check and
-   * the insert are one statement. Returns the sample, or null when it is not listed.
+   * Record that `slot` of `user` holds a listed sample. The listed check, the per-user cap and
+   * the insert are one statement. Returns the sample, `null` when it is not listed, or `limit`.
+   * An own sample needs no ref.
    */
-  async take(user: string, id: string, slot: SlotId, now: string): Promise<CommunitySample | null> {
+  async take(
+    user: string,
+    id: string,
+    slot: SlotId,
+    now: string,
+  ): Promise<CommunitySample | null | 'limit'> {
     const listed = await this.listedSample(id, user);
     if (listed === null) return null;
     if (listed.own) return listed;
     const result = await this.db
       .prepare(
-        'INSERT INTO sample_refs (user_id, slot, sample_id, taken_at) ' +
+        'INSERT INTO sample_refs (user_id, sample_id, slot, taken_at) ' +
           'SELECT ?1, ?2, ?3, ?4 WHERE EXISTS ' +
-          "(SELECT 1 FROM shares WHERE sample_id = ?3 AND state = 'listed') " +
-          'ON CONFLICT (user_id, slot) DO UPDATE SET sample_id = excluded.sample_id, taken_at = excluded.taken_at',
+          "(SELECT 1 FROM shares WHERE sample_id = ?2 AND state = 'listed') " +
+          'AND ((SELECT COUNT(*) FROM sample_refs WHERE user_id = ?1) < ?5 ' +
+          'OR EXISTS (SELECT 1 FROM sample_refs WHERE user_id = ?1 AND sample_id = ?2 AND slot = ?3)) ' +
+          'ON CONFLICT (user_id, sample_id, slot) DO UPDATE SET taken_at = excluded.taken_at',
       )
-      .bind(user, slot, id, now)
+      .bind(user, id, slot, now, COMMUNITY_LIMITS.maxRefs)
       .run();
-    return result.meta.changes === 1 ? listed : null;
+    if (result.meta.changes === 1) return listed;
+    return (await this.listedSample(id, user)) === null ? null : 'limit';
+  }
+
+  /** Drop the ref of `slot` of `user` to a sample (the slot holds something else now). */
+  async release(user: string, id: string, slot: SlotId): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM sample_refs WHERE user_id = ? AND sample_id = ? AND slot = ?')
+      .bind(user, id, slot)
+      .run();
   }
 
   async listedSample(id: string, viewer: string): Promise<CommunitySample | null> {
@@ -485,11 +518,12 @@ export class CommunityStore {
     };
   }
 
-  /** Pending shares, oldest first. */
-  async queue(): Promise<QueueItem[]> {
+  /** Pending shares oldest first, or listed ones newest first (for a take-down). */
+  async queue(state: 'pending' | 'listed'): Promise<QueueItem[]> {
+    const order = state === 'pending' ? 'sh.shared_at, s.id' : 'sh.listed_at DESC, s.id';
     const { results } = await this.db
-      .prepare(`${LISTED_SELECT} WHERE sh.state = 'pending' ORDER BY sh.shared_at, s.id LIMIT ?`)
-      .bind(COMMUNITY_LIMITS.queueSize)
+      .prepare(`${LISTED_SELECT} WHERE sh.state = ? ORDER BY ${order} LIMIT ?`)
+      .bind(state, COMMUNITY_LIMITS.queueSize)
       .all<ListedRow>();
     return results.map(toQueueItem);
   }
@@ -502,10 +536,14 @@ export class CommunityStore {
     return row === null ? null : toQueueItem(row);
   }
 
-  /** The maintainer's decision: pending → listed, or pending | listed → rejected. */
+  /**
+   * The maintainer's decision on revision `revision` (what they saw): pending → listed, or
+   * pending | listed → rejected. False when the state or the revision has moved on.
+   */
   async decide(
     id: string,
     decision: { action: 'list' } | { action: 'reject'; reason: RejectReason },
+    revision: number,
     now: string,
   ): Promise<boolean> {
     const result =
@@ -513,21 +551,28 @@ export class CommunityStore {
         ? await this.db
             .prepare(
               "UPDATE shares SET state = 'listed', listed_at = ?1, reviewed_at = ?1, reason = NULL " +
-                "WHERE sample_id = ?2 AND state = 'pending'",
+                "WHERE sample_id = ?2 AND state = 'pending' AND revision = ?3",
             )
-            .bind(now, id)
+            .bind(now, id, revision)
             .run()
         : await this.db
             .prepare(
               "UPDATE shares SET state = 'rejected', reviewed_at = ?1, reason = ?2 " +
-                "WHERE sample_id = ?3 AND state IN ('pending', 'listed')",
+                "WHERE sample_id = ?3 AND state IN ('pending', 'listed') AND revision = ?4",
             )
-            .bind(now, decision.reason, id)
+            .bind(now, decision.reason, id, revision)
             .run();
     return result.meta.changes === 1;
   }
 
-  async setHandle(user: string, handle: string | null): Promise<void> {
-    await this.db.prepare('UPDATE users SET handle = ? WHERE id = ?').bind(handle, user).run();
+  /** Set (or clear) the handle; false when another user has it (ignoring case). */
+  async setHandle(user: string, handle: string | null): Promise<boolean> {
+    try {
+      await this.db.prepare('UPDATE users SET handle = ? WHERE id = ?').bind(handle, user).run();
+      return true;
+    } catch (e) {
+      if (e instanceof Error && /UNIQUE/i.test(e.message)) return false;
+      throw e;
+    }
   }
 }
