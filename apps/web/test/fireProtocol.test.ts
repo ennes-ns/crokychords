@@ -4,6 +4,7 @@ import {
   ENC_SELECT,
   ENC_VOLUME,
   allLedsOff,
+  bankLeds,
   blankFrame,
   decodeInput,
   hueRgb,
@@ -13,7 +14,6 @@ import {
   padNote,
   padsSysex,
   relative,
-  titleFrame,
 } from '../src/midi/fire/protocol';
 import reference from './fixtures/fire-reference.json';
 
@@ -105,12 +105,8 @@ describe('Fire protocol', () => {
     expect(decodeInput([0xe0, 0, 64])).toBeNull();
   });
 
-  it('draws the static title on the OLED', () => {
-    const frame = titleFrame();
-    const lit = frame.reduce((n, p) => n + p, 0);
-    expect(lit).toBeGreaterThan(300);
-    // Nothing in the outer rows: the title is centred.
-    expect(frame.slice(0, 128 * 5).every((p) => p === 0)).toBe(true);
-    expect(oledSysex(frame)).toHaveLength(1183);
+  it('lights the BANK LEDs from a mask', () => {
+    expect(bankLeds(0b0001)).toEqual([0xb0, 0x1b, 0x11]);
+    expect(bankLeds(0b0010)).toEqual([0xb0, 0x1b, 0x12]);
   });
 });

@@ -1,7 +1,8 @@
 # Spec: Akai Fire controller v1
 
-Status: v1 implemented (2026-10-20) in `apps/web/src/midi/fire/` (issue #41); decisions in
-section 7. Prototype in `tools/fire/`. Owner: main session.
+Status: v1 implemented (2026-10-20) in `apps/web/src/midi/fire/` (issue #41); v2 (Replace/Add
+mode, OLED, PAN/FILTER) implemented (issue #62), see "v2 as built". Decisions in section 7.
+Prototype in `tools/fire/`. Owner: main session.
 
 ## Goal
 
@@ -143,8 +144,8 @@ v2). Variant B's layout is reused for the melody lane in v2 (NOTE mode).
 | SELECT turn | move the suggestion cursor (row 4 + panel highlight) | move the chord selection |
 | SELECT press | pick the suggestion under the cursor (replace the selected chord; append on the "+" slot) | audition it only |
 | VOLUME | selected chord length ±1 beat | ±¼ beat |
-| PAN | inversion (root, /1, /2, /3) | — |
-| FILTER | extension/quality variant of the selected chord (triad → 7 → maj7/ø7 … → sus2 → sus4 → add9), only canonical tokens the chord editor offers (v2) | applied chord V/x (v2) |
+| PAN | inversion (root, /1, /2, /3) (v2) | — |
+| FILTER | extension/quality variant of the selected chord (triad → 7 → maj7/ø7 … → sus2 → sus4 → add9), only canonical tokens the chord editor offers (v2) | applied chord V/x (later) |
 | RESONANCE | tempo ±1 BPM | ±5 BPM |
 | PLAY | play/pause | play from the selection |
 | STOP | stop, playhead to 0 | all notes off |
@@ -154,16 +155,17 @@ v2). Variant B's layout is reused for the melody lane in v2 (NOTE mode).
 | BROWSER | toggle In context / Popular | toggle diatonic only |
 | PATTERN | undo | redo |
 | SOLO 1–4 | mute/unmute band track 1–4 (row LED green = audible, red = muted) | select that track (auditions) |
-| BANK | cycle knob page: Chord (above) / Band (selected track velocity, octave, pattern, channel) (v2) | — |
+| BANK | toggle the pick mode Replace / Add (v2; replaces the planned knob-page cycle, see v2 as built) | — |
 
 Button LEDs: PLAY bright while playing, REC lit when looping, SHIFT/ALT bright while held, STEP lit
-as the active mode, BANK LEDs show the knob page.
+as the active mode, BANK LEDs show the pick mode (LED 1 Replace, LED 2 Add).
 
 ### OLED (v2)
 
 Line 1: selected chord token, lead-sheet name, beats, tempo (`3: vi  Am  4b  120`). Lines 2–5: the
 suggestion list around the cursor, `IV  F   39%`, cursor row inverted. While a knob is touched it shows
-that parameter large (`Length 4 beats`). Redraw only on change and at most ~20 fps.
+that parameter large (`Length 4 beats`). Redraw only on change and at most ~20 fps (v2: measured,
+capped at 30 fps; see v2 as built).
 
 ## 4. Implementation notes (web)
 
@@ -190,7 +192,7 @@ that parameter large (`Length 4 beats`). Redraw only on change and at most ~20 f
 | "FL Studio mode" | none on the device: it is a plain MIDI controller, all behaviour is host-side. Its own DAW script only runs inside that DAW, which must not be open on the same port at the same time on Windows |
 | Two apps on the port | Linux (ALSA sequencer) and macOS share ports: both apps receive input and both paint, last writer wins. Windows opens ports exclusively: a second app fails to open it. Show "Fire busy" and repaint fully on focus |
 | Pad LED refresh | one 264-byte SysEx repaints all 64 pads; diff and coalesce to one message per animation frame, playhead at beat rate |
-| OLED bandwidth | 1183 bytes per frame; redraw on change only, cap ~20 fps |
+| OLED bandwidth | 1183 bytes per frame, ~59 frames/s at most (measured); redraw on change only, full frames (partial bands do not display), cap 30 fps |
 | Browser tab in background | Web MIDI keeps working, but timers are throttled: repaint is event-driven, not timer-driven |
 | Stale LEDs after closing the tab | send all-off + blank OLED on `pagehide`; the device keeps the last frame otherwise |
 
@@ -217,6 +219,80 @@ that parameter large (`Length 4 beats`). Redraw only on change and at most ~20 f
 - Not in v1: PAN inversions, FILTER variants, GRID with SHIFT (move chord), BANK knob page, the
   inputs-only fallback when SysEx is denied (the button shows "SysEx denied" instead), OLED text
   beyond the static title.
+
+### v2 as built (issue #62)
+
+Files: `oled.ts` (model, drawing, change check), `font.ts` (generated), controller and connection
+changes; tests in `fireOled.test.ts` with golden frames in `apps/web/test/fixtures/fire-oled/`.
+
+**Replace / Add mode.** BANK (note `0x1A`) toggles `fire.mode` (outside the song, no undo). LED 1
+of the four BANK LEDs (CC `0x1B`, value `0x11`) = Replace, the default; LED 2 (`0x12`) = Add.
+
+| Pick (palette pad, SELECT press) | Replace | Add |
+|---|---|---|
+| chord selected | replace its token, keep its length (the web UI's click) | insert after it and select the new chord (the web UI's Shift+click) |
+| "+" slot | append, "+" stays selected | same |
+| with SHIFT | insert after (as v1) | replace |
+
+In Add mode the palette suggestions and the OLED list are the ones for the slot after the selected
+chord (context up to and including it), so successive picks build forward. The Next chord panel on
+screen keeps showing the suggestions for the selected chord itself.
+
+**OLED.** Drawn in the Pixel theme's font (Departure Mono at its native 11 px: a 7 x 11 cell,
+18 characters per line), rasterised once by `tools/fire/oled_font.py` into `font.ts`. Layout:
+
+```
+ rows  0-9   [REPLACE] 3:1                ⟳ ▶      mode badge (inverted), bar:beat, loop, play/stop
+ rows 11-30  vi (2x)                       Am      selected chord: Roman numeral big, letter name,
+                                       4 beats     length; "+ / add / N chords" on the "+" slot
+ rows 31-63  IV      F                    39%      three suggestions around the SELECT cursor,
+             V       G                    21%      the cursor row inverted
+             ii      Dm                   14%
+```
+
+While VOLUME, PAN, FILTER or RESONANCE is touched (touch note on until off), rows 11-63 show the
+parameter name and its value in 3x digits (`Length 2.5 beats`, `Inversion 1st V7/1`,
+`Chord V7 G7`, `Tempo 120 BPM`). bar:beat follows the playhead while playing and shows the
+selected slot's start when stopped. The v1 splash title is gone: the status screen appears on
+connect.
+
+**Frame rate (measured).** `tools/fire/fire.py --oled-fps` on the device (Linux, ALSA sequencer,
+2026-10-20): full 1183-byte frames for 10 s per rate, with the kernel's `Tx bytes` counter of the
+port showing how far the device lags behind.
+
+| Target | Sent | Largest backlog | Dropped |
+|---|---|---|---|
+| 10 fps | 100 frames | < 1 frame (the one in flight) | 0 |
+| 20 fps | 200 | < 1 frame | 0 |
+| 30 fps | 300 | 1 frame | 0 |
+| 60 fps | 600 | 5 frames, growing | 1.6 frames' worth of bytes |
+| as fast as it drains | 59 fps | 1 frame | 0 |
+
+The Fire accepts about **59 full frames per second** (~70 KB/s of SysEx) and no more; at a steady
+60 fps messages queue, and on Linux the ALSA sequencer drops a SysEx that does not fit the port's
+4 KiB output buffer ("MIDI output buffer overrun") instead of waiting, so a backlog loses frames.
+The web app caps OLED updates at **30 fps** (`OLED_MAX_FPS`), half the measured limit, which leaves
+room for pad SysEx and LED messages on the same port; a change inside the interval is held and sent
+when it ends, coalesced with later changes.
+
+**Full frames only (no band diffing).** The OLED SysEx header names a range of 8-row bands and
+columns (`F0 47 7F 43 0E hh ll <first band> <last band> <first col> <last col> <data> F7`), so
+per-band updates looked possible. They do not work: on the device (observed 2026-10-20, the Fire
+re-enumerated as bcdDevice 0.22) `tools/fire/fire.py --band-check` (blank frame, then bands 1, 3
+and 5-6 only, packing restarted at the first band) leaves the screen completely dark, while a full
+frame sent just before displays fine. Either the guessed packing is wrong or this firmware ignores
+partial regions. The web app therefore always sends full 1183-byte frames: it keeps the frame it
+last sent and skips frames whose pixels did not change (`oledUpdate`), under the 30 fps cap. The
+per-band encoder stays in `tools/fire/fire.py` (`oled_bands_sysex`) only as an experiment, marked
+as not working on firmware 0.22.
+
+**PAN / FILTER.** PAN steps the selected chord through the inversions the chord editor offers
+(root, /1, /2, and /3 only on seventh chords), clamped at the ends. FILTER steps through the
+triad, its sevenths and ninths (major: 7, maj7, 9, maj9; minor: 7, maj7, 9; diminished: ø7, °7;
+augmented: 7, maj7), then sus2, sus4 and add9, keeping degree, accidental, applied target and
+inversion; a token outside that list (an alteration, an 11th, …) stays first so turning back
+returns to it. Both preview per detent (and audition when stopped) and commit one undo step when
+the knob is released, like VOLUME.
 
 ## 7. Open questions for the maintainer
 

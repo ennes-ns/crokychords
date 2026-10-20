@@ -305,16 +305,26 @@ its pad colours. The request is separate from **Enable MIDI out**, so MIDI out t
 working on its own port. Plugging the Fire in later, or again, re-attaches it; closing the tab or
 clicking **Fire connected** turns every LED off. Layout and protocol: `docs/specs/akai-fire-v1.md`.
 
+The Fire has two pick modes, toggled with **BANK** (the knob-mode button top left): *Replace*
+(BANK LED 1, the default) replaces the selected chord like a Next chord click; *Add* (LED 2)
+inserts after it like a Shift+click, and its suggestions are the ones that follow the selected
+chord. On the "+" slot both modes append. The OLED shows the mode, bar:beat, play/stop and loop,
+the selected chord (Roman numeral and letter name) and three suggestions around the SELECT cursor
+with their percentages; while a knob is touched it shows that knob's value in big digits.
+
 | Control | Effect |
 |---|---|
 | Rows 1-3 | timeline: one pad per beat, four bars per row, in the degree colours; tap = select (and listen), tap again = deselect |
-| Row 4, pads 1-7 | insert the diatonic triad I..vii° after the selection (SHIFT: replace the selected chord) |
-| Row 4, pads 9-16 | the top eight Next chord suggestions (brightness = probability); tap to insert |
+| BANK | toggle Replace / Add |
+| Row 4, pads 1-7 | pick the diatonic triad I..vii° (Replace: replace the selected chord; Add: insert after it; SHIFT: the other one) |
+| Row 4, pads 9-16 | the top eight suggestions (brightness = probability); tap to pick, as above |
 | Hold a chord + tap another pad | the chord ends on that beat |
 | ALT + tap a chord | remove it |
 | Tap the dim pad after the last chord | append the top suggestion |
-| SELECT turn / press | move the suggestion cursor / insert it (SHIFT+turn: move the selection; SHIFT+press: listen) |
+| SELECT turn / press | move the suggestion cursor / pick it per the mode (SHIFT+turn: move the selection; SHIFT+press: listen) |
 | VOLUME | selected chord length ±1 beat (SHIFT: ±¼); one undo step per touch |
+| PAN | inversion of the selected chord (root, /1, /2, /3 on sevenths); one undo step per touch |
+| FILTER | variant of the selected chord (triad, 7, maj7, 9, maj9, sus2, sus4, add9; ø7/°7 on diminished); one undo step per touch |
 | RESONANCE | tempo ±1 BPM (SHIFT: ±5) |
 | PLAY / STOP / REC | play/stop, stop, loop on/off |
 | PATTERN | undo (SHIFT: redo) |

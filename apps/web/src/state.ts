@@ -21,9 +21,18 @@ export type SuggestMode = 'context' | 'popular';
  */
 export type FireStatus = 'off' | 'pending' | 'waiting' | 'connected' | 'unsupported' | 'denied';
 
+/**
+ * What a pick on the Fire does (docs/specs/akai-fire-v1.md §v2): 'replace' the selected chord
+ * (the web UI's click), or 'add' a chord after it (the web UI's Shift+click). The "+" slot appends
+ * in both modes.
+ */
+export type FireMode = 'replace' | 'add';
+
 /** The Fire's view state; outside the song, so it has no undo. */
 export interface FireState {
   status: FireStatus;
+  /** Toggled with the BANK button; shown on the BANK LEDs and the OLED. */
+  mode: FireMode;
   /** First timeline row shown on the pads (one row = four bars). */
   scroll: number;
   /** Suggestion under the SELECT encoder (index into the Next chord list, 0..7). */
@@ -97,7 +106,7 @@ export function initialState(song: Song = createSong()): AppState {
     suggestMode: 'context',
     diatonicOnly: false,
     audioReady: false,
-    fire: { status: 'off', scroll: 0, cursor: 0 },
+    fire: { status: 'off', mode: 'replace', scroll: 0, cursor: 0 },
     focus: 'chords',
     melodyCursor: 0,
     melodyGrid: 0.5,

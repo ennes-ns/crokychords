@@ -2,10 +2,18 @@ import { createSong } from '@crokychords/core';
 import { describe, expect, it } from 'vitest';
 import { createActions } from '../src/actions';
 import { AudioEngine } from '../src/audio/synth';
-import { FireController, buttonLeds, followScroll } from '../src/midi/fire/controller';
+import {
+  FireController,
+  buttonLeds,
+  chordVariants,
+  followScroll,
+  inversionTokens,
+  suggestionSlot,
+} from '../src/midi/fire/controller';
 import type { FireEvent } from '../src/midi/fire/protocol';
 import {
   BTN_ALT,
+  BTN_BANK,
   BTN_PATTERN,
   BTN_PAT_DOWN,
   BTN_REC,
@@ -13,6 +21,9 @@ import {
   BTN_SHIFT,
   BTN_SOLO,
   BTN_PLAY,
+  CC_BANK_LEDS,
+  ENC_FILTER,
+  ENC_PAN,
   ENC_RESONANCE,
   ENC_SELECT,
   ENC_VOLUME,
@@ -150,5 +161,102 @@ describe('Fire gestures', () => {
     expect(leds.get(BTN_PLAY)).toBe(2);
     expect(leds.get(BTN_SHIFT)).toBe(2);
     expect(leds.get(LED_ROW[0])).toBe(4);
+  });
+});
+
+describe('Fire v2: Replace/Add mode', () => {
+  it('BANK toggles the mode, shown on BANK LED 1 (Replace) or 2 (Add)', () => {
+    const { store, fire, send } = setup();
+    expect(store.state.fire.mode).toBe('replace');
+    expect(buttonLeds(store.state, fire).get(CC_BANK_LEDS)).toBe(0x11);
+    send(...press(BTN_BANK));
+    expect(store.state.fire.mode).toBe('add');
+    expect(buttonLeds(store.state, fire).get(CC_BANK_LEDS)).toBe(0x12);
+    send(...press(BTN_BANK));
+    expect(store.state.fire.mode).toBe('replace');
+  });
+
+  it('in Add mode a palette pad inserts after the selected chord and selects it', () => {
+    const { store, send, tokensOf } = setup(['I', 'V']);
+    send(...press(BTN_BANK), ...tap(0, 0), ...tap(3, 3), ...tap(3, 5));
+    expect(tokensOf()).toEqual(['I:4', 'IV:4', 'vi:4', 'V:4']);
+    expect(store.state.selected).toBe(2);
+    // SHIFT does the other one: replace.
+    send(btn(BTN_SHIFT), ...tap(3, 1), btn(BTN_SHIFT, false));
+    expect(tokensOf()).toEqual(['I:4', 'IV:4', 'ii:4', 'V:4']);
+  });
+
+  it('in Add mode the "+" slot still appends', () => {
+    const { store, send, tokensOf } = setup(['I']);
+    send(...press(BTN_BANK), ...tap(3, 4));
+    expect(tokensOf()).toEqual(['I:4', 'V:4']);
+    expect(store.state.selected).toBeNull();
+  });
+
+  it('in Add mode SELECT press inserts the suggestion for the slot after the selection', () => {
+    const { store, fire, send, tokensOf } = setup(['I', 'V', 'vi']);
+    send(...tap(0, 4)); // select V
+    send(...press(BTN_BANK));
+    expect(suggestionSlot(store.state)).toBe(2); // suggestions follow V
+    const expected = fire.suggestions()[0]?.token;
+    send(...press(BTN_SELECT_PRESS));
+    expect(tokensOf()).toEqual(['I:4', 'V:4', `${expected}:4`, 'vi:4']);
+    expect(store.state.selected).toBe(2);
+  });
+});
+
+describe('Fire v2: PAN inversion and FILTER variants', () => {
+  it('lists inversions and variants the chord editor offers', () => {
+    expect(inversionTokens('V', 'major')).toEqual(['V', 'V/1', 'V/2']);
+    expect(inversionTokens('V7', 'major')).toEqual(['V7', 'V7/1', 'V7/2', 'V7/3']);
+    expect(chordVariants('V', 'major')).toEqual([
+      'V',
+      'V7',
+      'Vmaj7',
+      'V9',
+      'Vmaj9',
+      'Vsus2',
+      'Vsus4',
+      'Vadd9',
+    ]);
+    expect(chordVariants('vii°', 'major').slice(0, 3)).toEqual(['vii°', 'viiø7', 'vii°7']);
+    // A sus chord on a minor degree comes back to the minor triad.
+    expect(chordVariants('VIsus4', 'major')[0]).toBe('vi');
+    expect(chordVariants('V7(b9)', 'major')[0]).toBe('V7(b9)');
+  });
+
+  it('PAN steps through inversions as one undo step per touch', () => {
+    const { store, send, tokensOf } = setup(['I', 'V']);
+    send(...tap(0, 4));
+    send(btn(ENC_PAN), turn(ENC_PAN, 1), turn(ENC_PAN, 1), turn(ENC_PAN, 1));
+    expect(tokensOf()).toEqual(['I:4', 'V/2:4']); // clamped: a triad has no third inversion
+    send(btn(ENC_PAN, false));
+    send(...press(BTN_PATTERN));
+    expect(tokensOf()).toEqual(['I:4', 'V:4']);
+    expect(store.canUndo).toBe(false);
+  });
+
+  it('FILTER steps through variants as one undo step per touch', () => {
+    const { store, send, tokensOf } = setup(['I', 'V']);
+    send(...tap(0, 4));
+    send(btn(ENC_FILTER), turn(ENC_FILTER, 1), turn(ENC_FILTER, 1), turn(ENC_FILTER, -1));
+    send(btn(ENC_FILTER, false));
+    expect(tokensOf()).toEqual(['I:4', 'V7:4']);
+    send(btn(ENC_FILTER), turn(ENC_FILTER, -1), btn(ENC_FILTER, false));
+    expect(tokensOf()).toEqual(['I:4', 'V:4']);
+    send(...press(BTN_PATTERN));
+    expect(tokensOf()).toEqual(['I:4', 'V7:4']);
+    send(...press(BTN_PATTERN));
+    expect(tokensOf()).toEqual(['I:4', 'V:4']);
+    expect(store.canUndo).toBe(false);
+  });
+
+  it('PAN and FILTER do nothing on the "+" slot; the touched knob is tracked', () => {
+    const { fire, send, tokensOf } = setup(['I']);
+    send(btn(ENC_FILTER), turn(ENC_FILTER, 1));
+    expect(fire.touched).toBe(ENC_FILTER);
+    send(btn(ENC_FILTER, false));
+    expect(fire.touched).toBeNull();
+    expect(tokensOf()).toEqual(['I:4']);
   });
 });

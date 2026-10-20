@@ -57,7 +57,9 @@ describe('Fire pad view', () => {
   it('scrolls the timeline by rows of four bars', () => {
     const chords: [string, number][] = Array.from({ length: 16 }, () => ['I', 4]);
     chords[4] = ['ii', 4];
-    const s = state(chords, { fire: { status: 'connected', scroll: 1, cursor: 0 } });
+    const s = state(chords, {
+      fire: { status: 'connected', mode: 'replace', scroll: 1, cursor: 0 },
+    });
     expect(renderPads(s, [])[0]).toEqual(hueRgb(degreeHue(2), 0.9));
     expect(maxScroll(s.song)).toBe(2); // 64 beats: append slot on row 5
   });

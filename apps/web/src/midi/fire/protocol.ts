@@ -51,6 +51,8 @@ export const ROW_LED_DULL_RED = 1;
 export const ROW_LED_DULL_GREEN = 2;
 export const ROW_LED_RED = 3;
 export const ROW_LED_GREEN = 4;
+/** The four LEDs next to BANK (CHANNEL, MIXER, USER 1, USER 2): CC 0x1B, value 0x10 | mask. */
+export const CC_BANK_LEDS = 0x1b;
 /** CC 0x7F value 0: every LED off (pads and buttons). */
 export const CC_ALL_OFF = 0x7f;
 
@@ -103,6 +105,11 @@ export function padsSysex(pads: Iterable<PadColor>): number[] {
 /** Button or row LED: CC on the button's own number. */
 export function ledCc(number: number, value: number): number[] {
   return [CONTROL_CHANGE, number & 0x7f, value & 0x7f];
+}
+
+/** BANK LEDs: bit 0 = LED 1 (CHANNEL) … bit 3 = LED 4 (USER 2). */
+export function bankLeds(mask: number): number[] {
+  return ledCc(CC_BANK_LEDS, 0x10 | (mask & 0x0f));
 }
 
 export function allLedsOff(): number[] {
@@ -170,7 +177,10 @@ export function blankFrame(): OledFrame {
   return new Uint8Array(OLED_W * OLED_H);
 }
 
-/** SysEx that writes a full OLED frame (1182 bytes). */
+/**
+ * SysEx that writes a full OLED frame (1183 bytes): bands 0-7, columns 0-127. Only full frames
+ * are sent: partial-band updates did not display on the device (spec, "v2 as built").
+ */
 export function oledSysex(pixels: OledFrame): number[] {
   const data = new Array<number>(OLED_BYTES).fill(0);
   for (let y = 0; y < OLED_H; y++) {
@@ -185,49 +195,6 @@ export function oledSysex(pixels: OledFrame): number[] {
   }
   const payload = [0x00, 0x07, 0x00, 0x7f, ...data]; // bands 0..7, columns 0..127
   return [...SYSEX_HEADER, CMD_OLED, ...len14(payload.length), ...payload, 0xf7];
-}
-
-/** 5x7 glyphs for the v1 splash only (the device has no font; a full font is v2). */
-const GLYPHS: Record<string, readonly string[]> = {
-  C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
-  D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
-  H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
-  K: ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
-  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
-  R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
-  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
-  Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
-};
-
-/** Draw `text` (glyphs above; others render as blanks) centred at row `y`, `scale`x size. */
-export function drawText(frame: OledFrame, text: string, y: number, scale: number): void {
-  const advance = 6 * scale;
-  const width = text.length * advance - scale;
-  const x0 = Math.max(0, Math.floor((OLED_W - width) / 2));
-  [...text].forEach((ch, k) => {
-    const glyph = GLYPHS[ch.toUpperCase()];
-    if (glyph === undefined) return;
-    glyph.forEach((line, gy) => {
-      [...line].forEach((cell, gx) => {
-        if (cell !== '#') return;
-        for (let dy = 0; dy < scale; dy++) {
-          for (let dx = 0; dx < scale; dx++) {
-            const px = x0 + k * advance + gx * scale + dx;
-            const py = y + gy * scale + dy;
-            if (px < OLED_W && py < OLED_H) frame[py * OLED_W + px] = 1;
-          }
-        }
-      });
-    });
-  });
-}
-
-/** The v1 OLED: a static "Croky Chords" title. */
-export function titleFrame(): OledFrame {
-  const frame = blankFrame();
-  drawText(frame, 'CROKY', 7, 3);
-  drawText(frame, 'CHORDS', 36, 3);
-  return frame;
 }
 
 // --- Input -------------------------------------------------------------------------------------
