@@ -119,7 +119,11 @@ cargo run --release -p croky-tui                                   # saves in ~/
 cargo run --release -p croky-tui -- --port rtpmidid                # straight into rtpmidid
 cargo run --release -p croky-tui -- --song crates/croky-tui/songs/demo.json   # edit one file
 cargo run --release -p croky-tui -- --list-ports | --latency-test | --jitter-test
+cargo run --release -p croky-tui -- --commands [--song FILE]          # JSON commands on stdin, no screen
 ```
+
+`--commands` is the command API of `assistant-v1.md` §A5 (JSON-RPC 2.0 per line on stdin/stdout,
+same commands as `window.croky`); see `docs/howto/agents.md`.
 
 **Screen** (captures in `docs/readme/tui.txt` and `crates/croky-tui/tests/snapshots/`): header
 (title, key, tempo, meter, chords, beats, save state), the progression grid (per chord a ruler line

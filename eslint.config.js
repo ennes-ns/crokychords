@@ -15,12 +15,13 @@ export default tseslint.config(
     },
   },
   {
-    // Plain Node scripts (tools/soundfonts/fetch.mjs): the Node globals they use.
+    // Plain Node scripts (tools/soundfonts/fetch.mjs, tools/agent/*.mjs): the Node globals they use.
     files: ['tools/**/*.mjs'],
     languageOptions: {
       globals: {
         AbortSignal: 'readonly',
         TextDecoder: 'readonly',
+        WebSocket: 'readonly',
         URL: 'readonly',
         atob: 'readonly',
         console: 'readonly',

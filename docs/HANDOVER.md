@@ -61,6 +61,13 @@ collaboration process in `docs/WORKFLOW.md`.
 
 ## Changes
 
+- 2026-10-20 (assistant, #97): JSON command API as the one control surface (ADR 0004): the
+  contract in `packages/core/src/commands.ts` (zod) with the shared fixture `commands-v1.json`,
+  `window.croky` in the web app, `croky-tui --commands` (JSON-RPC over stdin), the headless agent
+  script `tools/agent/` (CI step `pnpm agent:check`, muted Chromium), the assistant panel and
+  `/api/assistant` (Worker secret `ANTHROPIC_API_KEY`, limits and daily budget in D1 migration
+  `0002`). How to drive the app: `docs/howto/agents.md`.
+
 - 2026-10-20 (late): replace-first editing (#69), loop points (#51), melody lane (#52) with degree colours and
   chord-tone tint (#77), pattern editor and schema 4 (#78), piano v2 (#73), master chain (#70), Breakcore (#80),
   SoundFont instruments per track and melody sound row (#85), single-screen shell (#83), playhead transform

@@ -30,6 +30,9 @@ jobs:
           key: soundfonts-${{ hashFiles('tools/soundfonts/manifest.json') }}
       - run: node tools/soundfonts/fetch.mjs
       - run: pnpm check
+      # The command API end to end (docs/specs/assistant-v1.md §A6): headless Chromium, muted.
+      - name: Agent integration (headless, muted)
+        run: pnpm agent:check
       - name: Work tree stays clean (samples and builds are git-ignored)
         run: |
           git status --porcelain

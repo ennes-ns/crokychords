@@ -44,6 +44,9 @@ pnpm dev            # http://localhost:5173
   track draws arpeggios and rhythms and saves them as song presets.
 - **Export.** Download the progression as a multi-track `.mid` file.
 - **Web MIDI out.** Drive a DAW or hardware synth live through a virtual MIDI port, one channel per track.
+- **Assistant and command API.** Ask the built-in assistant for a change ("make the second half
+  darker") and review it as a diff before applying it; scripts and agents use the same JSON
+  commands through `window.croky` or the terminal app ([`docs/howto/agents.md`](docs/howto/agents.md)).
 
 <details>
 <summary><b>How the suggestions work</b></summary>
