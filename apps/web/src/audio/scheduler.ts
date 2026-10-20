@@ -8,9 +8,14 @@
  * and again without a gap: beats on the scheduler's timeline keep growing, and pass k >= 1 plays
  * the events of the range shifted by k range lengths. Notes are cut at the loop end, and sinks
  * get `loopWrap` at every jump back so they can release what is still held.
+ *
+ * Breakcore slices (docs/specs/breakcore-v1.md) are scheduled the same way, on the song-beat grid,
+ * to sinks that play them; a looped bar repeats its own chop sequence.
  */
 import type { NoteEvent, Song } from '@crokychords/core';
 import { renderMelody, renderSong, totalBeats } from '@crokychords/core';
+import type { BreakEvent, BreakSettings } from './breaks';
+import { breakEvents, isNative } from './breaks';
 import type { DrumHit, DrumPatternId } from './instruments';
 import type { LoopRange } from '../loop';
 import { loopBounds } from '../loop';
@@ -34,6 +39,14 @@ export interface NoteSink {
   playDrum?(hit: DrumHit, time: number): void;
   /** The playhead jumps from the loop end back to the loop start at `time` (optional). */
   loopWrap?(time: number): void;
+  /** Play a Breakcore slice at `time` for at most `seconds` (optional, like drums). */
+  playBreak?(event: BreakEvent, time: number, seconds: number): void;
+}
+
+/** What the scheduler needs to place Breakcore slices: the settings and the break's tempo. */
+export interface BreakPlan extends BreakSettings {
+  /** Native tempo of the loaded break (BPM). */
+  nativeTempo: number;
 }
 
 export interface Timer {
@@ -75,6 +88,7 @@ export class Scheduler {
   readonly #sinks: () => readonly NoteSink[];
   readonly #timer: Timer;
   readonly #drums: () => DrumPatternId;
+  readonly #breaks: () => BreakPlan | null;
 
   #timerId: number | null = null;
   #events: NoteEvent[] = [];
@@ -92,16 +106,21 @@ export class Scheduler {
   /** Called once when a non-looping song has played to its end. */
   onEnd: (() => void) | null = null;
 
-  /** `drums` is read on every wake-up, so a pattern change applies within the lookahead. */
+  /**
+   * `drums` and `breaks` are read on every wake-up, so a pattern or Breakcore change applies
+   * within the lookahead.
+   */
   constructor(
     clock: Clock,
     sinks: () => readonly NoteSink[],
     timer?: Timer,
     drums: () => DrumPatternId = () => 'none',
+    breaks: () => BreakPlan | null = () => null,
   ) {
     this.#clock = clock;
     this.#sinks = sinks;
     this.#drums = drums;
+    this.#breaks = breaks;
     this.#timer = timer ?? {
       setInterval: (fn, ms) => window.setInterval(fn, ms),
       clearInterval: (id) => window.clearInterval(id),
@@ -204,6 +223,10 @@ export class Scheduler {
     const sinks = this.#sinks();
     const drumSinks = sinks.filter((s) => s.playDrum !== undefined);
     const pattern = drumSinks.length > 0 ? this.#drums() : 'none';
+    const breakSinks = sinks.filter((s) => s.playBreak !== undefined);
+    const plan = breakSinks.length > 0 ? this.#breaks() : null;
+    const native =
+      plan !== null && isNative(60 / this.#secondsPerBeat, plan.speed, plan.nativeTempo);
     const events = this.#events;
     const { start, end } = this.#loop ? this.#bounds() : { start: 0, end: this.#total };
     const length = end - start;
@@ -232,6 +255,16 @@ export class Scheduler {
       for (const hit of drumHits(pattern, this.#beatsPerBar, from, to)) {
         const time = this.#timeAt(offset + hit.beat);
         for (const sink of drumSinks) sink.playDrum?.(hit, time);
+      }
+      if (plan !== null) {
+        for (const slice of breakEvents(plan, this.#beatsPerBar, from, to, native)) {
+          const time = this.#timeAt(offset + slice.beat);
+          // While looping, a slice that runs past the loop end is cut there (with a fade).
+          const cut = this.#loop && slice.beat + slice.beats > end;
+          const event = cut ? { ...slice, beats: end - slice.beat, fadeOut: true } : slice;
+          const seconds = event.beats * this.#secondsPerBeat;
+          for (const sink of breakSinks) sink.playBreak?.(event, time, seconds);
+        }
       }
       if (!this.#loop) break;
       pass += 1;

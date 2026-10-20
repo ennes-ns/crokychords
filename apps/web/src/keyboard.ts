@@ -22,7 +22,10 @@ export type KeyAction =
   | { type: 'endSlot' }
   | { type: 'undo' }
   | { type: 'redo' }
-  | { type: 'toggleMute' };
+  | { type: 'toggleMute' }
+  /** `K` toggles Breakcore; `Shift+K` cycles its intensity (docs/specs/breakcore-v1.md). */
+  | { type: 'toggleBreakcore' }
+  | { type: 'cycleBreakIntensity' };
 
 export interface KeyLike {
   key: string;
@@ -81,6 +84,8 @@ export function keyAction(e: KeyLike): KeyAction | null {
 
   if (key === 'm') return { type: 'toggleMute' };
   if (key === 'l') return { type: 'toggleLoop' };
+  if (key === 'k')
+    return e.shiftKey ? { type: 'cycleBreakIntensity' } : { type: 'toggleBreakcore' };
 
   switch (e.key) {
     case 'Insert':

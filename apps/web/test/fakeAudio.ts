@@ -103,8 +103,15 @@ export class FakeOscillator extends FakeSource implements OscillatorLike {
 
 export class FakeBufferSource extends FakeSource implements BufferSourceLike {
   buffer: BufferLike | null = null;
+  readonly playbackRate = new FakeParam();
+  /** Arguments of every start(when, offset, duration) call. */
+  startArgs: { when: number; offset: number | undefined; duration: number | undefined }[] = [];
   constructor() {
     super('buffer-source');
+  }
+  override start(when = 0, offset?: number, duration?: number): void {
+    super.start(when);
+    this.startArgs.push({ when, offset, duration });
   }
 }
 

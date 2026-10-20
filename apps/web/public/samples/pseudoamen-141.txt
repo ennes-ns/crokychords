@@ -1,0 +1,9 @@
+pseudoamen-141.flac
+
+Source:    https://freesound.org/people/vekoN/sounds/653507/ ("pseudoamen break")
+Author:    vekoN (Freesound)
+Licence:   Creative Commons 0 (CC0 1.0), https://creativecommons.org/publicdomain/zero/1.0/
+About:     an amen-style break re-made with "pseudoacoustic" drums in SunVox; not the 1969
+           recording.
+Processing: the 4-bar loop at 141 BPM (the public high-quality preview), mixed down to mono,
+           44.1 kHz, trimmed to the first 2 bars (150 128 samples), 16-bit FLAC.

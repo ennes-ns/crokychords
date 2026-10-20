@@ -1175,6 +1175,10 @@ button.icon.danger:hover:not(:disabled) {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .break-toggle .glass {
+    animation: none !important;
+  }
+
   *,
   *::before,
   *::after {
@@ -1235,4 +1239,61 @@ button.icon.danger:hover:not(:disabled) {
 
 .loop-clear {
   padding-inline: 6px;
+}
+
+/* Breakcore (docs/specs/breakcore-v1.md): toggle with a pixel-art lamp, intensity, speed, break. */
+
+.break-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.break-lamp {
+  width: 16px;
+  height: 20px;
+  flex: none;
+}
+
+.break-lamp .glass {
+  fill: var(--muted);
+}
+
+.break-lamp .socket {
+  fill: var(--line-strong);
+}
+
+.break-toggle[data-lamp='ready'] .glass {
+  fill: var(--ok);
+}
+
+.break-toggle[data-lamp='loading'] .glass,
+.break-toggle[data-lamp='idle'] .glass {
+  fill: var(--accent);
+  animation: break-lamp-blink 0.5s steps(2, jump-none) infinite;
+}
+
+.break-toggle[data-lamp='error'] .glass {
+  fill: var(--danger);
+}
+
+@keyframes break-lamp-blink {
+  to {
+    opacity: 0.35;
+  }
+}
+
+.break-intensity {
+  width: 72px;
+}
+
+.breakcore select[aria-label='Break'] {
+  max-width: 150px;
+}
+
+.break-percent {
+  min-width: 4ch;
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }

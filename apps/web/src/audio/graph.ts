@@ -3,6 +3,7 @@
  * builder takes a `SynthContext` (the subset of `BaseAudioContext` used here), so tests can
  * inject a small fake instead of a real AudioContext.
  */
+import { SLICES } from './breaks';
 import type { Drum, Instrument } from './instruments';
 import { DRUM_PEAK, midiToFrequency, noteCutoff, noteDecay, notePeak } from './instruments';
 
@@ -48,6 +49,9 @@ export interface BufferLike {
 
 export interface BufferSourceLike extends SourceLike {
   buffer: BufferLike | null;
+  readonly playbackRate: ParamLike;
+  /** Play from `offset` seconds into the buffer for `duration` seconds of buffer. */
+  start(when?: number, offset?: number, duration?: number): void;
 }
 
 export interface CompressorLike extends NodeLike {
@@ -232,6 +236,77 @@ export function setMasterMode(bus: MasterBus, mode: MasterMode): void {
   if (mode === bus.mode) return;
   bus.output.disconnect();
   connectMode(bus, mode);
+}
+
+/** Gain of the Breakcore bus (docs/specs/breakcore-v1.md). */
+export const BREAK_GAIN_DB = -6;
+
+/**
+ * The Breakcore bus: its own gain (BREAK_GAIN_DB) into the master gain, after the mix
+ * compressor, so the break goes through the protection stage and the volume but does not make the
+ * compressor pump the band.
+ */
+export function buildBreakBus(ctx: SynthContext, bus: MasterBus): GainLike {
+  const gain = ctx.createGain();
+  gain.gain.value = dbToGain(BREAK_GAIN_DB);
+  gain.connect(bus.output);
+  return gain;
+}
+
+/**
+ * The protection mode that applies while Breakcore plays: the user's mode, but at least the
+ * limiter, since the break sits on top of a band that already uses the headroom budget.
+ */
+export function guardedMasterMode(mode: MasterMode, breakcore: boolean): MasterMode {
+  return breakcore && mode === 'off' ? 'limiter' : mode;
+}
+
+/** The two buffers of a loaded break: forwards and reversed (for reversed slices). */
+export interface BreakBuffers {
+  forward: BufferLike;
+  reverse: BufferLike;
+  /** Seconds of one slice (buffer length / 16). */
+  sliceSeconds: number;
+}
+
+/** One slice from `time`: a buffer source → fade gain → `out`. Returns the nodes to stop. */
+export function buildSlice(
+  ctx: SynthContext,
+  buffers: BreakBuffers,
+  event: {
+    slice: number;
+    reverse: boolean;
+    rate: number;
+    fadeIn: boolean;
+    fadeOut: boolean;
+  },
+  time: number,
+  seconds: number,
+  out: NodeLike,
+  fades: { in: number; out: number },
+): { source: BufferSourceLike; gain: GainLike; end: number } {
+  const read = Math.min(seconds * event.rate, buffers.sliceSeconds);
+  const play = read / event.rate;
+  const end = time + play;
+  const gain = ctx.createGain();
+  const g = gain.gain;
+  g.value = event.fadeIn ? 0 : 1;
+  g.setValueAtTime(event.fadeIn ? 0 : 1, time);
+  if (event.fadeIn) g.linearRampToValueAtTime(1, time + Math.min(fades.in, play / 2));
+  if (event.fadeOut) {
+    g.setValueAtTime(1, Math.max(time, end - fades.out));
+    g.linearRampToValueAtTime(0, end);
+  }
+  gain.connect(out);
+  const source = ctx.createBufferSource();
+  source.buffer = event.reverse ? buffers.reverse : buffers.forward;
+  source.playbackRate.value = event.rate;
+  // A reversed slice starts at its end, (SLICES - 1 - slice) slices into the reversed buffer.
+  const index = event.reverse ? SLICES - 1 - event.slice : event.slice;
+  source.connect(gain);
+  source.start(time, index * buffers.sliceSeconds, read);
+  source.stop(end);
+  return { source, gain, end };
 }
 
 /** Glide the master volume to `percent` from `time`. */

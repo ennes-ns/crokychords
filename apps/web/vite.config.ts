@@ -6,11 +6,12 @@ import { defineConfig } from 'vite';
 const root = fileURLToPath(new URL('.', import.meta.url));
 
 /**
- * Directories of public/ that go into a build as a whole: brand/ (logo, favicon, the toolbar mark)
- * and fonts/ (the bundled theme fonts with their licence files). The rest of public/ stays out: it
+ * Directories of public/ that go into a build as a whole: brand/ (logo, favicon, the toolbar mark),
+ * fonts/ (the bundled theme fonts with their licence files) and samples/ (the CC0 Breakcore break
+ * and its source note, docs/DATA.md "Samples"). The rest of public/ stays out: it
  * holds the git-ignored data/ngrams.json, which must never end up in a build (see docs/DATA.md).
  */
-export const SHIPPED_PUBLIC_DIRS = ['brand', 'fonts'] as const;
+export const SHIPPED_PUBLIC_DIRS = ['brand', 'fonts', 'samples'] as const;
 
 /** Emit every file of the given public/ directories, keeping their paths. */
 function shipPublicDirs(dirs: readonly string[]): Plugin {
