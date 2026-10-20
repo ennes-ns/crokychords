@@ -1,6 +1,7 @@
 /**
- * Toolbar: title, key/mode/tempo/meter, transport, history, export, MIDI out, table status,
- * theme switcher.
+ * Toolbar (docs/specs/web-v1.md, "Toolbar"): one row of song settings (title, key, tempo, meter),
+ * transport and loop, Breakcore, history and the table status; the rarely used items (new song,
+ * export, MIDI out, Fire, break source, suggestion table, theme) sit in the "More" panel at its end.
  */
 import type { Mode, NgramTable } from '@crokychords/core';
 import { MODES, parseNoteName, toPitchClass } from '@crokychords/core';
@@ -83,16 +84,25 @@ const LAMP_ROWS = [
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** The pixel-art Breakcore lamp as an inline SVG of square pixels (theme colours via CSS). */
-export function breakLamp(doc: Document = document): SVGSVGElement {
+/**
+ * An inline SVG of square pixels drawn from `rows` (one string per row, `.` empty); `cellClass`
+ * gives each set pixel its class, so CSS colours it with theme tokens.
+ */
+export function pixelSvg(
+  rows: readonly string[],
+  className: string,
+  cellClass: (cell: string) => string,
+  doc: Document = document,
+): SVGSVGElement {
+  const width = Math.max(...rows.map((r) => r.length));
   const svg = doc.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('class', 'break-lamp');
-  svg.setAttribute('viewBox', '0 0 8 10');
-  svg.setAttribute('width', '8');
-  svg.setAttribute('height', '10');
+  svg.setAttribute('class', className);
+  svg.setAttribute('viewBox', `0 0 ${width} ${rows.length}`);
+  svg.setAttribute('width', String(width));
+  svg.setAttribute('height', String(rows.length));
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('shape-rendering', 'crispEdges');
-  LAMP_ROWS.forEach((row, y) => {
+  rows.forEach((row, y) => {
     [...row].forEach((cell, x) => {
       if (cell === '.') return;
       const rect = doc.createElementNS(SVG_NS, 'rect');
@@ -100,11 +110,43 @@ export function breakLamp(doc: Document = document): SVGSVGElement {
       rect.setAttribute('y', String(y));
       rect.setAttribute('width', '1');
       rect.setAttribute('height', '1');
-      rect.setAttribute('class', cell === '#' ? 'glass' : 'socket');
+      rect.setAttribute('class', cellClass(cell));
       svg.append(rect);
     });
   });
   return svg;
+}
+
+/** The pixel-art Breakcore lamp as an inline SVG of square pixels (theme colours via CSS). */
+export function breakLamp(doc: Document = document): SVGSVGElement {
+  return pixelSvg(LAMP_ROWS, 'break-lamp', (cell) => (cell === '#' ? 'glass' : 'socket'), doc);
+}
+
+/** Toolbar icons, 8 pixels high in the text colour: undo (redo is its mirror) and "more". */
+const UNDO_ROWS = [
+  '...#.....',
+  '..##.....',
+  '.#######.',
+  '..##....#',
+  '...#....#',
+  '........#',
+  '.......#.',
+  '..#####..',
+];
+const REDO_ROWS = UNDO_ROWS.map((row) => [...row].reverse().join(''));
+const MORE_ROWS = [
+  '........',
+  '........',
+  '........',
+  '##.##.##',
+  '##.##.##',
+  '........',
+  '........',
+  '........',
+];
+
+function toolIcon(rows: readonly string[], doc: Document): SVGSVGElement {
+  return pixelSvg(rows, 'pixel-icon', () => 'ink', doc);
 }
 
 const LAMP_TITLES: Record<'off' | BreakcoreState['status'], string> = {
@@ -119,12 +161,16 @@ const LAMP_TITLES: Record<'off' | BreakcoreState['status'], string> = {
 const PICK_OWN = 'pick';
 const REMOVE_OWN = 'remove';
 
-/** The Breakcore group: toggle with lamp, intensity, speed and the break source. */
+/**
+ * The Breakcore controls: `element` is the toolbar group (toggle with lamp, intensity), `settings`
+ * the speed and the break select with its file picker, which live in the "More" panel.
+ */
 export function breakcoreControls(
   controller: BreakcoreController,
   store: Store,
 ): {
   element: HTMLElement;
+  settings: HTMLElement;
   render: (state: BreakcoreState) => void;
 } {
   const toggle = h('button', {
@@ -180,7 +226,13 @@ export function breakcoreControls(
     toggle,
     intensity,
     percent,
+  );
+  const settings = h(
+    'span',
+    { class: 'group break-settings', attrs: { role: 'group', 'aria-label': 'Breakcore settings' } },
+    h('span', { class: 'label', attrs: { 'aria-hidden': 'true' } }, 'Speed'),
     speed,
+    h('span', { class: 'label', attrs: { 'aria-hidden': 'true' } }, 'Break'),
     source,
     file,
   );
@@ -207,7 +259,7 @@ export function breakcoreControls(
     );
     source.value = state.source;
   };
-  return { element, render };
+  return { element, settings, render };
 }
 
 const FIRE_LABELS: Record<AppState['fire']['status'], string> = {
@@ -247,6 +299,86 @@ export function themeSwitcher(storage: ThemeStorage | null, doc: Document = docu
     h('span', { class: 'label', attrs: { 'aria-hidden': 'true' } }, 'Theme'),
     select,
   );
+}
+
+/** One labelled section of the "More" panel. */
+export interface MoreSection {
+  label: string;
+  content: Child[];
+}
+
+/**
+ * The "More" disclosure at the end of the toolbar: an icon button that opens a panel of rarely
+ * used controls. Keyboard: Enter/Space opens it and focuses its first control, Tab moves through
+ * it, Escape (or Tab past the end) closes it and Escape returns the focus to the button; a click
+ * outside closes it too.
+ */
+export function moreMenu(...sections: MoreSection[]): {
+  element: HTMLElement;
+  open: () => boolean;
+  setOpen: (open: boolean, focus?: boolean) => void;
+} {
+  const toggle = h('button', {
+    class: 'tool-icon more-toggle',
+    props: { type: 'button' },
+    attrs: {
+      'aria-label': 'More',
+      'aria-expanded': 'false',
+      'aria-controls': 'toolbar-more',
+      title: 'More: new song, MIDI export and output, Fire, break, suggestion table, theme',
+    },
+  });
+  toggle.append(toolIcon(MORE_ROWS, toggle.ownerDocument));
+  const panel = h(
+    'div',
+    {
+      class: 'toolbar-more',
+      props: { id: 'toolbar-more', hidden: true },
+      attrs: { role: 'group', 'aria-label': 'More' },
+    },
+    ...sections.map((section) =>
+      h(
+        'div',
+        { class: 'more-section', attrs: { role: 'group', 'aria-label': section.label } },
+        h('span', { class: 'more-label', attrs: { 'aria-hidden': 'true' } }, section.label),
+        h('div', { class: 'more-row' }, ...section.content),
+      ),
+    ),
+  );
+  const element = h('div', { class: 'more' }, toggle, panel);
+
+  const setOpen = (open: boolean, focus = false): void => {
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+    if (!focus) return;
+    if (open) {
+      const first = panel.querySelector<HTMLElement>(
+        'button:not(:disabled), select:not(:disabled), input:not([hidden]):not(:disabled)',
+      );
+      first?.focus();
+    } else {
+      toggle.focus();
+    }
+  };
+  const isOpen = (): boolean => !panel.hidden;
+
+  toggle.onclick = (e) => {
+    // A keyboard click (detail 0) moves the focus into the panel; a mouse click leaves it.
+    setOpen(!isOpen(), e.detail === 0 && !isOpen());
+  };
+  element.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !isOpen()) return;
+    e.preventDefault();
+    setOpen(false, true);
+  });
+  element.addEventListener('focusout', (e) => {
+    const next = e.relatedTarget;
+    if (next instanceof Node && !element.contains(next)) setOpen(false);
+  });
+  element.ownerDocument.addEventListener('pointerdown', (e) => {
+    if (isOpen() && e.target instanceof Node && !element.contains(e.target)) setOpen(false);
+  });
+  return { element, open: isOpen, setOpen };
 }
 
 export function mountToolbar(
@@ -334,8 +466,16 @@ export function mountToolbar(
   );
   clearLoop.classList.add('loop-clear');
   clearLoop.setAttribute('aria-label', 'Clear the loop points');
-  const undo = button('Undo', 'Undo (Ctrl/Cmd+Z)', () => actions.undo());
-  const redo = button('Redo', 'Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)', () => actions.redo());
+  const doc = root.ownerDocument;
+  const undo = iconButton(toolIcon(UNDO_ROWS, doc), 'Undo', 'Undo (Ctrl/Cmd+Z)', () =>
+    actions.undo(),
+  );
+  const redo = iconButton(
+    toolIcon(REDO_ROWS, doc),
+    'Redo',
+    'Redo (Ctrl/Cmd+Shift+Z or Ctrl+Y)',
+    () => actions.redo(),
+  );
   const newSong = button('New', 'Start a new song (undoable)', () => actions.newSong());
   const exportMidi = button('Export MIDI', 'Download a Standard MIDI File', () =>
     actions.exportMidi(),
@@ -347,6 +487,7 @@ export function mountToolbar(
   const midiBox = h('span', { class: 'midi' });
   const channelBox = h('span', { class: 'channel-map', attrs: { 'aria-label': 'MIDI channels' } });
   const tableBox = h('span', { class: 'table-status' });
+  const tableInfo = h('span', { class: 'table-info' });
   const fireControls = options.fire;
   const fireButton =
     fireControls === undefined
@@ -356,6 +497,14 @@ export function mountToolbar(
           if (status === 'connected' || status === 'waiting') fireControls.disconnect();
           else fireControls.connect();
         });
+
+  const more = moreMenu(
+    { label: 'Song', content: [newSong, exportMidi] },
+    { label: 'MIDI', content: [midiBox, channelBox, fireButton] },
+    ...(breakcore === null ? [] : [{ label: 'Breakcore', content: [breakcore.settings] }]),
+    { label: 'Suggestions', content: [tableInfo] },
+    { label: 'Look', content: [themeSwitcher(options.storage ?? null, root.ownerDocument)] },
+  );
 
   root.append(
     h(
@@ -373,7 +522,7 @@ export function mountToolbar(
     group('Meter', meterBeats, h('span', { class: 'slash' }, '/'), meterUnit),
     h(
       'span',
-      { class: 'group' },
+      { class: 'group transport', attrs: { role: 'group', 'aria-label': 'Transport' } },
       play,
       h(
         'label',
@@ -392,11 +541,14 @@ export function mountToolbar(
       clearLoop,
     ),
     ...(breakcore === null ? [] : [breakcore.element]),
-    h('span', { class: 'group' }, undo, redo),
-    h('span', { class: 'group' }, newSong, exportMidi),
-    h('span', { class: 'group' }, midiBox, channelBox, fireButton),
+    h(
+      'span',
+      { class: 'group history', attrs: { role: 'group', 'aria-label': 'History' } },
+      undo,
+      redo,
+    ),
     tableBox,
-    themeSwitcher(options.storage ?? null, root.ownerDocument),
+    more.element,
   );
 
   let midiKey: unknown[] = [];
@@ -483,14 +635,22 @@ export function mountToolbar(
 
     const table = activeTable(state);
     tableBox.className = `table-status ${state.tableStatus}`;
-    tableBox.title = [table.source.description, tableAttribution(table.source), state.tableError]
+    tableBox.title = [
+      tableSummary(state),
+      table.source.description,
+      tableAttribution(table.source),
+      state.tableError,
+    ]
       .filter((s): s is string => typeof s === 'string' && s !== '')
       .join('\n');
     replaceChildren(
       tableBox,
       h('span', { class: 'badge' }, STATUS_LABELS[state.tableStatus]),
-      ' ',
-      tableSummary(state),
+      h('span', { class: 'table-name' }, table.source.name),
+    );
+    replaceChildren(
+      tableInfo,
+      h('span', { class: 'table-summary' }, tableSummary(state)),
       state.ngrams === null ? null : tableSwitch(state),
     );
   };
@@ -543,10 +703,27 @@ function spellTonic(name: string): string {
 function group(label: string, ...controls: HTMLElement[]): HTMLElement {
   return h(
     'span',
-    { class: 'group', attrs: { role: 'group', 'aria-label': label } },
+    {
+      class: `group group-${label.toLowerCase()}`,
+      attrs: { role: 'group', 'aria-label': label, title: label },
+    },
     h('span', { class: 'label', attrs: { 'aria-hidden': 'true' } }, label),
     ...controls,
   );
+}
+
+/** A small button that shows a pixel icon; `label` names it for screen readers, `title` explains it. */
+function iconButton(
+  icon: SVGSVGElement,
+  label: string,
+  title: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const b = button('', title, onClick);
+  b.append(icon);
+  b.classList.add('tool-icon');
+  b.setAttribute('aria-label', label);
+  return b;
 }
 
 function button(text: string, title: string, onClick: () => void): HTMLButtonElement {

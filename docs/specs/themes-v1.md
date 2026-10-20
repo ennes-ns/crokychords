@@ -84,7 +84,8 @@ Glyphs a font lacks (▾ ▶ ▲ ▼ ♮) fall back to the next family in the st
 
 ## Switching and persistence
 
-- A `<select aria-label="Theme">` at the end of the toolbar lists `THEMES` by label.
+- A `<select aria-label="Theme">` in the toolbar's More panel (section "Look", `web-v1.md` §9)
+  lists `THEMES` by label.
 - Changing it sets `data-theme` on `<html>` and stores the id in `localStorage` under
   `crokychords.theme`. On boot the stored id is applied before the first render; a missing or
   unknown id (a removed theme) falls back to Default. Storage errors are ignored (the theme is a
