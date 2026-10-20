@@ -78,19 +78,19 @@ export function fillRect(
 }
 
 /** Shorten `text` to at most `width` pixels at `scale`. */
-function fit(text: string, width: number, scale = 1): string {
+export function fit(text: string, width: number, scale = 1): string {
   const max = Math.max(0, Math.floor(width / (GLYPH_W * scale)));
   const chars = [...text];
   return chars.length <= max ? text : chars.slice(0, max).join('');
 }
 
-const ICONS = {
+export const ICONS = {
   play: ['#......', '###....', '#####..', '#######', '#####..', '###....', '#......'],
   stop: ['.......', '######.', '######.', '######.', '######.', '######.', '######.'],
   loop: ['..####.', '.#....#', '###...#', '.#....#', '#....#.', '#...###', '.####..'],
 } as const;
 
-function drawIcon(frame: OledFrame, icon: readonly string[], x: number, y: number): void {
+export function drawIcon(frame: OledFrame, icon: readonly string[], x: number, y: number): void {
   icon.forEach((line, gy) => {
     [...line].forEach((cell, gx) => {
       if (cell === '#') fillRect(frame, x + gx, y + gy, 1, 1);

@@ -1415,6 +1415,14 @@ export class Samplers implements SamplerSource {
     this.#edit(id, levels);
   }
 
+  /**
+   * Replace the slot's settings with `patch` (clamped) in one change; the sample stays the one
+   * the slot holds now, whatever `patch.sample` says (the Fire's knob edits and their undo).
+   */
+  setPatch(id: SamplerId, patch: SamplerPatch): void {
+    this.#set(id, { ...patch, sample: this.patch(id).sample });
+  }
+
   rename(id: SamplerId, name: string): void {
     this.#edit(id, { name });
   }

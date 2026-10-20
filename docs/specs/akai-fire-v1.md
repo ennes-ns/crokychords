@@ -1,7 +1,8 @@
 # Spec: Akai Fire controller v1
 
 Status: v1 implemented (2026-10-20) in `apps/web/src/midi/fire/` (issue #41); v2 (Replace/Add
-mode, OLED, PAN/FILTER) implemented (issue #62), see "v2 as built". Decisions in section 7.
+mode, OLED, PAN/FILTER) implemented (issue #62), see "v2 as built"; SAMPLE mode (issue #93), see
+"SAMPLE mode". Decisions in section 7.
 Prototype in `tools/fire/`. Owner: main session.
 
 ## Goal
@@ -293,6 +294,89 @@ augmented: 7, maj7), then sus2, sus4 and add9, keeping degree, accidental, appli
 inversion; a token outside that list (an alteration, an 11th, …) stays first so turning back
 returns to it. Both preview per detent (and audition when stopped) and commit one undo step when
 the knob is released, like VOLUME.
+
+### SAMPLE mode (issue #93)
+
+Edit the sampler slots (`sampler-v1.md`) on the device, no mouse. Files: `sampleMode.ts` (pure
+pads, edits and OLED, plus the `SampleMode` state), controller and connection changes; tests in
+`fireSample.test.ts` with golden frames `sample-*.txt` in `apps/web/test/fixtures/fire-oled/`.
+Everything goes through the `Samplers` edit API (`audio/sampler.ts`, which gained `setPatch`).
+
+**Enter / leave.** DRUM (note `0x2E`) turns SAMPLE mode on; DRUM or STEP turns it off. While it is
+on the DRUM LED is bright yellow (CC `0x2E` value 2: the Pixel theme's accent; the DRUM LED is
+yellow only), STEP is dull, the BANK LEDs show the knob page (LED n = page n) and PATTERN UP/DOWN,
+GRID and BROWSER are dark and do nothing. Leaving commits the open knob edit and stops every held
+note. The mode is device state only (not in the store, the song or undo); unplugging leaves it.
+
+**Pads.**
+
+```
+            col: 1   2   3   4   5   6   7   8 | 9  10  11  12  13  14  15  16
+ row 1:        [s1][s2][s3][s4][s5][s6][s7][s8] [c1][c2][c3][c4][c5][c6][c7][c8]
+ row 2:        root+8 ............................................. root+23
+ row 3:        root-8 ...................... [root] .................. root+7
+ row 4:        root-24 ............................................ root-9
+```
+
+- **Slots** (pads 1-8 of row 1, `sampler-1` … `sampler-8`): yellow (accent) when the slot has a
+  sample, bright = selected, dim yellow while decoding, red when it failed, dark when empty (dim
+  white when the empty slot is selected). Tapping one selects it and never plays it.
+- **Community** (pads 9-16 of row 1): the eight newest samples of the community bank
+  (`community-v1.md`, `GET /api/community`, first page), green; asked once each time the mode is
+  entered. Hold a pad to hear the sample at its root (`Samplers.preview`, the first press downloads
+  it), let go to stop; SHIFT + tap adds it to the selected slot (`CommunitySync.take`: the slot's
+  settings are kept, the sample never plays). Without sync, signed out or offline these pads stay
+  dark and do nothing.
+- **Keyboard** (rows 2-4): 48 chromatic keys, lowest on the bottom row, the slot's root on row 3
+  pad 9. Every pad of the root's pitch class is in the root's degree hue in the song's key (the
+  root bright, its octaves dim; white when the root is outside the scale), the other scale notes
+  dim white, the rest nearly dark, held keys white. Holding a key plays the slot
+  (`Samplers.audition`) through the bus of the selected track (SHIFT + SOLO selects it; the
+  sampler audition bus when none is selected), at the track's volume, until it is let go. Nothing
+  plays except while a pad is held.
+
+**Knobs.** BANK cycles the four pages, SHIFT + BANK goes back. Coarse by default, fine with SHIFT
+held. Each touch of a knob (touch note on until off) is one undo step; a turn without a touch is
+committed when another control is used (same rule as v2). The sampler is not in the song, so this
+history is the mode's own: **PATTERN undoes, SHIFT + PATTERN redoes** the last knob touches and
+SELECT presses (64 steps, across slots; a step is dropped when its slot has another sample since).
+
+| Page | VOLUME | PAN | FILTER | RESONANCE | SELECT turn | SELECT press |
+|---|---|---|---|---|---|---|
+| 1 Pitch | gain ±1 dB (0.1) | root ±1 semitone | keytrack ±5 % (1) | tune ±5 cents (1) | slot | detect the root |
+| 2 Loop | trim start | loop start | loop end | crossfade ±5 ms (1) | slot | loop on/off; SHIFT: ping-pong/forward |
+| 3 Envelope | attack | decay | sustain ±5 % (1) | release | slot | — |
+| 4 Filter | type | cutoff | resonance ±5 % (1) | env amount ±5 % (1) | type | — |
+
+Positions move by 1/128 of the sample per detent (one OLED column), 1/1024 with SHIFT; attack,
+decay and release by a quarter octave (a sixteenth with SHIFT), the cutoff by a sixth of an octave
+(1/24). The edit API clamps everything (trim, loop inside the trim, crossfade within half the
+loop). The trim end is not on the device (the Sampler panel's `E` marker).
+
+**OLED.** Status line: the page name inverted, slot number and name, the play/stop icon (on the
+Loop page also `off`, `fwd` or `pp`). Pitch, Envelope and Filter pages: the four parameters, one
+per line in knob order, the touched one inverted, and a bottom line with the sample's length and
+channels (or `no sample: piano`, `loading`, `load failed: piano`, or the last message: detected
+root, undo, added community sample). Loop page: a 128 x 26 waveform strip from
+`Samplers.waveform(id, 128)` (computed once per sample and cached by the bank) with solid trim
+markers (outside the trim the wave is drawn dotted), dashed loop markers joined along the top
+while the loop is on, and the four values in two rows of two (`St`, `Ls`, `Le` in seconds, `Xf`).
+
+```
+ LOOP | 1 Sampler 1      fwd ▶      PITCH | 1 Sampler 1        ▶
+ :.:|█████████:##########:  |       Gain              -3.0 dB
+ .:.|███████████:#####   :  |       Root              A4 69     (touched, inverted)
+ St 0.023      Ls 0.125             Keytrack            100%
+ Le 0.375      Xf 10ms              Tune               +0 ct
+                                    0.50 s mono
+```
+
+Frames are redrawn when the model changes and sent as **full frames** at the v2 cap of 30 fps: the
+issue asked for band diffing, but partial band updates do not display on this device (v2 as
+built), so the connection keeps sending whole 1183-byte frames and skips unchanged ones.
+
+**Transport.** PLAY, STOP, REC (loop) and SOLO work as in STEP mode, so edits are heard in the
+song. Changes made in the Sampler panel while the mode is on repaint the device.
 
 ## 7. Open questions for the maintainer
 

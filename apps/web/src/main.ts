@@ -14,6 +14,7 @@ import { moveSelection } from './edit';
 import { bindLoopPersistence } from './loop';
 import { FireController } from './midi/fire/controller';
 import { FireConnection, bindFirePageEvents, browserFireAccess } from './midi/fire/connect';
+import { SampleMode } from './midi/fire/sampleMode';
 import { isChordTonesKey, melodyKeyAction } from './melodyKeys';
 import { midiFileName } from './midi/download';
 import { MidiOut, browserMidiAccess } from './midi/webmidi';
@@ -151,7 +152,11 @@ async function boot(app: HTMLElement): Promise<void> {
     save: () => session.flush(),
   });
 
-  const fire = new FireConnection(store, browserFireAccess(), new FireController(store, actions));
+  const fire = new FireConnection(
+    store,
+    browserFireAccess(),
+    new FireController(store, actions, undefined, new SampleMode(audio.samplers, community)),
+  );
   bindFirePageEvents(fire, window);
 
   const { toolbar, grid, melody, editor, band, suggest, saves, compact } = mountShell(

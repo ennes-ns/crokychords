@@ -48,6 +48,10 @@ pnpm dev            # http://localhost:5173
   loop, envelope, filter). In the online version you can share a sample: after the maintainer has
   listened to it, every signed-in user can audition it and add it to a slot. Unsharing stops new
   takes; whoever already has it keeps it ([`docs/specs/community-v1.md`](docs/specs/community-v1.md)).
+- **Akai Fire.** Connect an Akai Fire (Chrome/Edge, Web MIDI with SysEx) to build the progression
+  on its pads and edit the sampler on the device: the DRUM button opens SAMPLE mode with the slots,
+  a keyboard around the root and four knob pages on the OLED
+  ([`docs/specs/akai-fire-v1.md`](docs/specs/akai-fire-v1.md)).
 - **Assistant and command API.** Ask the built-in assistant for a change ("make the second half
   darker") and review it as a diff before applying it; scripts and agents use the same JSON
   commands through `window.croky` or the terminal app ([`docs/howto/agents.md`](docs/howto/agents.md)).
