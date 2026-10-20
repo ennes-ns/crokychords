@@ -34,6 +34,27 @@ uv run python -m crokychords_data.chordonomicon_build --input downloads/chordono
 | `--collapse-repeats` / `--no-collapse-repeats` | on | merge consecutive identical tokens; the dataset repeats a chord per bar, we count chord changes |
 | `--genre` | all | comma-separated `main_genre` values (`pop`, `rock`, `country`, `metal`, ...) |
 | `--min-count` | 1 | drop n-gram entries below N (unigrams always kept) |
+| `--trim` | off | shippable preset: `--max-context 3 --top-n 8 --top-n-unigram 48 --min-context-count 1500`, vocabulary limited to tokens in kept rows |
+| `--top-n N` | all | keep the N most frequent followers per context |
+| `--top-n-unigram N` | all | keep the N most frequent tokens in the unigram row |
+| `--min-context-count N` | 1 | drop contexts whose total (before pruning) is below N |
+| `--generated-at ISO` | `SOURCE_DATE_EPOCH`, else now | timestamp written to `generatedAt` and `build.date` |
+
+### Default table (`--trim`)
+
+`apps/web/public/data/default.json` is built with:
+
+```bash
+uv run python -m crokychords_data.chordonomicon_build --download --trim \
+  --generated-at 2026-10-20T00:00:00+00:00 --output ../../apps/web/public/data/default.json
+```
+
+Rules and rationale: `docs/specs/data-default-table.md`. Output is deterministic: rows are
+ordered by context length then string, followers by count then token, and the timestamp is
+fixed by `--generated-at`, so the same CSV and flags give a byte-identical file. The
+2026-10-20 build (all 679,807 songs, 210 s) is 333 KB: major 2,401 contexts / 200 tokens,
+minor 1,217 contexts / 135 tokens. Its `build` block records the date, builder version and
+every parameter.
 
 How it works: `chordsym.parse_symbol` turns symbols into root/quality/extension/sus/add/
 alterations/bass (Chordonomicon spellings: `s` = sharp, `min`, `no3d` = power chord,
@@ -69,10 +90,14 @@ or a smaller `--max-context` for a table the browser has to download.
 ```jsonc
 {
   "schema": 1,
-  "source": { "name": "...", "license": "..." },
+  "source": { "name": "...", "license": "...", "url": "..." },
   "generatedAt": "2026-09-07T20:00:00+00:00",
   "maxContext": 4,                 // longest context (in chords) present
   "tokenFormat": "roman-numeral-v1",
+  "build": {                       // optional, written by the builder; core ignores it
+    "date": "2026-09-07", "builder": "crokychords-data 0.2.0",
+    "input": "chordonomicon_v2.csv", "parameters": { "maxContext": 4, "topN": null }
+  },
   "modes": {
     "major": {
       "sections": 41974,           // analysed song sections in this mode

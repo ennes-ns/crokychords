@@ -4,3 +4,4 @@ pnpm-lock.yaml
 packages/data
 *.md
 mise.toml
+apps/web/public/data

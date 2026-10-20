@@ -175,3 +175,92 @@ def test_cli_end_to_end(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     report = json.loads(out.with_suffix(".report.json").read_text())
     assert report["rowsRead"] == 5
     assert "wrote" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- trimming
+
+TRIM_ROWS = [
+    # C major: I V vi IV is the common loop, a few rarer followers after I
+    *[(str(i), "<verse_1> C G Amin F C G Amin F", "pop") for i in range(10)],
+    *[(str(i), "<verse_1> C F G C Dmin G C", "pop") for i in range(10, 14)],
+    ("14", "<verse_1> C Emin F G C Bb F C", "rock"),
+    ("15", "<verse_1> C D G C Amin Emin", "rock"),
+]
+
+
+def write_trim_csv(path: Path) -> Path:
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(COLUMNS)
+        for i, chords_field, genre in TRIM_ROWS:
+            w.writerow([i, chords_field, "", "", "", "", f"artist_{i}", genre, "", ""])
+    return path
+
+
+def trim_args(path: Path, out: Path, *extra: str) -> list[str]:
+    return ["--input", str(path), "--output", str(out), "--trim", "--top-n", "2",
+            "--top-n-unigram", "3", "--min-context-count", "5",
+            "--generated-at", "2026-10-20T00:00:00+00:00", *extra]
+
+
+def test_trim_is_deterministic(tmp_path: Path) -> None:
+    path = write_trim_csv(tmp_path / "s.csv")
+    a, b = tmp_path / "a.json", tmp_path / "b.json"
+    assert cb.main(trim_args(path, a)) == 0
+    assert cb.main(trim_args(path, b)) == 0
+    assert a.read_bytes() == b.read_bytes()
+    # Input row order does not change the output either.
+    (tmp_path / "rev").mkdir()
+    rev = tmp_path / "rev" / "s.csv"  # same file name: build.input records it
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    rev.write_text(lines[0] + "".join(reversed(lines[1:])), encoding="utf-8")
+    c = tmp_path / "c.json"
+    assert cb.main(trim_args(rev, c)) == 0
+    assert a.read_bytes() == c.read_bytes()
+
+
+def test_trim_rules(tmp_path: Path) -> None:
+    path = write_trim_csv(tmp_path / "s.csv")
+    full_modes, _ = cb.build(cb.iter_rows(path), cb.Options(max_context=4))
+    out = tmp_path / "t.json"
+    assert cb.main(trim_args(path, out)) == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["maxContext"] == 3
+    assert data["source"]["license"] == "CC BY-NC 4.0"
+    assert data["source"]["url"] == cb.SOURCE_URL
+    assert data["generatedAt"] == "2026-10-20T00:00:00+00:00"
+    assert data["build"]["date"] == "2026-10-20"
+    assert data["build"]["builder"].startswith("crokychords-data ")
+    assert data["build"]["input"] == "s.csv"
+    params = data["build"]["parameters"]
+    assert (params["maxContext"], params["topN"], params["topNUnigram"], params["minContextCount"]) == (3, 2, 3, 5)
+
+    major = data["modes"]["major"]
+    full = full_modes["major"]["ngrams"]
+    ngrams = major["ngrams"]
+    assert len(ngrams[""]) == 3
+    for ctx, row in ngrams.items():
+        if not ctx:
+            continue
+        assert len(ctx.split(",")) <= 3  # depth
+        assert len(row) <= 2  # top-N
+        assert sum(full[ctx].values()) >= 5  # minimum context count (untrimmed total)
+        # Top-N keeps the most frequent followers, ties by token.
+        expected = sorted(full[ctx].items(), key=lambda kv: (-kv[1], kv[0]))[:2]
+        assert list(row.items()) == expected
+        # Suffix invariant: backoff always finds a shorter row.
+        parts = ctx.split(",")
+        assert ",".join(parts[1:]) in ngrams
+    dropped = [c for c, r in full.items() if c and len(c.split(",")) <= 3 and sum(r.values()) < 5]
+    assert dropped and not any(c in ngrams for c in dropped)
+    assert ngrams["I,V"] == {"vi": 20}
+    # Vocabulary: only tokens that occur in a kept row.
+    used = {t for ctx, row in ngrams.items() for t in [*row, *(ctx.split(",") if ctx else [])]}
+    assert set(major["chords"]) == used
+    assert set(major["chords"]) < set(full_modes["major"]["chords"])  # rare tokens left out
+
+
+def test_generated_at_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert cb.resolve_generated_at("2026-10-20T12:00:00") == "2026-10-20T12:00:00+00:00"
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+    assert cb.resolve_generated_at(None) == "1970-01-01T00:00:00+00:00"
