@@ -1,12 +1,29 @@
 /**
  * Web Audio poly synth for the built-in instruments (piano, pad, bass, lead) and the drum kit. The
  * current sound preset picks the instrument per track role; every track gets its own gain bus
- * into the master bus (mix → gentle compressor → master gain). Graph construction lives in
+ * into the master bus (mix → gentle compressor → master gain → limiter / soft clip / bypass →
+ * volume). Graph construction lives in
  * `graph.ts` and works on an injected `SynthContext`.
  */
 import type { TrackRole } from '@crokychords/core';
-import type { BufferLike, GainLike, MasterBus, SourceLike, SynthContext } from './graph';
-import { buildDrum, buildMasterBus, buildVoice, noiseBuffer } from './graph';
+import type { MasterState } from '../persist';
+import { MasterSettings, defaultMaster } from '../persist';
+import type {
+  BufferLike,
+  GainLike,
+  MasterBus,
+  MasterMode,
+  SourceLike,
+  SynthContext,
+} from './graph';
+import {
+  buildDrum,
+  buildMasterBus,
+  buildVoice,
+  noiseBuffer,
+  setMasterMode,
+  setMasterVolume,
+} from './graph';
 import type { Drum, Instrument, SoundPresetId } from './instruments';
 import { DEFAULT_SOUND_PRESET, instrumentFor, leadFor } from './instruments';
 import type { SoundStorage } from './sound';
@@ -54,11 +71,32 @@ export class Synth {
   #voices = new Set<Voice>();
   #noise: BufferLike | null = null;
 
-  /** `preset` is read on every note, so a preset change applies to the next note. */
-  constructor(ctx: SynthContext, preset: () => SoundPresetId = () => DEFAULT_SOUND_PRESET) {
+  /**
+   * `preset` is read on every note, so a preset change applies to the next note; `master` is
+   * the initial master mode and volume (later changes through `setMasterMode`/`setMasterVolume`).
+   */
+  constructor(
+    ctx: SynthContext,
+    preset: () => SoundPresetId = () => DEFAULT_SOUND_PRESET,
+    master: MasterState = defaultMaster(),
+  ) {
     this.#ctx = ctx;
     this.#preset = preset;
-    this.#master = buildMasterBus(ctx);
+    this.#master = buildMasterBus(ctx, master.mode, master.volume);
+  }
+
+  /** Current master protection mode. */
+  get masterMode(): MasterMode {
+    return this.#master.mode;
+  }
+
+  setMasterMode(mode: MasterMode): void {
+    setMasterMode(this.#master, mode);
+  }
+
+  /** Master volume in percent (0–100, unity at 80). */
+  setMasterVolume(percent: number): void {
+    setMasterVolume(this.#master, percent, this.#ctx.currentTime);
   }
 
   /** Number of voices not yet finished (for tests and debugging). */
@@ -188,12 +226,19 @@ export class Synth {
 export class AudioEngine {
   /** Sound preset and drum pattern; read live by the synth and the scheduler. */
   readonly sound: SoundSettings;
+  /** Master mode and volume; applied live to the synth. */
+  readonly master: MasterSettings;
   #ctx: AudioContext | null = null;
   #synth: Synth | null = null;
 
   /** `storage` keeps the sound settings across reloads (localStorage in the app). */
   constructor(storage: SoundStorage | null = null) {
     this.sound = new SoundSettings(storage);
+    this.master = new MasterSettings(storage);
+    this.master.subscribe((state) => {
+      this.#synth?.setMasterMode(state.mode);
+      this.#synth?.setMasterVolume(state.volume);
+    });
   }
 
   get context(): AudioContext | null {
@@ -214,7 +259,7 @@ export class AudioEngine {
     if (typeof AudioContext === 'undefined') return false;
     if (this.#ctx === null) {
       this.#ctx = new AudioContext({ latencyHint: 'interactive' });
-      this.#synth = new Synth(this.#ctx, () => this.sound.preset);
+      this.#synth = new Synth(this.#ctx, () => this.sound.preset, this.master.state);
     }
     if (this.#ctx.state === 'suspended') {
       try {

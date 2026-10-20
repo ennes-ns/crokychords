@@ -111,11 +111,13 @@ describe('sound presets', () => {
 });
 
 describe('graph construction (fake context)', () => {
-  it('master bus: mix → gentle compressor → master gain → destination', () => {
+  it('master bus: mix → gentle compressor → master gain → volume → destination', () => {
     const ctx = new FakeContext();
     const bus = buildMasterBus(ctx);
-    expect(ctx.route(bus.input)).toEqual(['gain', 'compressor', 'gain', 'destination']);
-    expect(ctx.of(FakeGain).map((g) => g.gain.value)).toEqual([MIX_GAIN, MASTER_GAIN]);
+    expect(ctx.route(bus.input)).toEqual(['gain', 'compressor', 'gain', 'gain', 'destination']);
+    expect(bus.input.gain.value).toBe(MIX_GAIN);
+    expect(bus.output.gain.value).toBe(MASTER_GAIN);
+    expect(bus.volume.gain.value).toBe(1);
     const [comp] = ctx.of(FakeCompressor);
     expect(comp?.ratio.value).toBe(COMPRESSOR.ratio);
     expect(comp?.ratio.value).toBeLessThanOrEqual(4);
@@ -216,11 +218,18 @@ describe('Synth (fake context)', () => {
       'gain', // mix
       'compressor',
       'gain', // master
+      'gain', // volume
       'destination',
     ]);
     const kick = ctx.of(FakeOscillator)[3];
     if (kick === undefined) throw new Error('no kick');
-    expect(ctx.route(kick).slice(-4)).toEqual(['gain', 'compressor', 'gain', 'destination']);
+    expect(ctx.route(kick).slice(-5)).toEqual([
+      'gain',
+      'compressor',
+      'gain',
+      'gain',
+      'destination',
+    ]);
     expect(synth.voiceCount).toBe(3);
     expect(DRUM_BUS).toBe('drums');
   });

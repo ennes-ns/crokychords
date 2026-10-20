@@ -74,8 +74,12 @@ changed on its own. Not part of undo/redo.
 
 ```
 voice → (lowpass) → voice gain → track bus ┐
-drum voice → drum bus ─────────────────────┼→ mix (MIX_GAIN) → compressor → master (MASTER_GAIN) → destination
+drum voice → drum bus ─────────────────────┼→ mix (MIX_GAIN) → compressor → master (MASTER_GAIN) ┐
+                                                         ┌──────────────────────────────────┘
+                                                         └→ [bypass | limiter → ceiling | soft clip] → volume → destination
 ```
+
+The part after the master gain is the **master section** (§ "Master" below).
 
 - Gentle compressor: threshold −18 dB, knee 12 dB, ratio 3, attack 10 ms, release 250 ms.
 - Levels are chosen so that a full band (chords, bass, arp and pad unmuted, four-note chords,
@@ -87,6 +91,35 @@ drum voice → drum bus ──────────────────�
   uses), so jsdom tests run it against a small fake that records nodes, connections and
   parameter automation. `AudioEngine` creates the real `AudioContext` only on a user gesture;
   the existing "Click anywhere to enable audio" overlay stays.
+
+## Master
+
+A protection stage and a volume control at the very end of the chain, so louder material
+(more tracks, harder drum patterns) cannot hurt ears or speakers.
+
+- `audio/graph.ts`: `master (MASTER_GAIN) → [bypass | limiter | soft clip] → volume → destination`.
+  The three stages are built once; switching the mode only rewires the master gain's output
+  (`setMasterMode`), so `off` is the master gain connected straight to the volume, the same
+  topology as before the master section existed.
+  - **Limiter:** `DynamicsCompressorNode` with threshold −3 dB, knee 0, ratio 20, attack 1 ms,
+    release 100 ms, followed by a −0.3 dB ceiling gain.
+  - **Soft clip:** `WaveShaperNode` with a `tanh(drive × x)` curve (2049 points over
+    −1…1, drive 1.0), oversample `2x`. Its output never exceeds ±tanh(1) ≈ 0.76.
+- **Mode:** `off` (default) | `limiter` | `softclip`.
+- **Volume:** 0–100 %, default 80 %. Gain `(percent / 80)²`: 0 % is silent, the default 80 % is
+  unity (the level the headroom budget above is computed for), 100 % is ≈ +3.9 dB. Changes
+  glide with a 20 ms time constant.
+- Both are local listening settings, never part of the song, undo or MIDI: `MasterSettings` in
+  `persist.ts`, saved in `localStorage` as `crokychords.master` (`{ mode, volume }`; invalid
+  fields fall back to the defaults one by one). `AudioEngine` owns them and applies changes to
+  the running synth.
+- UI: a compact **master row** in the Band panel under the Sound row: a volume slider with its
+  percentage and a **Protect** select (Off, Limiter, Soft clip). Mouse only: `-`/`=` already
+  change the octave in the melody lane (#52), so no global keys are bound.
+- Tests run offline (no sound): routing per mode against the fake context, and sample-level
+  models of both stages: a +6 dB sine through the limiter (static curve, the node's automatic
+  make-up gain, ceiling) stays below 0 dBFS; through the soft clip it never exceeds ±1 and the
+  curve is monotonic; `off` at the default volume is bit-identical to the input.
 
 ## 5. Playback, preview and UI
 
@@ -109,5 +142,7 @@ drum voice → drum bus ──────────────────�
 instrument and per drum against the fake context (node types, routing to the master bus,
 envelope automation), the master bus chain, the headroom bound, `drumHits` per pattern
 (4/4, 3/4, ranges crossing bars), scheduler drum scheduling (timing, loop, pattern change,
-sinks without `playDrum`), sound settings persistence and the Band panel Sound row.
+sinks without `playDrum`), sound settings persistence and the Band panel Sound row; the
+master section (routing per mode, offline limiter and soft-clip models, volume taper, settings
+persistence, master row).
 `apps/web/README.md` describes the presets and drums.

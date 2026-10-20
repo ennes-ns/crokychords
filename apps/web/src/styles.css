@@ -761,6 +761,23 @@ button.icon.danger:hover:not(:disabled) {
   margin: 0;
 }
 
+.band-master {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: var(--font-size-sm);
+}
+
+.band-master .band-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 220px;
+  max-width: 100%;
+}
+
 /* Toolbar channel map */
 
 .channel-map {

@@ -17,6 +17,8 @@ export interface ParamLike {
 
 export interface NodeLike {
   connect(destination: NodeLike): unknown;
+  /** Remove every outgoing connection (used to switch the master mode). */
+  disconnect(): unknown;
 }
 
 export interface GainLike extends NodeLike {
@@ -56,6 +58,11 @@ export interface CompressorLike extends NodeLike {
   readonly release: ParamLike;
 }
 
+export interface WaveShaperLike extends NodeLike {
+  curve: Float32Array | null;
+  oversample: OverSampleType;
+}
+
 /** What the synth needs from an AudioContext; a real `AudioContext` satisfies it. */
 export interface SynthContext {
   readonly currentTime: number;
@@ -65,6 +72,7 @@ export interface SynthContext {
   createOscillator(): OscillatorLike;
   createBiquadFilter(): FilterLike;
   createDynamicsCompressor(): CompressorLike;
+  createWaveShaper(): WaveShaperLike;
   createBuffer(channels: number, length: number, sampleRate: number): BufferLike;
   createBufferSource(): BufferSourceLike;
 }
@@ -81,15 +89,88 @@ export const COMPRESSOR = {
   release: 0.25,
 } as const;
 
+/** Output protection after the master gain: none, a brick-wall-ish limiter or a tanh soft clip. */
+export type MasterMode = 'off' | 'limiter' | 'softclip';
+export const MASTER_MODES: readonly MasterMode[] = ['off', 'limiter', 'softclip'];
+export const MASTER_MODE_LABELS: Readonly<Record<MasterMode, string>> = {
+  off: 'Off',
+  limiter: 'Limiter',
+  softclip: 'Soft clip',
+};
+
+export function isMasterMode(value: unknown): value is MasterMode {
+  return value === 'off' || value === 'limiter' || value === 'softclip';
+}
+
+/** Limiter: a hard `DynamicsCompressorNode` followed by a −0.3 dB ceiling gain. */
+export const LIMITER = {
+  threshold: -3,
+  knee: 0,
+  ratio: 20,
+  attack: 0.001,
+  release: 0.1,
+  /** Gain after the compressor (dB). */
+  ceiling: -0.3,
+} as const;
+
+/** Soft clip: a `WaveShaperNode` with a tanh curve. */
+export const SOFTCLIP = { drive: 1, oversample: '2x', points: 2049 } as const satisfies {
+  drive: number;
+  oversample: OverSampleType;
+  points: number;
+};
+
+/** Master volume in percent: range and default (80 % plays at unity gain). */
+export const VOLUME_DEFAULT = 80;
+/** Time constant (seconds) of volume changes, so dragging the slider does not zipper. */
+const VOLUME_SMOOTHING = 0.02;
+
+export function dbToGain(db: number): number {
+  return 10 ** (db / 20);
+}
+
+/**
+ * Gain of the master volume for `percent` (clamped to 0–100): a squared taper with unity at the
+ * default 80 %, so the default keeps the level of the headroom budget and 100 % adds ≈ +3.9 dB.
+ */
+export function volumeGain(percent: number): number {
+  const p = Math.min(100, Math.max(0, Number.isFinite(percent) ? percent : VOLUME_DEFAULT));
+  return (p / VOLUME_DEFAULT) ** 2;
+}
+
+/** The soft-clip transfer curve: `tanh(drive × x)` sampled at `points` over x ∈ [−1, 1]. */
+export function softClipCurve(drive: number = SOFTCLIP.drive, points: number = SOFTCLIP.points) {
+  const n = Math.max(2, Math.floor(points));
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) curve[i] = Math.tanh(drive * ((i * 2) / (n - 1) - 1));
+  return curve;
+}
+
 export interface MasterBus {
   /** Where track and drum buses connect. */
   input: GainLike;
   compressor: CompressorLike;
+  /** Master gain (MASTER_GAIN): the sum that feeds the protection stage. */
   output: GainLike;
+  limiter: CompressorLike;
+  /** −0.3 dB ceiling after the limiter. */
+  ceiling: GainLike;
+  softclip: WaveShaperLike;
+  /** User volume, the last node before the destination. */
+  volume: GainLike;
+  /** Current protection mode. */
+  mode: MasterMode;
 }
 
-/** mix (MIX_GAIN) → gentle compressor → master (MASTER_GAIN) → destination. */
-export function buildMasterBus(ctx: SynthContext): MasterBus {
+/**
+ * mix (MIX_GAIN) → gentle compressor → master (MASTER_GAIN) → [bypass | limiter → ceiling |
+ * soft clip] → volume → destination. Starts in `mode` (default off) at `percent` volume.
+ */
+export function buildMasterBus(
+  ctx: SynthContext,
+  mode: MasterMode = 'off',
+  percent: number = VOLUME_DEFAULT,
+): MasterBus {
   const input = ctx.createGain();
   input.gain.value = MIX_GAIN;
   const compressor = ctx.createDynamicsCompressor();
@@ -102,8 +183,51 @@ export function buildMasterBus(ctx: SynthContext): MasterBus {
   output.gain.value = MASTER_GAIN;
   input.connect(compressor);
   compressor.connect(output);
-  output.connect(ctx.destination);
-  return { input, compressor, output };
+
+  const volume = ctx.createGain();
+  volume.gain.value = volumeGain(percent);
+  volume.connect(ctx.destination);
+
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = LIMITER.threshold;
+  limiter.knee.value = LIMITER.knee;
+  limiter.ratio.value = LIMITER.ratio;
+  limiter.attack.value = LIMITER.attack;
+  limiter.release.value = LIMITER.release;
+  const ceiling = ctx.createGain();
+  ceiling.gain.value = dbToGain(LIMITER.ceiling);
+  limiter.connect(ceiling);
+  ceiling.connect(volume);
+
+  const softclip = ctx.createWaveShaper();
+  softclip.curve = softClipCurve();
+  softclip.oversample = SOFTCLIP.oversample;
+  softclip.connect(volume);
+
+  const bus: MasterBus = { input, compressor, output, limiter, ceiling, softclip, volume, mode };
+  connectMode(bus, mode);
+  return bus;
+}
+
+function connectMode(bus: MasterBus, mode: MasterMode): void {
+  bus.output.connect(
+    mode === 'limiter' ? bus.limiter : mode === 'softclip' ? bus.softclip : bus.volume,
+  );
+  bus.mode = mode;
+}
+
+/** Switch the protection stage; `off` connects the master gain straight to the volume. */
+export function setMasterMode(bus: MasterBus, mode: MasterMode): void {
+  if (mode === bus.mode) return;
+  bus.output.disconnect();
+  connectMode(bus, mode);
+}
+
+/** Glide the master volume to `percent` from `time`. */
+export function setMasterVolume(bus: MasterBus, percent: number, time: number): void {
+  const g = bus.volume.gain;
+  g.cancelScheduledValues(time);
+  g.setTargetAtTime(volumeGain(percent), time, VOLUME_SMOOTHING);
 }
 
 /** A sounding voice: its envelope gain and the sources to stop. */

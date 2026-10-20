@@ -12,6 +12,7 @@ import type {
   OscillatorLike,
   ParamLike,
   SynthContext,
+  WaveShaperLike,
 } from '../src/audio/graph';
 
 export interface ParamCall {
@@ -56,6 +57,9 @@ export class FakeNode implements NodeLike {
   connect(destination: NodeLike): NodeLike {
     this.outputs.push(destination);
     return destination;
+  }
+  disconnect(): void {
+    this.outputs.length = 0;
   }
 }
 
@@ -113,6 +117,14 @@ export class FakeCompressor extends FakeNode implements CompressorLike {
   }
 }
 
+export class FakeWaveShaper extends FakeNode implements WaveShaperLike {
+  curve: Float32Array | null = null;
+  oversample: OverSampleType = 'none';
+  constructor() {
+    super('waveshaper');
+  }
+}
+
 export class FakeContext implements SynthContext {
   currentTime = 0;
   readonly sampleRate = 100;
@@ -135,6 +147,9 @@ export class FakeContext implements SynthContext {
   }
   createDynamicsCompressor(): FakeCompressor {
     return this.#add(new FakeCompressor());
+  }
+  createWaveShaper(): FakeWaveShaper {
+    return this.#add(new FakeWaveShaper());
   }
   createBuffer(_channels: number, length: number): BufferLike {
     this.buffers++;

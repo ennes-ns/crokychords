@@ -163,6 +163,14 @@ with the current preset. The sound settings are a listening preference: they are
 `localStorage` (`crokychords.sound`), are not part of undo, and change nothing about Web MIDI
 out or the exported `.mid` file (drums are never sent or exported).
 
+### Master volume and protection
+
+The **master row** under the Sound row sets the output volume (0–100 %, default 80 %, which
+plays at the normal level; 100 % is about +4 dB) and an optional protection stage at the very
+end of the chain: **Off** (default), **Limiter** (holds peaks under −0.3 dBFS) or **Soft clip**
+(tanh saturation, never above full scale). Both are saved locally (`crokychords.master`), never
+in the song or MIDI. Volume is mouse only.
+
 ## Sending MIDI to a DAW
 
 Click **Enable MIDI out** in the toolbar, then pick an output port. Every track sends on its own
