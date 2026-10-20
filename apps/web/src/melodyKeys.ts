@@ -36,7 +36,7 @@ export function melodyKeyAction(e: KeyLike, focus: Focus): MelodyKeyAction | nul
   if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') {
     return { type: 'octave', delta: -1 };
   }
-  // Shift+digit stays with the chord lane (replace the selected chord).
+  // Shift+digit stays with the chord lane (insert after the selected chord).
   if (e.shiftKey) {
     if (e.key === 'ArrowLeft') return { type: 'move', delta: -1 };
     if (e.key === 'ArrowRight') return { type: 'move', delta: 1 };

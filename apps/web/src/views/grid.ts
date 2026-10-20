@@ -1,6 +1,6 @@
 /**
- * Chord grid: rows of bars, chord blocks spanning their beats, selection, add/remove/resize, and
- * the loop range (shaded; set by clicking or dragging the bar numbers).
+ * Chord grid: rows of bars, chord blocks spanning their beats, the "+" slot after the last chord,
+ * selection, resize, and the loop range (shaded; set by clicking or dragging the bar numbers).
  */
 import type { Song } from '@crokychords/core';
 import { chordAtBeat, isRestToken, songKey, totalBeats } from '@crokychords/core';
@@ -8,8 +8,9 @@ import type { Actions } from '../actions';
 import { h, replaceChildren } from '../dom';
 import type { LoopRange } from '../loop';
 import { barRange, extendRange, spanBars } from '../loop';
-import { MIN_BEATS, barLength, chordStarts, setChordBeats } from '../edit';
+import { MIN_BEATS, barLength, chordStarts, insertLength, setChordBeats } from '../edit';
 import { colorDegree, degreeHue, tokenName } from '../music';
+import { TAB_SLOTS_ATTR } from '../shortcuts';
 import type { AppState, Store } from '../state';
 
 export const BARS_PER_ROW = 4;
@@ -148,6 +149,29 @@ export function loopSegments(range: LoopRange, layout: GridLayout): LoopSegment[
   return segments;
 }
 
+export interface PlusSlot {
+  row: number;
+  /** Left edge and width as fractions of the row. */
+  left: number;
+  width: number;
+}
+
+/**
+ * Where the "+" slot sits: right after the last chord, as long as the chord a pick would append
+ * there (the last chord's length, or `insertLength` in an empty song), cut at the row's end.
+ */
+export function plusSlot(song: Song, layout: GridLayout): PlusSlot {
+  const start = totalBeats(song);
+  const length = song.chords.at(-1)?.beats ?? insertLength(song, start);
+  const { row, fraction } = beatToRowPosition(start, layout);
+  const rowEnd = (row + 1) * layout.rowBeats;
+  return {
+    row,
+    left: fraction,
+    width: (Math.min(start + length, rowEnd) - start) / layout.rowBeats,
+  };
+}
+
 function pct(fraction: number): string {
   return `${(fraction * 100).toFixed(4)}%`;
 }
@@ -155,6 +179,9 @@ function pct(fraction: number): string {
 export function mountGrid(root: HTMLElement, store: Store, actions: Actions): void {
   root.classList.add('grid');
   root.setAttribute('aria-label', 'Chord grid');
+  // Focusable so Tab / Shift+Tab can walk the chord slots (see bindShortcuts).
+  root.tabIndex = 0;
+  root.setAttribute(TAB_SLOTS_ATTR, '');
   const playhead = h('div', { class: 'playhead', attrs: { 'aria-hidden': 'true' } });
   let tracks: HTMLElement[] = [];
   let barLabels: HTMLElement[] = [];
@@ -239,9 +266,14 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
       if (chord !== undefined && !store.state.playing) actions.audition(chord.token);
       return;
     }
+    // The "+" slot, or empty space after the last chord: select the "+" slot (the next pick adds).
+    if (event.target instanceof Element && event.target.closest('.plus-slot') !== null) {
+      actions.select(null);
+      return;
+    }
     const rect = track.getBoundingClientRect();
     const beat = xToBeat(row, event.clientX - rect.left, rect.width, layout);
-    if (beat >= totalBeats(store.state.song)) actions.appendDefault();
+    if (beat >= totalBeats(store.state.song)) actions.select(null);
   };
 
   const renderBlocks = (state: AppState, playingIndex: number | null): void => {
@@ -323,12 +355,31 @@ export function mountGrid(root: HTMLElement, store: Store, actions: Actions): vo
       track.append(block);
     }
 
+    const plus = plusSlot(song, layout);
+    const plusSelected = selected === null;
+    tracks[plus.row]?.append(
+      h(
+        'div',
+        {
+          class: plusSelected ? 'plus-slot selected' : 'plus-slot',
+          style: { left: pct(plus.left), width: pct(plus.width) },
+          attrs: {
+            role: 'button',
+            'aria-pressed': String(plusSelected),
+            'aria-label': 'Add a chord at the end',
+            title: 'Select, then pick a suggestion or press 1–7 to add a chord',
+          },
+        },
+        '+',
+      ),
+    );
+
     if (song.chords.length === 0) {
       tracks[0]?.append(
         h(
           'div',
-          { class: 'empty-hint' },
-          'Click here, press 1–7, or pick a suggested chord to start.',
+          { class: 'empty-hint', style: { left: pct(plus.width) } },
+          'Press 1–7 or pick a suggested chord to start.',
         ),
       );
     }

@@ -118,10 +118,10 @@ v2). Variant B's layout is reused for the melody lane in v2 (NOTE mode).
 
 | Gesture | Effect |
 |---|---|
-| Tap a chord | select it and audition it; tap again to deselect |
-| Tap a palette pad | insert that chord after the selection (or at the end), select it; length = 4 beats or the rest of the bar (editor rule) |
-| SHIFT + palette pad | replace the selected chord's token (keep length) |
-| Tap the append slot or any empty beat after the end | append the top suggestion |
+| Tap a chord | select it and audition it; tap again to go back to the "+" slot (no chord selected) |
+| Tap a palette pad | replace the selected chord's token (keep length); on the "+" slot append that chord (editor rule, `web-v1.md` §3) |
+| SHIFT + palette pad | insert that chord after the selected chord and select it |
+| Tap the append slot or any empty beat after the end | append the top suggestion (the "+" slot stays selected) |
 | Hold a chord + tap a later pad | the chord ends on that beat (resize in one gesture) |
 | ALT + tap a chord | remove it |
 
@@ -141,7 +141,7 @@ v2). Variant B's layout is reused for the melody lane in v2 (NOTE mode).
 | Control | Plain | With SHIFT |
 |---|---|---|
 | SELECT turn | move the suggestion cursor (row 4 + panel highlight) | move the chord selection |
-| SELECT press | insert the suggestion under the cursor | audition it only |
+| SELECT press | pick the suggestion under the cursor (replace the selected chord; append on the "+" slot) | audition it only |
 | VOLUME | selected chord length ±1 beat | ±¼ beat |
 | PAN | inversion (root, /1, /2, /3) | — |
 | FILTER | extension/quality variant of the selected chord (triad → 7 → maj7/ø7 … → sus2 → sus4 → add9), only canonical tokens the chord editor offers (v2) | applied chord V/x (v2) |

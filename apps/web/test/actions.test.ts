@@ -36,60 +36,96 @@ function setup(
 describe('actions', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('adds diatonic triads with 1–7 after the selection', () => {
-    const { store, actions, tokensOf } = setup([], 'minor');
-    for (const degree of [1, 6, 3, 7] as const) actions.key({ type: 'degree', degree });
-    expect(tokensOf()).toEqual(['i', 'VI', 'III', 'VII']);
-    expect(store.state.selected).toBe(3);
-    actions.key({ type: 'move', delta: -2 });
-    actions.key({ type: 'degree', degree: 4 });
-    expect(tokensOf()).toEqual(['i', 'VI', 'iv', 'III', 'VII']);
+  it('typing 1 5 6 4 on the "+" slot of an empty song builds four chords', () => {
+    const { store, actions, tokensOf } = setup();
+    expect(store.state.selected).toBeNull(); // the "+" slot
+    for (const degree of [1, 5, 6, 4] as const) actions.key({ type: 'degree', degree });
+    expect(tokensOf()).toEqual(['I', 'V', 'vi', 'IV']);
+    expect(store.state.selected).toBeNull();
+    // Each pick is its own undo step.
+    actions.undo();
+    expect(tokensOf()).toEqual(['I', 'V', 'vi']);
   });
 
-  it('replaces the selected chord, keeping its length and position; undo restores it', () => {
+  it('a pick on a selected chord replaces it, keeping its length and position; undo restores it', () => {
     const { store, actions, tokensOf } = setup(['I', 'V', 'vi']);
     actions.select(1);
     actions.resizeSelected(-1);
     const before = store.state.song;
-    actions.replaceSelected('IV');
+    actions.place('IV');
     expect(tokensOf()).toEqual(['I', 'IV', 'vi']);
     expect(store.state.song.chords.map((c) => c.beats)).toEqual([4, 3, 4]);
     expect(store.state.selected).toBe(1);
+    actions.key({ type: 'degree', degree: 2 });
+    expect(tokensOf()).toEqual(['I', 'ii', 'vi']);
+    expect(store.state.song.chords).toHaveLength(3);
+    actions.undo();
     actions.undo();
     expect(store.state.song).toBe(before);
     actions.redo();
     expect(tokensOf()).toEqual(['I', 'IV', 'vi']);
   });
 
-  it('inserts instead of replacing when nothing is selected', () => {
-    const { store, actions, tokensOf } = setup(['I']);
-    actions.replaceSelected('V');
-    expect(tokensOf()).toEqual(['I', 'V']);
-    expect(store.state.selected).toBe(1);
+  it('a pick on the "+" slot appends with the previous length and keeps the "+" slot', () => {
+    const { store, actions, tokensOf } = setup(['I', 'V']);
+    actions.select(1);
+    actions.resizeSelected(-2);
+    actions.select(null);
+    actions.place('vi');
+    expect(tokensOf()).toEqual(['I', 'V', 'vi']);
+    expect(store.state.song.chords.map((c) => c.beats)).toEqual([4, 2, 2]);
+    expect(store.state.selected).toBeNull();
   });
 
-  it('places by mode: insert, replace, or forced replace (Shift+click)', () => {
+  it('Shift inserts after the selected chord instead and selects the new chord', () => {
+    const { store, actions, tokensOf } = setup(['i', 'iv'], 'minor');
+    actions.select(0);
+    actions.key({ type: 'degree', degree: 6, insert: true });
+    expect(tokensOf()).toEqual(['i', 'VI', 'iv']);
+    expect(store.state.selected).toBe(1);
+    actions.place('III', true);
+    expect(tokensOf()).toEqual(['i', 'VI', 'III', 'iv']);
+    expect(store.state.selected).toBe(2);
+  });
+
+  it('Insert adds a copy of the selected chord after it and selects it', () => {
     const { store, actions, tokensOf } = setup(['I', 'V']);
     actions.select(0);
-    actions.place('ii');
-    expect(tokensOf()).toEqual(['I', 'ii', 'V']);
-    actions.place('IV', true);
-    expect(tokensOf()).toEqual(['I', 'IV', 'V']);
-    actions.setPlaceMode('replace');
-    expect(store.state.placeMode).toBe('replace');
-    actions.place('vi');
-    expect(tokensOf()).toEqual(['I', 'vi', 'V']);
-  });
-
-  it('replaces with a diatonic triad via Shift+1–7', () => {
-    const { store, actions, tokensOf } = setup(['i', 'iv'], 'minor');
-    actions.select(1);
-    actions.key({ type: 'replaceDegree', degree: 6 });
-    expect(tokensOf()).toEqual(['i', 'VI']);
+    actions.key({ type: 'insertSlot' });
+    expect(tokensOf()).toEqual(['I', 'I', 'V']);
     expect(store.state.selected).toBe(1);
+    actions.place('IV'); // the next pick replaces the copy
+    expect(tokensOf()).toEqual(['I', 'IV', 'V']);
+    actions.select(null);
+    actions.key({ type: 'insertSlot' }); // on the "+" slot: a copy of the last chord
+    expect(tokensOf()).toEqual(['I', 'IV', 'V', 'V']);
+    expect(store.state.selected).toBe(3);
   });
 
-  it('removes, resizes, deselects, undoes and redoes', () => {
+  it('Insert in an empty song adds the tonic triad', () => {
+    const { store, actions, tokensOf } = setup([], 'minor');
+    actions.insertSlot();
+    expect(tokensOf()).toEqual(['i']);
+    expect(store.state.selected).toBe(0);
+  });
+
+  it('arrows and Enter walk the slots, including the "+" slot', () => {
+    const { store, actions } = setup(['I', 'V']);
+    actions.key({ type: 'move', delta: 1 }); // already on "+"
+    expect(store.state.selected).toBeNull();
+    actions.key({ type: 'move', delta: -1 });
+    expect(store.state.selected).toBe(1);
+    actions.key({ type: 'move', delta: -5 });
+    expect(store.state.selected).toBe(0);
+    actions.key({ type: 'move', delta: 1 });
+    actions.key({ type: 'move', delta: 1 }); // past the last chord
+    expect(store.state.selected).toBeNull();
+    actions.select(0);
+    actions.key({ type: 'endSlot' });
+    expect(store.state.selected).toBeNull();
+  });
+
+  it('removes, resizes, undoes and redoes; Backspace on "+" removes the last chord', () => {
     const { store, actions, tokensOf } = setup(['I', 'V', 'vi']);
     actions.select(1);
     actions.key({ type: 'resize', delta: -1 });
@@ -101,14 +137,18 @@ describe('actions', () => {
     expect(tokensOf()).toEqual(['I', 'V', 'vi']);
     actions.key({ type: 'redo' });
     expect(tokensOf()).toEqual(['I', 'vi']);
-    actions.key({ type: 'deselect' });
+    actions.key({ type: 'endSlot' });
+    actions.key({ type: 'remove' });
+    expect(tokensOf()).toEqual(['I']);
     expect(store.state.selected).toBeNull();
   });
 
-  it('appends the top suggestion on empty-space clicks', () => {
-    const { actions, tokensOf } = setup(['I', 'V']);
+  it('appends the top suggestion (Fire append slot)', () => {
+    const { store, actions, tokensOf } = setup(['I', 'V']);
+    actions.select(0);
     actions.appendDefault();
     expect(tokensOf()).toEqual(['I', 'V', 'vi']); // seed: I, V → vi
+    expect(store.state.selected).toBeNull();
   });
 
   it('starts a new song in the same key, undoably', () => {

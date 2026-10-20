@@ -66,8 +66,8 @@ export class SuggestionCache {
   #items: SuggestionItem[] = [];
 
   get(state: AppState): SuggestionItem[] {
-    const { song, selected, suggestMode, diatonicOnly, table, ngrams, placeMode } = state;
-    const key = [song, selected, suggestMode, diatonicOnly, table, ngrams, placeMode];
+    const { song, selected, suggestMode, diatonicOnly, table, ngrams } = state;
+    const key = [song, selected, suggestMode, diatonicOnly, table, ngrams];
     if (key.some((v, i) => v !== this.#key[i])) {
       this.#key = key;
       this.#items = computeSuggestions(state).items;
@@ -136,7 +136,8 @@ export class FireController {
     const state = this.#store.state;
     const token = paletteToken(state, this.suggestions(state), col);
     if (token === null) return;
-    // Follows the Next chord panel's Insert/Replace toggle; SHIFT always replaces.
+    // Same rule as the Next chord panel: replace the selected chord, add on the "+" slot (no
+    // selection); SHIFT inserts after the selected chord instead.
     this.#actions.place(token, this.#shift);
     this.#setFire({ cursor: 0 });
     this.#audition(token);

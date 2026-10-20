@@ -135,8 +135,8 @@ Mouse:
 
 Only active while `focus === 'melody'`, except `N`. Everything the chord grid uses that is not in
 this table keeps working in both lanes: `Space`/`Shift+Space`, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`,
-`Ctrl+Y`, `M`, `L` and `Alt+[`/`Alt+]` (loop),
-and `Shift+1`…`Shift+7` / Shift+click (replace the selected chord, issue #44).
+`Ctrl+Y`, `M`, `L` and `Alt+[`/`Alt+]` (loop), `Enter`, `Insert`/`Ctrl+Enter`,
+and `Shift+1`…`Shift+7` / Shift+click (insert after the selected chord, `web-v1.md` §3).
 
 | Key | Melody lane |
 |-----|-------------|

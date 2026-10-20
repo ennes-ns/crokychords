@@ -16,44 +16,58 @@ const song = (tokens: string[], mode: 'major' | 'minor' | 'dorian' = 'major') =>
   createSong({ key: { tonic: 'C', mode }, chords: tokens.map((token) => ({ token, beats: 4 })) });
 
 describe('suggestionContext', () => {
-  it('uses the whole song (rests removed) when nothing is selected', () => {
+  it('uses the whole song (rests removed) on the "+" slot', () => {
     expect(suggestionContext(song(['I', 'rest', 'V', 'vi']), null)).toEqual(['I', 'V', 'vi']);
-  });
-
-  it('uses the chords up to and including the selection (the insertion point)', () => {
-    expect(suggestionContext(song(['I', 'V', 'vi', 'IV']), 1)).toEqual(['I', 'V']);
-    expect(suggestionContext(song(['I', 'rest', 'V']), 1)).toEqual(['I']);
     expect(suggestionContext(song([]), null)).toEqual([]);
   });
 
-  it('leaves the selected chord out when replacing it', () => {
-    expect(suggestionContext(song(['I', 'V', 'vi']), 1, 'replace')).toEqual(['I']);
-    expect(suggestionContext(song(['I', 'V']), 0, 'replace')).toEqual([]);
-    expect(suggestionContext(song(['I', 'V']), null, 'replace')).toEqual(['I', 'V']);
+  it('uses the chords before the selected chord (what its replacement follows)', () => {
+    expect(suggestionContext(song(['I', 'V', 'vi', 'IV']), 2)).toEqual(['I', 'V']);
+    expect(suggestionContext(song(['I', 'rest', 'V']), 2)).toEqual(['I']);
+    expect(suggestionContext(song(['I', 'V']), 0)).toEqual([]);
   });
 });
 
 describe('mountSuggest', () => {
-  it('toggles Insert/Replace, shows the mode, and Shift+click replaces', () => {
+  it('click replaces the selected chord, Shift+click inserts, and the hint says which', () => {
     const store = new Store(initialState(song(['I', 'V'])));
     const actions = createActions(store, new AudioEngine(), new MidiOut(null));
-    actions.select(0);
     const root = document.createElement('div');
     mountSuggest(root, store, actions);
-    const segs = [...root.querySelectorAll<HTMLButtonElement>('button.seg')];
-    const replace = segs.find((b) => b.textContent === 'Replace');
+    // No Insert | Replace toggle any more: only In context | Popular.
+    const segs = [...root.querySelectorAll('button.seg')].map((b) => b.textContent);
+    expect(segs).toEqual(['In context', 'Popular']);
     const hint = () => root.querySelector('.hint')?.textContent ?? '';
-    expect(hint()).toContain('Insert mode');
-
     const first = () => root.querySelector<HTMLButtonElement>('button.suggestion');
-    const token = first()?.querySelector('.token')?.textContent;
-    first()?.dispatchEvent(new MouseEvent('click', { shiftKey: true }));
-    expect(store.state.song.chords.map((c) => c.token)).toEqual([token, 'V']);
+    const tokenOf = () => first()?.querySelector('.token')?.textContent ?? '';
+    const tokens = () => store.state.song.chords.map((c) => c.token);
 
-    replace?.click();
-    expect(store.state.placeMode).toBe('replace');
-    expect(replace?.getAttribute('aria-pressed')).toBe('true');
-    expect(hint()).toContain('Replace mode');
+    expect(hint()).toContain('adds a chord at the end');
+    actions.select(1);
+    expect(hint()).toContain('replaces chord 2 (V)');
+    const replacement = tokenOf();
+    first()?.click();
+    expect(tokens()).toEqual(['I', replacement]);
+
+    actions.select(0);
+    const inserted = tokenOf();
+    first()?.dispatchEvent(new MouseEvent('click', { shiftKey: true }));
+    expect(tokens()).toEqual(['I', inserted, replacement]);
+    expect(store.state.selected).toBe(1);
+  });
+
+  it('suggestions follow the selected slot', () => {
+    const store = new Store(initialState(song(['I', 'IV', 'V'])));
+    const actions = createActions(store, new AudioEngine(), new MidiOut(null));
+    const root = document.createElement('div');
+    mountSuggest(root, store, actions);
+    const label = () => root.querySelector('.context')?.textContent ?? '';
+    const onlyI = { ...store.state, song: song(['I']), selected: null };
+    actions.select(1);
+    expect(label()).toBe(computeSuggestions(onlyI).contextLabel);
+    expect(computeSuggestions({ ...store.state, selected: 1 }).items).toEqual(
+      computeSuggestions(onlyI).items,
+    );
   });
 });
 

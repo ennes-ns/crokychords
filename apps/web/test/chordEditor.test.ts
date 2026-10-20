@@ -111,13 +111,10 @@ function noopActions(): Actions {
   const noop = () => undefined;
   return {
     select: noop,
-    insert: noop,
-    replaceSelected: noop,
     place: noop,
-    setPlaceMode: noop,
+    placeDegree: noop,
+    insertSlot: noop,
     appendDefault: noop,
-    addDegree: noop,
-    replaceDegree: noop,
     removeSelected: noop,
     resizeSelected: noop,
     setSelectedToken: noop,

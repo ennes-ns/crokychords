@@ -68,10 +68,13 @@ export function insertChordAt(
   return { song: withChords(song, chords), selected: at };
 }
 
-/** Insert after the selected chord, or append when nothing is selected. */
+/**
+ * Insert after the selected chord, or append on the "+" slot (`selected` null). The new chord
+ * takes the length of the chord before it; the first chord of a song gets `insertLength`.
+ */
 export function insertAfter(song: Song, selected: number | null, token: string): EditResult {
-  const index = selected === null ? song.chords.length : selected + 1;
-  return insertChordAt(song, index, token);
+  const index = selected === null ? song.chords.length : Math.min(selected + 1, song.chords.length);
+  return insertChordAt(song, index, token, song.chords[index - 1]?.beats);
 }
 
 /** Remove a chord; the selection moves to the previous chord (or the new first one). */
@@ -107,15 +110,19 @@ export function setChordToken(song: Song, index: number, token: string): Song {
   return withChords(song, chords);
 }
 
-/** Move the selection by `delta` chords; with no selection → selects the first/last chord. */
+/**
+ * Move the selection by `delta` slots. The slots are the chords plus the "+" slot after the last
+ * one (`null`): moving right past the last chord selects it, moving left from it selects the last
+ * chord.
+ */
 export function moveSelection(
   selected: number | null,
   delta: number,
   count: number,
 ): number | null {
-  if (count === 0) return null;
-  if (selected === null) return delta > 0 ? 0 : count - 1;
-  return Math.max(0, Math.min(count - 1, selected + delta));
+  const slot = selected === null ? count : Math.min(selected, count);
+  const next = Math.max(0, Math.min(count, slot + delta));
+  return next >= count ? null : next;
 }
 
 /** Clamp a selection after the song changed (undo, redo, load). */

@@ -46,27 +46,25 @@ describe('Fire gestures', () => {
     expect(store.state.selected).toBeNull();
   });
 
-  it('a palette pad inserts after the selection (or appends) and selects it', () => {
+  it('a palette pad replaces the selected chord, keeping its length', () => {
     const { store, send, tokensOf } = setup(['I', 'V']);
-    send(...tap(3, 3)); // IV, nothing selected: append
-    expect(tokensOf()).toEqual(['I:4', 'V:4', 'IV:4']);
-    expect(store.state.selected).toBe(2);
-    send(...tap(0, 0), ...tap(3, 1)); // select I, insert ii after it
-    expect(tokensOf()).toEqual(['I:4', 'ii:4', 'V:4', 'IV:4']);
+    send(...tap(0, 4), ...tap(3, 5)); // select V, vi replaces it
+    expect(tokensOf()).toEqual(['I:4', 'vi:4']);
     expect(store.state.selected).toBe(1);
   });
 
-  it('SHIFT + palette pad replaces the selected chord, keeping its length', () => {
-    const { send, tokensOf } = setup(['I', 'V']);
-    send(...tap(0, 4), btn(BTN_SHIFT), ...tap(3, 5), btn(BTN_SHIFT, false));
-    expect(tokensOf()).toEqual(['I:4', 'vi:4']);
+  it('a palette pad on the "+" slot (no chord selected) appends and stays there', () => {
+    const { store, send, tokensOf } = setup(['I', 'V']);
+    send(...tap(3, 3), ...tap(3, 0)); // IV, then I
+    expect(tokensOf()).toEqual(['I:4', 'V:4', 'IV:4', 'I:4']);
+    expect(store.state.selected).toBeNull();
   });
 
-  it("palette pads follow the panel's Replace mode", () => {
+  it('SHIFT + palette pad inserts after the selected chord and selects it', () => {
     const { store, send, tokensOf } = setup(['I', 'V']);
-    store.set({ placeMode: 'replace' });
-    send(...tap(0, 4), ...tap(3, 3));
-    expect(tokensOf()).toEqual(['I:4', 'IV:4']);
+    send(...tap(0, 0), btn(BTN_SHIFT), ...tap(3, 1), btn(BTN_SHIFT, false));
+    expect(tokensOf()).toEqual(['I:4', 'ii:4', 'V:4']);
+    expect(store.state.selected).toBe(1);
   });
 
   it('ALT + tap removes a chord', () => {
@@ -90,7 +88,7 @@ describe('Fire gestures', () => {
     const { store, send } = setup(['I']);
     send(...tap(1, 0));
     expect(store.state.song.chords).toHaveLength(2);
-    expect(store.state.selected).toBe(1);
+    expect(store.state.selected).toBeNull();
   });
 
   it('SELECT turns move the suggestion cursor; press inserts that suggestion', () => {

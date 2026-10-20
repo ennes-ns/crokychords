@@ -58,28 +58,47 @@ change (debounced 250 ms), load on boot, "New" resets. Undo/redo on `song` only.
 
 ## 3. Grid
 
+Replace-first editing (issue #53; supersedes the Insert | Replace toggle): the editor is for
+exploring variations of a progression, so picking a chord **replaces** the selected one and adding
+is a separate, explicit action.
+
 - Rows of bars; bar width scales with meter; chords rendered as blocks spanning `beats`.
-- Click empty space at a beat → adds the selected suggestion or `I` with 4 beats (or the
-  remaining space in the bar, whichever is smaller). Keyboard `1`–`7` adds the diatonic
-  triad of that degree after the selection; `Shift+1`–`7` replaces the selected chord with it
-  (same length and position). `Backspace` removes the
-  selected chord. `[` / `]` shorten/lengthen by one beat, `Shift+[`/`]` by a quarter beat.
-  `←`/`→` move selection, `Space` play/stop, `Esc` deselect.
+- **Selection model:** there is always one selected slot: a chord, or the **"+" slot**, a visible
+  dashed block right after the last chord (`AppState.selected === null`). It is as wide as the
+  chord a pick would add there, cut at the row end. Clicking a chord selects it; clicking the "+"
+  slot or empty space after the last chord, `→`/`Tab` past the last chord, `Enter` and `Esc`
+  select the "+" slot. `←`/`→` (and `Tab`/`Shift+Tab` while the grid has focus) walk the slots;
+  at either end Tab moves the focus on as usual, so the grid is no keyboard trap. Opening a song
+  and a new song start on the "+" slot.
+- **Pick = replace:** a Next chord click or `1`–`7` (the diatonic triad of that degree) replaces
+  the selected chord's token (length and position kept). On the "+" slot the same actions append
+  a chord (length = the previous chord's length; the first chord of a song gets 4 beats or the
+  rest of the bar) and the "+" slot stays selected, so `1 5 6 4` on an empty song builds four
+  chords.
+- **Explicit add:** `Insert` or `Ctrl/Cmd+Enter` inserts a copy of the selected chord after it and
+  selects the copy, so the next pick replaces it (on the "+" slot: a copy of the last chord, or
+  the tonic triad in an empty song). `Shift` turns a pick into an insert after the selected chord
+  (`Shift+1`–`7`, Shift+click), which selects the new chord; on the "+" slot it appends as usual.
+- `Backspace`/`Delete` removes the selected chord (the selection moves to the previous one); on
+  the "+" slot it removes the last chord. `[` / `]` shorten/lengthen by one beat,
+  `Shift+[`/`]` by a quarter beat. `Space` play/stop.
+- Every edit is one undo step.
 - Each block shows the token (e.g. `IV`) and the lead-sheet name (e.g. `F`) from `chordName`.
 - Color per degree (7 fixed hues, same for all qualities), lighter when selected.
 - Playhead line during playback; `chordAtBeat` drives highlighting.
 
 ## 4. Next chord panel
 
-- Context = tokens before the selection (or all tokens when nothing is selected),
-  `suggestNext(table, mode, context, { limit: 16 })`.
+- Suggestions follow the selection: the context is the tokens **before** the selected slot (all
+  tokens on the "+" slot), so a chord selected in the middle shows what fits there.
+  `suggestNext(table, mode, context, { limit: 16 })`. When the table later supports it, the
+  chord after the slot can be taken into account too.
 - Show token, lead-sheet name, percentage, and a thin bar; header says which context was
   used ("after IV, I" / "any position" for the unigram row).
-- Click → insert after the selection (4 beats or remaining bar). An **Insert | Replace** toggle
-  sets the click action; Shift+click always replaces the selected chord (token only: length and
-  position stay). The hint line names the active mode; in Replace mode the context excludes the
-  selected chord. With nothing selected, Replace falls back to insert. Hover → audition the chord
-  for 600 ms through the synth (and MIDI out if enabled).
+- Click → replace the selected chord, or add on the "+" slot (§3); Shift+click inserts after the
+  selected chord instead. The hint line under the list says what a click does ("Click replaces
+  chord 2 (V)…" / "Click adds a chord at the end…"). Hover → audition the chord for 600 ms
+  through the synth (and MIDI out if enabled).
 - Toggle "Popular" (unigram) vs "In context" (context); toggle "diatonic only" filter.
 
 ## 5. Chord editor
