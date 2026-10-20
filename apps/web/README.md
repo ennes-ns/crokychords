@@ -12,7 +12,7 @@ pnpm install                            # once, at the repo root
 pnpm dev                                # http://localhost:5173
 pnpm --filter @crokychords/web build    # → apps/web/dist
 pnpm --filter @crokychords/web preview  # serve the build on :4173
-pnpm --filter @crokychords/web test     # vitest + jsdom
+pnpm --filter @crokychords/web test     # vitest + jsdom (audio tests render offline, silently)
 ```
 
 The song is saved in `localStorage` (`crokychords.song`) on every change; **New** starts an
@@ -149,8 +149,12 @@ instrument for every track role:
 | **Band** (default) | piano | bass | piano | pad | piano | straight |
 | Pad | pad | bass | piano | pad | pad | none |
 
-- **Piano:** fast attack, decays naturally even while held, brighter at the start of a note;
-  low notes ring longer.
+- **Piano:** three slightly detuned sines on the fundamental plus slightly stretched
+  (inharmonic) partials, a short hammer-noise click, a fast first decay into a long tail (low
+  notes ring longer, brighter low notes, duller high notes), harder notes louder and brighter, a
+  short damper on release. Notes are panned by pitch (low left, high right) and share a small
+  room. At most 24 piano voices sound at once; the oldest is cut short first. The Band preset
+  uses a slightly darker, drier piano (`brightness`, `room` per preset).
 - **Pad:** two detuned saws with a slow attack, behind a lowpass that opens slowly.
 - **Bass:** plucked, filtered triangle with a sub sine an octave down.
 - **Drums:** synthesised kick, snare and hi-hat. The **Drums** select picks a pattern (None,
@@ -162,6 +166,13 @@ band does not clip. Hovering a suggestion or moving through the chords plays the
 with the current preset. The sound settings are a listening preference: they are saved in
 `localStorage` (`crokychords.sound`), are not part of undo, and change nothing about Web MIDI
 out or the exported `.mid` file (drums are never sent or exported).
+
+To listen to the piano without opening the app, render I–V–vi–IV offline to a WAV file (nothing
+is played while rendering):
+
+```bash
+PIANO_WAV=/tmp/piano.wav pnpm --filter @crokychords/web exec vitest run test/pianoOffline.test.ts
+```
 
 ### Master volume and protection
 

@@ -5,6 +5,7 @@ import {
   DRUM_DECAY,
   MASTER_GAIN,
   MIX_GAIN,
+  ROOM,
   buildDrum,
   buildMasterBus,
   buildVoice,
@@ -22,8 +23,11 @@ import {
   leadFor,
   midiToFrequency,
   noteAmplitude,
-  noteDecay,
+  notePan,
   notePeak,
+  noteTail,
+  panGain,
+  pianoPartials,
   soundPreset,
 } from '../src/audio/instruments';
 import { planSong } from '../src/audio/scheduler';
@@ -47,13 +51,55 @@ describe('midiToFrequency', () => {
 });
 
 describe('instruments', () => {
-  it('piano: short attack, decays to silence, low notes ring longer', () => {
+  it('piano: short attack, two-stage decay to silence, low notes ring longer', () => {
     const p = INSTRUMENTS.piano;
     expect(p.attack).toBeLessThan(0.01);
     expect(p.sustain).toBe(0);
     expect(p.filter?.env?.from).toBeGreaterThan(1);
-    expect(noteDecay(p, midiToFrequency(36))).toBeGreaterThan(noteDecay(p, midiToFrequency(84)));
-    expect(noteDecay(p, midiToFrequency(0))).toBeCloseTo(p.decay * 2);
+    expect(p.decay).toBeCloseTo(0.3);
+    expect(p.release).toBeCloseTo(0.08);
+    expect(p.voices).toBe(24);
+    const tail = p.tail;
+    if (tail === undefined) throw new Error('no tail');
+    expect(noteTail(tail, midiToFrequency(36))).toBeGreaterThan(
+      noteTail(tail, midiToFrequency(84)),
+    );
+    expect(noteTail(tail, midiToFrequency(0))).toBe(6);
+    expect(noteTail(tail, midiToFrequency(127))).toBe(2);
+    // Unison of three sines within ±3 cents.
+    expect(p.oscillators.map((o) => o.type)).toEqual(['sine', 'sine', 'sine']);
+    for (const o of p.oscillators) expect(Math.abs(o.detune)).toBeLessThanOrEqual(3);
+    expect(p.piano?.partials.map((x) => x.ratio)).toEqual([2.0, 3.01, 4.03, 5.08]);
+  });
+
+  it('piano: partials fall with partial number and with pitch, pan follows pitch', () => {
+    const spec = INSTRUMENTS.piano.piano;
+    if (spec === undefined) throw new Error('no piano spec');
+    const low = pianoPartials(spec, midiToFrequency(36)).map((p) => p.level);
+    const high = pianoPartials(spec, midiToFrequency(84)).map((p) => p.level);
+    for (let i = 1; i < low.length; i++) {
+      expect(low[i]).toBeLessThan(low[i - 1] ?? 0);
+      expect(high[i]).toBeLessThan(high[i - 1] ?? 0);
+    }
+    for (const [i, level] of low.entries()) expect(level).toBeGreaterThan(high[i] ?? Infinity);
+    expect(notePan(spec, 36)).toBeCloseTo(-0.3);
+    expect(notePan(spec, 60)).toBeCloseTo(0);
+    expect(notePan(spec, 108)).toBeCloseTo(0.3);
+    expect(panGain(0)).toBeCloseTo(Math.SQRT1_2);
+    expect(panGain(1)).toBeCloseTo(1);
+  });
+
+  it('envelopeAt mirrors the two-stage decay', () => {
+    const p = INSTRUMENTS.piano;
+    const f = midiToFrequency(60);
+    const tail = p.tail;
+    if (tail === undefined) throw new Error('no tail');
+    const knee = envelopeAt(p, f, p.attack + p.decay, 10);
+    expect(knee).toBeCloseTo(tail.level + (1 - tail.level) * Math.exp(-3));
+    const tau = noteTail(tail, f) / 3;
+    expect(envelopeAt(p, f, p.attack + p.decay + tau, 10)).toBeCloseTo(knee / Math.E);
+    // Released: the damper takes it down within a fraction of a second.
+    expect(envelopeAt(p, f, 1 + p.release * 2, 1)).toBeLessThan(0.01);
   });
 
   it('pad: slow attack, lowpass that opens, long release', () => {
@@ -93,7 +139,13 @@ describe('sound presets', () => {
       }
     }
     expect(instrumentFor('piano', 'bass')).toBe(INSTRUMENTS.piano);
-    expect(instrumentFor('band', 'chords')).toBe(INSTRUMENTS.piano);
+    // Band tunes its piano a little darker and drier; the same object every time.
+    expect(instrumentFor('band', 'chords')).toEqual({
+      ...INSTRUMENTS.piano,
+      brightness: 0.8,
+      room: 0.6,
+    });
+    expect(instrumentFor('band', 'chords')).toBe(instrumentFor('band', 'arp'));
     expect(instrumentFor('band', 'bass')).toBe(INSTRUMENTS.bass);
     expect(instrumentFor('band', 'pad')).toBe(INSTRUMENTS.pad);
     expect(instrumentFor('pad', 'chords')).toBe(INSTRUMENTS.pad);
@@ -124,31 +176,34 @@ describe('graph construction (fake context)', () => {
     expect(comp?.threshold.value).toBe(COMPRESSOR.threshold);
   });
 
-  it.each(INSTRUMENT_IDS)('%s voice: oscillators → lowpass → envelope → out', (id) => {
-    const ctx = new FakeContext();
-    const out = new FakeNode('out');
-    const inst = INSTRUMENTS[id];
-    const voice = buildVoice(ctx, inst, 60, 127, 1, out);
-    const oscs = ctx.of(FakeOscillator);
-    expect(oscs.map((o) => o.type)).toEqual(inst.oscillators.map((o) => o.type));
-    expect(oscs.map((o) => o.starts)).toEqual(inst.oscillators.map(() => [1]));
-    expect(oscs.map((o) => o.frequency.value)).toEqual(
-      inst.oscillators.map((o) => midiToFrequency(60) * 2 ** o.octave),
-    );
-    const [first] = oscs;
-    if (first === undefined) throw new Error('no oscillator');
-    expect(ctx.route(first)).toEqual(['oscillator', 'gain', 'filter', 'gain', 'out']);
-    expect(ctx.of(FakeFilter)[0]?.type).toBe('lowpass');
-    expect(voice.sources).toHaveLength(inst.oscillators.length);
-    expect(voice.gain).toBeInstanceOf(FakeGain);
-    const calls = voice.gain instanceof FakeGain ? voice.gain.gain.calls : [];
-    const [set, attack, decay] = calls;
-    expect(set).toMatchObject({ method: 'set', value: 0, time: 1 });
-    expect(attack).toMatchObject({ method: 'linear', time: 1 + inst.attack });
-    expect(attack?.value).toBeCloseTo(notePeak(inst, 127));
-    expect(decay).toMatchObject({ method: 'target', time: 1 + inst.attack });
-    expect(decay?.value).toBeCloseTo(notePeak(inst, 127) * inst.sustain);
-  });
+  it.each(INSTRUMENT_IDS.filter((id) => id !== 'piano'))(
+    '%s voice: oscillators → lowpass → envelope → out',
+    (id) => {
+      const ctx = new FakeContext();
+      const out = new FakeNode('out');
+      const inst = INSTRUMENTS[id];
+      const voice = buildVoice(ctx, inst, 60, 127, 1, out);
+      const oscs = ctx.of(FakeOscillator);
+      expect(oscs.map((o) => o.type)).toEqual(inst.oscillators.map((o) => o.type));
+      expect(oscs.map((o) => o.starts)).toEqual(inst.oscillators.map(() => [1]));
+      expect(oscs.map((o) => o.frequency.value)).toEqual(
+        inst.oscillators.map((o) => midiToFrequency(60) * 2 ** o.octave),
+      );
+      const [first] = oscs;
+      if (first === undefined) throw new Error('no oscillator');
+      expect(ctx.route(first)).toEqual(['oscillator', 'gain', 'filter', 'gain', 'out']);
+      expect(ctx.of(FakeFilter)[0]?.type).toBe('lowpass');
+      expect(voice.sources).toHaveLength(inst.oscillators.length);
+      expect(voice.gain).toBeInstanceOf(FakeGain);
+      const calls = voice.gain instanceof FakeGain ? voice.gain.gain.calls : [];
+      const [set, attack, decay] = calls;
+      expect(set).toMatchObject({ method: 'set', value: 0, time: 1 });
+      expect(attack).toMatchObject({ method: 'linear', time: 1 + inst.attack });
+      expect(attack?.value).toBeCloseTo(notePeak(inst, 127));
+      expect(decay).toMatchObject({ method: 'target', time: 1 + inst.attack });
+      expect(decay?.value).toBeCloseTo(notePeak(inst, 127) * inst.sustain);
+    },
+  );
 
   it('filter envelope starts away from the cutoff and settles on it', () => {
     const ctx = new FakeContext();
@@ -206,7 +261,7 @@ describe('Synth (fake context)', () => {
     synth.playNote(60, 0, 1, { role: 'chords', track: 't1' });
     synth.playDrum('kick', 1, 0);
     synth.playDrum('hat', 0.5, 0.25);
-    expect(ctx.buffers).toBe(1); // one noise buffer, shared
+    expect(ctx.buffers).toBe(2); // one noise buffer, shared, and the room impulse
     const [osc] = ctx.of(FakeOscillator);
     if (osc === undefined) throw new Error('no oscillator');
     expect(ctx.route(osc)).toEqual([
@@ -214,6 +269,7 @@ describe('Synth (fake context)', () => {
       'gain', // oscillator level
       'filter',
       'gain', // envelope
+      'panner',
       'gain', // track bus
       'gain', // mix
       'compressor',
@@ -221,7 +277,7 @@ describe('Synth (fake context)', () => {
       'gain', // volume
       'destination',
     ]);
-    const kick = ctx.of(FakeOscillator)[3];
+    const kick = ctx.of(FakeOscillator).at(-1); // the hat has no oscillator
     if (kick === undefined) throw new Error('no kick');
     expect(ctx.route(kick).slice(-5)).toEqual([
       'gain',
@@ -303,8 +359,11 @@ describe('headroom', () => {
               : instrumentFor(preset.id, roles.get(e.trackId) ?? 'chords');
           const at = t - e.start * spb;
           if (at <= 0) continue;
-          const env = envelopeAt(inst, midiToFrequency(e.note), at, e.duration * spb);
-          sum += noteAmplitude(inst, e.velocity) * env;
+          const f = midiToFrequency(e.note);
+          const env = envelopeAt(inst, f, at, e.duration * spb);
+          // The room send adds its wet share (an energy-normalised impulse) on top.
+          const wet = 1 + ROOM.maxWet * (inst.room ?? 0);
+          sum += noteAmplitude(inst, e.velocity, f) * env * wet;
         }
         for (const hit of hits) {
           const at = t - hit.beat * spb;
