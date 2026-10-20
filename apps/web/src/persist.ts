@@ -1,8 +1,9 @@
 import type { Song } from '@crokychords/core';
 import { deserializeSong, serializeSong } from '@crokychords/core';
-import type { Store } from './state';
 
+/** The legacy single-song key; migrated into the SaveStore once (store/session.ts). */
 export const STORAGE_KEY = 'crokychords.song';
+/** Autosave delay after the last change (used by the SaveSession). */
 export const SAVE_DEBOUNCE_MS = 250;
 
 export type SongStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -32,23 +33,6 @@ export function saveSong(storage: SongStorage | null, song: Song): void {
   } catch (e) {
     console.warn('Could not save the song:', e);
   }
-}
-
-/** Save the song on every change, debounced. Returns an unsubscribe function. */
-export function persistSongs(store: Store, storage: SongStorage | null): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const unsubscribe = store.subscribe((state, previous) => {
-    if (state.song === previous.song) return;
-    if (timer !== undefined) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = undefined;
-      saveSong(storage, store.state.song);
-    }, SAVE_DEBOUNCE_MS);
-  });
-  return () => {
-    unsubscribe();
-    if (timer !== undefined) clearTimeout(timer);
-  };
 }
 
 /** window.localStorage, or null when it is unavailable (privacy mode, sandboxed iframe). */

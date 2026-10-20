@@ -6,18 +6,25 @@ import { loadTables } from './data/tables';
 import { h, isEditableTarget } from './dom';
 import { keyAction } from './keyboard';
 import { MidiOut, browserMidiAccess } from './midi/webmidi';
-import { browserStorage, loadSong, persistSongs } from './persist';
+import { browserStorage } from './persist';
 import { Store, initialState } from './state';
+import { browserIndexedDb } from './store/indexedDb';
+import { browserLocalStorage, openSaveStore } from './store/open';
+import { SaveSession } from './store/session';
 import { mountBand } from './views/band';
 import { mountChordEditor } from './views/chordEditor';
 import { mountGrid } from './views/grid';
+import { mountSaves } from './views/saves';
 import { mountSuggest } from './views/suggest';
 import { mountToolbar } from './views/toolbar';
 
-function boot(app: HTMLElement): void {
+async function boot(app: HTMLElement): Promise<void> {
   const storage = browserStorage();
-  const store = new Store(initialState(loadSong(storage) ?? createSong()));
-  persistSongs(store, storage);
+  const store = new Store(initialState(createSong()));
+  const saves = await openSaveStore(browserIndexedDb(), browserLocalStorage());
+  const session = new SaveSession(store, { saves, storage });
+  await session.start();
+  window.addEventListener('pagehide', () => void session.flush());
 
   const audio = new AudioEngine(storage);
   const midi = new MidiOut(browserMidiAccess());
@@ -27,6 +34,7 @@ function boot(app: HTMLElement): void {
   const grid = h('section');
   const editor = h('section');
   const band = h('section');
+  const savesPanel = h('section');
   const suggest = h('aside');
   const overlay = h(
     'button',
@@ -35,7 +43,12 @@ function boot(app: HTMLElement): void {
   );
   app.append(
     toolbar,
-    h('main', { class: 'workspace' }, h('div', { class: 'left' }, grid, editor, band), suggest),
+    h(
+      'main',
+      { class: 'workspace' },
+      h('div', { class: 'left' }, grid, editor, band, savesPanel),
+      suggest,
+    ),
     overlay,
   );
   mountToolbar(toolbar, store, actions);
@@ -43,6 +56,7 @@ function boot(app: HTMLElement): void {
   mountChordEditor(editor, store, actions);
   mountBand(band, store, actions, storage, audio.sound);
   mountSuggest(suggest, store, actions);
+  mountSaves(savesPanel, session);
 
   // Browsers only start audio from a user gesture: the first click or key press does it.
   const unlock = (): void => {
@@ -73,4 +87,4 @@ function boot(app: HTMLElement): void {
 }
 
 const app = document.getElementById('app');
-if (app !== null) boot(app);
+if (app !== null) void boot(app);

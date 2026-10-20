@@ -6,15 +6,12 @@ import { MidiOut } from '../src/midi/webmidi';
 import type { SongStorage } from '../src/persist';
 import {
   BAND_OPEN_KEY,
-  SAVE_DEBOUNCE_MS,
   STORAGE_KEY,
   loadBandOpen,
   loadSong,
-  persistSongs,
   saveBandOpen,
   saveSong,
 } from '../src/persist';
-import { Store, initialState } from '../src/state';
 
 function memoryStorage(
   initial: Record<string, string> = {},
@@ -81,19 +78,6 @@ describe('persistence', () => {
     expect(loadBandOpen(storage)).toBe(true);
     expect(loadBandOpen(null)).toBe(true);
     expect(() => saveBandOpen(null, false)).not.toThrow();
-  });
-
-  it('saves on change, debounced', () => {
-    vi.useFakeTimers();
-    const storage = memoryStorage();
-    const store = new Store(initialState());
-    persistSongs(store, storage);
-    store.commit(createSong({ title: 'A' }));
-    store.commit(createSong({ title: 'B' }));
-    store.set({ cursor: 3 });
-    expect(storage.data[STORAGE_KEY]).toBeUndefined();
-    vi.advanceTimersByTime(SAVE_DEBOUNCE_MS);
-    expect(JSON.parse(storage.data[STORAGE_KEY] ?? '{}')).toMatchObject({ title: 'B' });
   });
 
   it('survives a storage that throws', () => {
