@@ -1838,6 +1838,173 @@ button.icon.danger:hover:not(:disabled) {
   font-size: var(--font-size-sm);
 }
 
+/* Assistant (docs/specs/assistant-v1.md §B1): a panel over the side column, so the stage keeps
+   its size. It sits in the same grid cell as the side column, after it in the DOM. */
+.workspace > .assistant {
+  grid-area: side;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  box-shadow: var(--overlay-shadow);
+}
+
+.workspace > .assistant[hidden] {
+  display: none;
+}
+
+.toolbar .assistant-toggle.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.assistant-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.assistant-head h2 {
+  margin: 0;
+}
+
+.assistant-close {
+  min-width: var(--control-height);
+}
+
+.assistant .assistant-status {
+  margin: 0;
+}
+
+.assistant-log {
+  flex: 1 1 auto;
+  min-height: 48px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.assistant-msg {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  line-height: var(--line-height);
+}
+
+.assistant-msg.user {
+  align-self: flex-end;
+  max-width: 90%;
+  background: var(--panel-2);
+  border: var(--border-w) solid var(--line);
+}
+
+.assistant-msg.assistant {
+  max-width: 90%;
+  border: var(--border-w) solid var(--line-strong);
+}
+
+.assistant-msg.note {
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  padding-block: 0;
+}
+
+.assistant-proposal {
+  flex: none;
+  max-height: 50%;
+  overflow-y: auto;
+  padding: 8px;
+  border: var(--border-w) solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.assistant-proposal[hidden] {
+  display: none;
+}
+
+.assistant-explanation {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.diff-chords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.diff-chip {
+  padding: 2px 6px;
+  border: var(--border-w) solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.diff-chip.same {
+  color: var(--muted);
+}
+
+.diff-chip.added {
+  color: var(--ok);
+  border-color: var(--ok);
+  font-weight: var(--weight-bold);
+}
+
+.diff-chip.replaced {
+  border-color: var(--accent);
+}
+
+.diff-chip.replaced b {
+  color: var(--accent);
+}
+
+.diff-chip.removed {
+  color: var(--danger);
+  border-style: dashed;
+}
+
+.diff-lines {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: var(--font-size-sm);
+}
+
+.assistant-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.assistant-form {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.assistant-input {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: var(--border-w) solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--control-pad);
+}
+
+.assistant-form button {
+  align-self: flex-end;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .break-toggle .glass {
     animation: none !important;

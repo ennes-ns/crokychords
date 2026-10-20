@@ -167,6 +167,11 @@ export interface Actions {
    * plays from the selected chord instead.
    */
   togglePlay(fromSelection?: boolean): void;
+  /**
+   * Play from song beat `beat` (default: the loop start when looping, else 0), restarting when
+   * already playing; true when playback runs (false for an empty song).
+   */
+  playFrom(beat?: number): Promise<boolean>;
   stop(): void;
   setLoop(loop: boolean): void;
   toggleLoop(): void;
@@ -492,6 +497,12 @@ export function createActions(
       else void play(fromSelection);
     },
 
+    async playFrom(beat) {
+      if (store.state.playing) actions.stop();
+      await play(false, beat);
+      return scheduler.playing;
+    },
+
     stop() {
       scheduler.stop();
       stopped();
@@ -770,14 +781,16 @@ export function createActions(
     return [...channels].sort((a, b) => a - b);
   }
 
-  async function play(fromSelection: boolean): Promise<void> {
+  async function play(fromSelection: boolean, at?: number): Promise<void> {
     await actions.startAudio();
     const { song, selected, loop, loopRange } = store.state;
     if (song.chords.length === 0) return;
     const fromBeat =
-      fromSelection && selected !== null
-        ? chordStart(song, selected)
-        : playStart(loop, loopRange, totalBeats(song));
+      at !== undefined
+        ? Math.min(at, totalBeats(song))
+        : fromSelection && selected !== null
+          ? chordStart(song, selected)
+          : playStart(loop, loopRange, totalBeats(song));
     scheduler.start(song, { fromBeat, loop, range: loopRange });
     if (!scheduler.playing) return;
     store.set({ playing: true, cursor: scheduler.position() ?? fromBeat });

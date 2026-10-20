@@ -56,6 +56,7 @@ font (Departure Mono, SIL OFL 1.1) is bundled in `public/fonts/` with its licenc
 | `Shift+K` | Breakcore intensity 25 → 50 → 75 → 100 % |
 | `Ctrl/Cmd+Z` | Undo (50 steps, song edits only, including track edits) |
 | `Ctrl/Cmd+Shift+Z`, `Ctrl+Y` | Redo |
+| `Ctrl/Cmd+K` | Open / close the assistant |
 
 Loop points: click a bar number to loop that bar, drag over the bar numbers to loop several,
 Shift+click a bar number to extend the loop to it. The range is shaded in the grid; the toolbar
@@ -77,6 +78,22 @@ click does. **In context** suggests from the chords before the selected slot (th
 "+" slot); **Popular** shows the most common chords of the mode. The chord editor
 below the grid changes degree, accidental, quality, extension, sus, adds, alterations, inversion
 and applied (secondary) function; only combinations with a valid token are offered.
+
+## Assistant and the command API
+
+The speech-bubble button in the toolbar (or `Ctrl/Cmd+K`) opens the **assistant** over the side
+column. Type a request ("make the second half darker", "suggest a bridge", "what is this
+progression called?"); the answer is one sentence plus a proposal shown as a diff: added chords
+marked `+`, replaced ones `old → new`, removed ones struck through, and a line for every other
+change (key, tempo, melody, band). **Apply** makes the whole proposal one undo step; **Discard**
+drops it. Nothing changes without a click. The assistant runs on the server (`POST
+/api/assistant`), so it only works in the online version with the server's key set; otherwise
+the panel says it is unavailable and the rest of the app is unaffected.
+
+The same edits are available to scripts and agents as `window.croky` (`getSong()`,
+`applyCommands([...])`, `suggestions()`, `exportMidi()`, ...). See
+[`docs/howto/agents.md`](../../docs/howto/agents.md) and
+[`docs/specs/assistant-v1.md`](../../docs/specs/assistant-v1.md).
 
 ## Melody lane
 
