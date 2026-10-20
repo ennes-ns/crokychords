@@ -36,6 +36,14 @@ as long as it is traced over `croky-art.svg`, not drawn from imagination.
 Export PNGs when a raster is needed (`node scratch/render-svg.cjs <svg> <png> <size>` in a
 session, or any SVG renderer); do not commit PNGs larger than needed.
 
+### README banner (`docs/readme/`)
+
+`banner.svg` is the source: the logomark on the left, the wordmark (weight 800, green "Croky",
+cream "Chords"), the tagline "Write chords. Hear what comes next." in blue, and a row of chord
+tokens. The wordmark's own tagline is `NEXT CHORD · PLAY · EXPORT`. Render `banner.png` (3200×880,
+2× of 1600×440) from the repository root with `node docs/readme/render-banner.mjs`, which inlines
+`croky-mark.svg` at the `<!-- @mark -->` placeholder and calls `rsvg-convert -z 2`.
+
 ## Palette (the "Pyrrhura" palette from `crokycraft-website/www/css/base.css`)
 
 | Token | Hex | Where it comes from / use |
