@@ -80,7 +80,7 @@ larger one from `apps/web/public/data/ngrams.json` when present.
 | `apps/web`      | Done for v1: grid editor, next-chord panel, instruments and presets, band panel, saved progressions, themes, `.mid` export, Web MIDI out. |
 | Brand           | Done: pixel banner, favicon and mark from one pixel master (`docs/readme/`, `tools/brand/`, `docs/BRAND.md`).  |
 | CI              | `pnpm check` and the data tests, both required on `main`.                                                     |
-| Online version  | Code complete (Worker API, sync client); deployment in preparation (`docs/specs/deploy-v1.md`).               |
+| Online version  | Live for invited users at `chords.cr0ky.com` (Cloudflare Worker, D1, R2, Access).                            |
 
 ## Repository
 

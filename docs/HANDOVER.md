@@ -15,7 +15,7 @@ collaboration process in `docs/WORKFLOW.md`.
 | Data            | `apps/web/public/data/default.json`: trimmed Chordonomicon table (333 KB), loaded by default; seed table as fallback.                                                       |
 | Brand           | Done: pixel banner (`docs/readme/`), favicon and toolbar mark from the pixel master (`tools/brand/`), `docs/BRAND.md`.                                                       |
 | CI              | `.github/workflows/ci.yml`: `pnpm check` and `data tests`, both required on `main`.                                                                                         |
-| Online version  | Code complete for v1; deployment pending: `docs/specs/deploy-v1.md` (runbook), hardening in progress (issue #29), CI deploy blocked on a token scope (issue #21).           |
+| Online version  | **Live** at `chords.cr0ky.com` behind Cloudflare Access (one-time PIN, invited e-mails). One Worker serves app + API; D1 + R2; CI deploy on merge to `main` (`DEPLOY_ENABLED`). Zone-level hardening (WAF, rate limit, Bot Fight Mode, fail-closed route) still to do in the dashboard. |
 
 `pnpm check` (lint, format, typecheck, tests, build) and `uv run pytest` are green on `main`.
 
@@ -59,6 +59,9 @@ collaboration process in `docs/WORKFLOW.md`.
   themes Default and Pixel; the pixel master is the single source for banner, favicon and mark.
 
 ## Changes
+
+- 2026-10-20 (night): first production deploy (runbook steps 1–8 done): D1 `crokychords`, R2 `crokychords-saves`,
+  Access application with an invited-emails policy, Worker secrets, custom domain, CI deploy enabled.
 
 - 2026-10-20 (evening): instruments and presets (#14), SaveStore + autosave + saved-progressions panel
   (#15), Worker API (#13) serving the static app (#22), sync client with conflicts, tombstones and
