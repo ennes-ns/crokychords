@@ -1854,6 +1854,10 @@ button.icon.danger:hover:not(:disabled) {
   display: none;
 }
 
+.toolbar .assistant-toggle[hidden] {
+  display: none;
+}
+
 .toolbar .assistant-toggle.active {
   color: var(--accent);
   border-color: var(--accent);

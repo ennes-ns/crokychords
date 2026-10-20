@@ -47,6 +47,10 @@ pnpm dev            # http://localhost:5173
 - **Assistant and command API.** Ask the built-in assistant for a change ("make the second half
   darker") and review it as a diff before applying it; scripts and agents use the same JSON
   commands through `window.croky` or the terminal app ([`docs/howto/agents.md`](docs/howto/agents.md)).
+  The assistant is hidden (no button, no Ctrl/Cmd+K) until it is switched on: with the API it
+  needs `ANTHROPIC_API_KEY` and the Worker var `ASSISTANT_ENABLED="true"` (default `"false"` in
+  `apps/api/wrangler.toml`); a build without the API shows it only with `VITE_ASSISTANT=on`. The
+  command API is always there.
 
 <details>
 <summary><b>How the suggestions work</b></summary>

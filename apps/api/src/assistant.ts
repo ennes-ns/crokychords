@@ -44,6 +44,8 @@ export interface AssistantEnv {
   DB: D1Database;
   /** Secret; without it the assistant is unavailable. */
   ANTHROPIC_API_KEY?: string;
+  /** "true" switches the assistant on; anything else (default "false") hides it in the app. */
+  ASSISTANT_ENABLED?: string;
   ASSISTANT_MODEL?: string;
   ASSISTANT_DAILY_BUDGET_USD?: string;
   ASSISTANT_USER_DAILY_REQUESTS?: string;
@@ -55,6 +57,8 @@ export interface AssistantEnv {
 }
 
 export interface AssistantConfig {
+  /** `ASSISTANT_ENABLED` is "true" and a key is set: the app may show the assistant. */
+  enabled: boolean;
   key: string | null;
   model: string;
   budgetMicroUsd: number;
@@ -73,6 +77,7 @@ export function assistantConfig(env: AssistantEnv): AssistantConfig {
   const key = (env.ANTHROPIC_API_KEY ?? '').trim();
   const model = (env.ASSISTANT_MODEL ?? '').trim();
   return {
+    enabled: (env.ASSISTANT_ENABLED ?? '').trim().toLowerCase() === 'true' && key !== '',
     key: key === '' ? null : key,
     model: model === '' ? DEFAULT_MODEL : model,
     budgetMicroUsd: Math.round(positive(env.ASSISTANT_DAILY_BUDGET_USD, 1) * 1e6),
@@ -338,7 +343,8 @@ export function registerAssistant(app: Hono<AppEnv>, deps: AssistantDeps): void 
     const now = deps.now();
     const spent = await usage.spentToday(now);
     return c.json({
-      available: config.key !== null && spent < config.budgetMicroUsd,
+      enabled: config.enabled,
+      available: config.enabled && spent < config.budgetMicroUsd,
       model: config.model,
       limits: { per_minute: config.perMinute, per_day: config.perDay },
       used_today: await usage.usedToday(c.get('user').id, now),
@@ -347,7 +353,7 @@ export function registerAssistant(app: Hono<AppEnv>, deps: AssistantDeps): void 
 
   app.post('/api/assistant', async (c) => {
     const config = assistantConfig(c.env);
-    if (config.key === null) {
+    if (config.key === null || !config.enabled) {
       throw new ApiError('assistant_unavailable', 'the assistant is not set up on this server');
     }
     const contentType = c.req.header('Content-Type') ?? '';

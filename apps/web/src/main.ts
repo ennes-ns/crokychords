@@ -1,7 +1,7 @@
 import './styles.css';
 import { createSong, songToMidi } from '@crokychords/core';
 import { createActions } from './actions';
-import { HttpAssistantClient, unavailableClient } from './assistant/client';
+import { HttpAssistantClient, assistantVisible, unavailableClient } from './assistant/client';
 import { createCroky } from './assistant/croky';
 import { bindAssistantKey, mountAssistant } from './assistant/panel';
 import { BreakcoreController, loadBreakcorePrefs } from './breakcore';
@@ -148,18 +148,21 @@ async function boot(app: HTMLElement): Promise<void> {
     'Click anywhere to enable audio',
   );
   app.append(overlay);
+  const assistantBackend = syncConfig(import.meta.env).enabled
+    ? new HttpAssistantClient({
+        baseUrl: syncConfig(import.meta.env).baseUrl,
+        fetch: (url, init) => fetch(url, init),
+        online: () => navigator.onLine,
+      })
+    : null;
   const assistant = mountAssistant({
     store,
     croky,
     env: commandEnv,
-    client: syncConfig(import.meta.env).enabled
-      ? new HttpAssistantClient({
-          baseUrl: syncConfig(import.meta.env).baseUrl,
-          fetch: (url, init) => fetch(url, init),
-          online: () => navigator.onLine,
-        })
-      : unavailableClient(),
+    client: assistantBackend ?? unavailableClient(),
   });
+  // Hidden entirely until enabled (issue #100); the command API stays regardless.
+  void assistantVisible(import.meta.env, assistantBackend).then(assistant.setEnabled);
   // Over the side column; the stage keeps its size (docs/specs/assistant-v1.md §B1).
   grid.closest('.workspace')?.append(assistant.element);
   bindAssistantKey(window, assistant);

@@ -60,6 +60,23 @@ export function unavailableClient(reason: string = NO_SERVER_REASON): AssistantC
   };
 }
 
+const ON = new Set(['on', 'true', '1']);
+
+/**
+ * Whether the app shows the assistant at all (issue #100). With the API (`VITE_SYNC=on`) the
+ * server decides: `GET /api/assistant` must say `enabled: true` (key set and
+ * `ASSISTANT_ENABLED="true"`). Without the API it stays hidden unless the build sets
+ * `VITE_ASSISTANT=on`. Any failure means hidden.
+ */
+export async function assistantVisible(
+  env: Record<string, unknown>,
+  backend: { enabled(): Promise<boolean> } | null,
+): Promise<boolean> {
+  if (backend !== null) return backend.enabled().catch(() => false);
+  const flag = env['VITE_ASSISTANT'];
+  return typeof flag === 'string' && ON.has(flag.trim().toLowerCase());
+}
+
 export interface HttpAssistantOptions {
   /** API base without a trailing slash, e.g. '/api'. */
   baseUrl: string;
@@ -101,6 +118,21 @@ export class HttpAssistantClient implements AssistantClient {
 
   get #offline(): boolean {
     return this.#options.online !== undefined && !this.#options.online();
+  }
+
+  /** `GET /assistant` says `enabled: true`; anything else (errors included) is false. */
+  async enabled(): Promise<boolean> {
+    try {
+      const response = await this.#options.fetch(`${this.#options.baseUrl}/assistant`, {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) return false;
+      const body: unknown = await response.json().catch(() => null);
+      return typeof body === 'object' && body !== null && Reflect.get(body, 'enabled') === true;
+    } catch {
+      return false;
+    }
   }
 
   async status(): Promise<AssistantStatus> {

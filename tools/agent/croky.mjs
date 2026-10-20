@@ -46,14 +46,21 @@ function parseArgs(argv) {
   return args;
 }
 
-/** Start `vite` for apps/web on a random port; resolves to `{ url, close() }`. */
-async function startVite() {
+/**
+ * Start `vite` for apps/web on a random port; resolves to `{ url, close() }`. `extraEnv` is passed
+ * to Vite (the check sets `VITE_ASSISTANT=on` so the hidden-by-default panel is exercised).
+ */
+async function startVite(extraEnv = {}) {
   const port = await randomPort(20000, 40000);
   const vite = join(WEB, 'node_modules', 'vite', 'bin', 'vite.js');
   const child = spawn(
     process.execPath,
     [vite, '--port', String(port), '--strictPort', '--host', '127.0.0.1', '--clearScreen', 'false'],
-    { cwd: WEB, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, BROWSER: 'none' } },
+    {
+      cwd: WEB,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: { ...process.env, ...extraEnv, BROWSER: 'none' },
+    },
   );
   let stderr = '';
   child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-4000)));
@@ -135,7 +142,7 @@ async function exportMidi(page, out) {
   return { fileName, bytes };
 }
 
-async function runCheck(page, out) {
+async function runCheck(page, out, expectAssistant) {
   const fresh = await apply(page, [{ op: 'newSong' }, { op: 'setTitle', title: 'Agent check' }]);
   check(fresh.ok, 'a new song');
 
@@ -197,24 +204,32 @@ async function runCheck(page, out) {
   check(smf.format === 1 && smf.tracks === 4, `format ${smf.format}, ${smf.tracks} tracks`);
   check(smf.names.includes('Melody'), `track names: ${smf.names.join(', ')}`);
 
+  // The assistant is hidden unless enabled (issue #100); on a server we started it must be on.
   const panel = await page.evaluate(`(async () => {
-    document.querySelector('.assistant-toggle').click();
+    const toggle = document.querySelector('.assistant-toggle');
+    if (toggle === null || toggle.hidden) return null;
+    toggle.click();
     await new Promise((r) => setTimeout(r, 100));
     const status = document.querySelector('.assistant-status').textContent;
     document.querySelector('.assistant-toggle').click();
     return status;
   })()`);
-  check(typeof panel === 'string' && panel.length > 0, `assistant panel: ${panel}`);
+  if (panel === null && !expectAssistant) {
+    check(true, 'assistant panel: hidden (not enabled on this server)');
+  } else {
+    check(typeof panel === 'string' && panel.length > 0, `assistant panel: ${panel}`);
+  }
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const server = args.url === null ? await startVite() : null;
+  const server =
+    args.url === null ? await startVite(args.check ? { VITE_ASSISTANT: 'on' } : {}) : null;
   const browser = await launchChromium();
   try {
     const { page, exceptions } = await openApp(browser, args.url ?? server.url);
     if (args.check) {
-      await runCheck(page, args.out);
+      await runCheck(page, args.out, server !== null);
       check(
         exceptions.length === 0,
         `no uncaught page errors${exceptions.length ? `: ${exceptions.join('; ')}` : ''}`,

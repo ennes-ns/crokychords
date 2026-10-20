@@ -21,7 +21,7 @@ function mockClient(answers: (AssistantAnswer | Error)[]) {
   return { client, questions };
 }
 
-function setup(client: AssistantClient) {
+function setup(client: AssistantClient, enabled = true) {
   const store = new Store(
     initialState(
       songFrom({
@@ -36,6 +36,7 @@ function setup(client: AssistantClient) {
   );
   const croky = createCroky(store, quietHost);
   const panel = mountAssistant({ store, croky, env: quietHost.env, client });
+  panel.setEnabled(enabled);
   document.body.append(panel.button, panel.element);
   const q = <T extends Element>(selector: string) => panel.element.querySelector<T>(selector);
   const tokens = () => store.state.song.chords.map((c) => c.token);
@@ -75,6 +76,27 @@ describe('assistant panel', () => {
     expect(document.activeElement).toBe(env.q('.assistant-input'));
     env.panel.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(env.panel.element.hidden).toBe(true);
+  });
+
+  it('stays hidden until enabled: no button, no panel, Ctrl/Cmd+K does nothing', () => {
+    const { client } = mockClient([]);
+    const env = setup(client, false);
+    const unbind = bindAssistantKey(window, env.panel);
+    expect(env.panel.button.hidden).toBe(true);
+    const key = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true });
+    window.dispatchEvent(key);
+    expect(key.defaultPrevented).toBe(false);
+    expect(env.panel.isOpen()).toBe(false);
+    env.panel.setOpen(true);
+    expect(env.panel.isOpen()).toBe(false);
+    env.panel.setEnabled(true);
+    expect(env.panel.button.hidden).toBe(false);
+    env.panel.setOpen(true);
+    expect(env.panel.isOpen()).toBe(true);
+    env.panel.setEnabled(false);
+    expect(env.panel.isOpen()).toBe(false);
+    expect(env.panel.button.hidden).toBe(true);
+    unbind();
   });
 
   it('Ctrl/Cmd+K toggles it', () => {
