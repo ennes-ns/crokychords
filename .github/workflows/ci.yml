@@ -52,6 +52,23 @@ jobs:
       - run: uv sync --frozen
       - run: uv run pytest -q
 
+  moderation:
+    name: moderation tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/moderation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/moderation/uv.lock
+      # The level tests decode generated WAVs with ffmpeg (no models needed here).
+      - run: command -v ffmpeg || (sudo apt-get update -q && sudo apt-get install -y -q ffmpeg)
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
   rust:
     name: rust check
     runs-on: ubuntu-latest

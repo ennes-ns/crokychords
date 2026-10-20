@@ -1,0 +1,106 @@
+# Automatic checks of pending community shares (docs/specs/moderation-v1.md §4). The job only
+# writes a recommendation (auto verdict) onto each pending share; it never lists, rejects or
+# deletes anything. The maintainer decides in /review.html.
+#
+# Inert until the repository variable MODERATION_ENABLED is "true". Setup: docs/specs/deploy-v1.md
+# §4 step 13 (Access service token, MODERATION_TOKEN, variables).
+name: Moderation
+
+on:
+  schedule:
+    # Every 15 minutes: check pending shares.
+    - cron: '*/15 * * * *'
+    # Daily digest on the moderation inbox issue.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      digest:
+        description: Post the digest instead of checking
+        type: boolean
+        default: false
+
+concurrency:
+  group: moderation-${{ github.event.schedule == '0 7 * * *' && 'digest' || 'check' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check pending shares
+    if: >-
+      vars.MODERATION_ENABLED == 'true' &&
+      (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * *' ||
+       github.event_name == 'workflow_dispatch' && !inputs.digest)
+    runs-on: ubuntu-latest
+    environment: moderation
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tools/moderation
+    env:
+      MODERATION_CACHE: ${{ github.workspace }}/.moderation-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/moderation/uv.lock
+      - name: ffmpeg
+        run: command -v ffmpeg || (sudo apt-get update -q && sudo apt-get install -y -q ffmpeg)
+      # The open models (Whisper small, YAMNet) are downloaded once and cached.
+      - uses: actions/cache@v4
+        with:
+          path: .moderation-cache
+          key: moderation-models-v1-${{ hashFiles('tools/moderation/uv.lock') }}
+          restore-keys: moderation-models-v1-
+      - run: uv sync --frozen --group models
+      - name: Model self-test (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        run: MODERATION_MODELS=1 uv run pytest -q tests/test_models.py
+      - name: Check pending shares
+        run: uv run python run.py
+        env:
+          MODERATION_API_BASE: ${{ vars.MODERATION_API_BASE }}
+          MODERATION_TOKEN: ${{ secrets.MODERATION_TOKEN }}
+          MODERATION_ACCESS_CLIENT_ID: ${{ secrets.MODERATION_ACCESS_CLIENT_ID }}
+          MODERATION_ACCESS_CLIENT_SECRET: ${{ secrets.MODERATION_ACCESS_CLIENT_SECRET }}
+
+  digest:
+    name: daily digest
+    if: >-
+      vars.MODERATION_ENABLED == 'true' && vars.MODERATION_INBOX_ISSUE != '' &&
+      (github.event_name == 'schedule' && github.event.schedule == '0 7 * * *' ||
+       github.event_name == 'workflow_dispatch' && inputs.digest)
+    runs-on: ubuntu-latest
+    environment: moderation
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    defaults:
+      run:
+        working-directory: tools/moderation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: tools/moderation/uv.lock
+      - run: uv sync --frozen
+      - name: Comment on the moderation inbox issue (counts only; nothing when the queue is empty)
+        run: |
+          uv run python run.py --digest > digest.md
+          if [ -s digest.md ]; then
+            gh issue comment "$MODERATION_INBOX_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file digest.md
+          else
+            echo "Nothing waits; no comment."
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODERATION_INBOX_ISSUE: ${{ vars.MODERATION_INBOX_ISSUE }}
+          MODERATION_API_BASE: ${{ vars.MODERATION_API_BASE }}
+          MODERATION_TOKEN: ${{ secrets.MODERATION_TOKEN }}
+          MODERATION_ACCESS_CLIENT_ID: ${{ secrets.MODERATION_ACCESS_CLIENT_ID }}
+          MODERATION_ACCESS_CLIENT_SECRET: ${{ secrets.MODERATION_ACCESS_CLIENT_SECRET }}
