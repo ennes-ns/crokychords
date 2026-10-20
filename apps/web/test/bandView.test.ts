@@ -1,6 +1,7 @@
 import { createSong, createTrack, patternPreset } from '@crokychords/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createActions } from '../src/actions';
+import { SOUND_KEY } from '../src/audio/sound';
 import { AudioEngine } from '../src/audio/synth';
 import { MidiOut } from '../src/midi/webmidi';
 import type { SongStorage } from '../src/persist';
@@ -209,5 +210,44 @@ describe('toolbar channel map', () => {
     ]);
     actions.updateTrack('trk-b', { channel: 7 });
     expect(map?.textContent).toContain('Bass ch8');
+  });
+});
+
+describe('Band panel sound row', () => {
+  it('selects the sound preset and drum pattern and follows outside changes', () => {
+    const storage = memoryStorage();
+    const engine = new AudioEngine(storage);
+    const store = new Store(initialState(createSong()));
+    const root = document.createElement('section');
+    document.body.append(root);
+    mountBand(root, store, createActions(store, engine, new MidiOut(null)), storage, engine.sound);
+    const preset = root.querySelector<HTMLSelectElement>('[data-field="sound-preset"]');
+    const drums = root.querySelector<HTMLSelectElement>('[data-field="drums"]');
+    if (preset === null || drums === null) throw new Error('no sound row');
+    expect([...preset.options].map((o) => o.text)).toEqual(['Piano', 'Band', 'Pad']);
+    expect([...drums.options].map((o) => o.text)).toEqual([
+      'None',
+      'Straight',
+      'Half-time',
+      'Ballad',
+    ]);
+    expect([preset.value, drums.value]).toEqual(['band', 'straight']);
+
+    change(preset, 'pad');
+    expect(engine.sound.state).toEqual({ preset: 'pad', drums: 'none' });
+    expect(drums.value).toBe('none');
+    change(drums, 'ballad');
+    expect(engine.sound.drums).toBe('ballad');
+    expect(storage.data[SOUND_KEY]).toBe('{"preset":"pad","drums":"ballad"}');
+
+    engine.sound.setPreset('piano');
+    expect([preset.value, drums.value]).toEqual(['piano', 'none']);
+    // The sound is not part of the song: no undo step.
+    expect(store.canUndo).toBe(false);
+  });
+
+  it('is left out without sound settings', () => {
+    const { root } = setup();
+    expect(root.querySelector('.band-sound')).toBeNull();
   });
 });

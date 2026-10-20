@@ -1,11 +1,19 @@
 /**
- * Band panel: one row per track (mute, name, role, pattern, octave, MIDI channel, velocity,
- * gate, transpose, reorder, remove) plus "Add track". Rows are patched in place, so focused
+ * Band panel: the browser sound (preset and drum pattern), then one row per track (mute, name,
+ * role, pattern, octave, MIDI channel, velocity, gate, transpose, reorder, remove) plus "Add
+ * track". Rows are patched in place, so focused
  * inputs and dragged sliders survive store updates; every edit is a song commit (undoable).
  */
 import type { Song, Track, TrackRole } from '@crokychords/core';
 import { ROLE_DEFAULTS, TRACK_ROLES } from '@crokychords/core';
 import type { Actions } from '../actions';
+import {
+  DRUM_PATTERNS,
+  SOUND_PRESETS,
+  isDrumPatternId,
+  isSoundPresetId,
+} from '../audio/instruments';
+import type { SoundSettings } from '../audio/sound';
 import type { TrackPatch } from '../band';
 import {
   GATE_MAX,
@@ -282,11 +290,45 @@ function createRow(ctx: RowContext, id: string): RowView {
   };
 }
 
+/** Sound preset and drum pattern selects; they only change the browser sound, not the MIDI. */
+export function soundControls(sound: SoundSettings): HTMLElement {
+  const preset = h(
+    'select',
+    { attrs: { 'aria-label': 'Sound preset', 'data-field': 'sound-preset' } },
+    ...SOUND_PRESETS.map((p) => option(p.id, p.name)),
+  );
+  const drums = h(
+    'select',
+    { attrs: { 'aria-label': 'Drums', 'data-field': 'drums' } },
+    ...DRUM_PATTERNS.map((p) => option(p.id, p.name)),
+  );
+  preset.onchange = () => {
+    if (isSoundPresetId(preset.value)) sound.setPreset(preset.value);
+  };
+  drums.onchange = () => {
+    if (isDrumPatternId(drums.value)) sound.setDrums(drums.value);
+  };
+  const sync = (): void => {
+    preset.value = sound.preset;
+    drums.value = sound.drums;
+  };
+  sync();
+  sound.subscribe(sync);
+  return h(
+    'div',
+    { class: 'band-sound' },
+    h('label', {}, 'Sound ', preset),
+    h('label', {}, 'Drums ', drums),
+    h('span', { class: 'hint' }, 'Browser playback only; MIDI out and export are unchanged.'),
+  );
+}
+
 export function mountBand(
   root: HTMLElement,
   store: Store,
   actions: Actions,
   storage: SongStorage | null = null,
+  sound: SoundSettings | null = null,
 ): void {
   root.classList.add('panel', 'band');
   let open = loadBandOpen(storage);
@@ -312,6 +354,7 @@ export function mountBand(
   const body = h(
     'div',
     { class: 'band-body', attrs: { id: 'band-body' } },
+    ...(sound === null ? [] : [soundControls(sound)]),
     h(
       'div',
       { class: 'band-row band-labels', attrs: { 'aria-hidden': 'true' } },

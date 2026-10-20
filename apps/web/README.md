@@ -67,10 +67,34 @@ channel. Click a row to select it: `M` mutes it and Next chord auditions (hover 
 suggestion, arrow keys, the chord editor) play through it, with its pattern, octave and
 channel; without a selection they use the first unmuted track. The toolbar shows the channel
 map next to the MIDI-out control (`Chords ch1 · Bass ch2 · Arp ch3`, muted tracks struck
-through). In the browser each role has its own synth timbre (chords: detuned saws, bass:
-triangle plus a sub sine, arp: plucky square, pad: slow saw). Track edits are part of the song,
-so undo/redo and the saved song include them; songs saved by older versions get the default
-band when they are loaded.
+through). Track edits are part of the song, so undo/redo and the saved song include them;
+songs saved by older versions get the default band when they are loaded.
+
+### Browser sound: presets and drums
+
+Playback in the browser uses built-in instruments synthesised with Web Audio (no sample
+files). The **Sound** select at the top of the Band panel picks a preset, which decides the
+instrument for every track role:
+
+| Preset | Chords | Bass | Arp | Pad | Custom | Drums |
+|--------|--------|------|-----|-----|--------|-------|
+| Piano | piano | piano | piano | piano | piano | none |
+| **Band** (default) | piano | bass | piano | pad | piano | straight |
+| Pad | pad | bass | piano | pad | pad | none |
+
+- **Piano:** fast attack, decays naturally even while held, brighter at the start of a note;
+  low notes ring longer.
+- **Pad:** two detuned saws with a slow attack, behind a lowpass that opens slowly.
+- **Bass:** plucked, filtered triangle with a sub sine an octave down.
+- **Drums:** synthesised kick, snare and hi-hat. The **Drums** select picks a pattern (None,
+  Straight, Half-time, Ballad); choosing a preset resets it to the preset's default. Bars
+  follow the song's meter and restart when the song loops.
+
+Everything goes through a gentle compressor and a master gain, with enough headroom that a full
+band does not clip. Hovering a suggestion or moving through the chords plays the selected track
+with the current preset. The sound settings are a listening preference: they are saved in
+`localStorage` (`crokychords.sound`), are not part of undo, and change nothing about Web MIDI
+out or the exported `.mid` file (drums are never sent or exported).
 
 ## Sending MIDI to a DAW
 

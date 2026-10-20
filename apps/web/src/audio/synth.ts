@@ -1,104 +1,24 @@
 /**
- * Web Audio poly synth with one timbre per track role (chords, bass, arp, pad; custom uses the
- * chords timbre). Every track gets its own gain bus into the master gain (0.2) and a limiter;
- * a note's level scales with its MIDI velocity / 127.
+ * Web Audio poly synth for the built-in instruments (piano, pad, bass) and the drum kit. The
+ * current sound preset picks the instrument per track role; every track gets its own gain bus
+ * into the master bus (mix → gentle compressor → master gain). Graph construction lives in
+ * `graph.ts` and works on an injected `SynthContext`.
  */
 import type { TrackRole } from '@crokychords/core';
+import type { BufferLike, GainLike, MasterBus, SourceLike, SynthContext } from './graph';
+import { buildDrum, buildMasterBus, buildVoice, noiseBuffer } from './graph';
+import type { Drum, Instrument, SoundPresetId } from './instruments';
+import { DEFAULT_SOUND_PRESET, instrumentFor } from './instruments';
+import type { SoundStorage } from './sound';
+import { SoundSettings } from './sound';
 
-export const MASTER_GAIN = 0.2;
-const VOICE_PEAK = 0.32;
+export { midiToFrequency } from './instruments';
+export { MASTER_GAIN, MIX_GAIN } from './graph';
+
 /** Release time used by Stop (seconds). */
 const STOP_RELEASE = 0.03;
-
-export function midiToFrequency(note: number): number {
-  return 440 * 2 ** ((note - 69) / 12);
-}
-
-export interface OscillatorSpec {
-  type: OscillatorType;
-  /** Cents. */
-  detune: number;
-  level: number;
-  /** Octaves relative to the note (-1 = sub oscillator). */
-  octave: number;
-}
-
-export interface Timbre {
-  oscillators: readonly OscillatorSpec[];
-  /** Lowpass cutoff: `base + frequency * track` Hz (capped at 9 kHz); null = no filter. */
-  filter: { base: number; track: number; q: number } | null;
-  /** Seconds. */
-  attack: number;
-  /** Time constant scale of the decay to the sustain level, seconds. */
-  decay: number;
-  /** 0..1 of the peak. */
-  sustain: number;
-  /** Seconds. */
-  release: number;
-  /** Overall level of the role (balances the timbres against each other). */
-  level: number;
-}
-
-const CHORDS: Timbre = {
-  oscillators: [
-    { type: 'sawtooth', detune: -7, level: 0.5, octave: 0 },
-    { type: 'sawtooth', detune: 7, level: 0.5, octave: 0 },
-  ],
-  filter: { base: 1200, track: 4, q: 0.7 },
-  attack: 0.012,
-  decay: 0.25,
-  sustain: 0.55,
-  release: 0.3,
-  level: 0.8,
-};
-
-export const TIMBRES: Readonly<Record<TrackRole, Timbre>> = {
-  chords: CHORDS,
-  bass: {
-    oscillators: [
-      { type: 'triangle', detune: 0, level: 0.9, octave: 0 },
-      { type: 'sine', detune: 0, level: 0.45, octave: -1 },
-    ],
-    filter: null,
-    attack: 0.008,
-    decay: 0.2,
-    sustain: 0.75,
-    release: 0.12,
-    level: 1,
-  },
-  arp: {
-    oscillators: [{ type: 'square', detune: 0, level: 0.35, octave: 0 }],
-    filter: { base: 1800, track: 3, q: 0.9 },
-    attack: 0.004,
-    decay: 0.12,
-    sustain: 0.12,
-    release: 0.08,
-    level: 0.7,
-  },
-  pad: {
-    oscillators: [
-      { type: 'sawtooth', detune: -10, level: 0.4, octave: 0 },
-      { type: 'sawtooth', detune: 10, level: 0.4, octave: 0 },
-    ],
-    filter: { base: 700, track: 2, q: 0.5 },
-    attack: 0.35,
-    decay: 0.6,
-    sustain: 0.85,
-    release: 0.9,
-    level: 0.6,
-  },
-  custom: CHORDS,
-};
-
-export function timbreFor(role: TrackRole): Timbre {
-  return TIMBRES[role];
-}
-
-/** Peak gain of one note: velocity/127 scaled by the role level. */
-export function notePeak(timbre: Timbre, velocity: number): number {
-  const v = Math.min(127, Math.max(0, velocity)) / 127;
-  return VOICE_PEAK * timbre.level * v;
-}
+/** Bus id of the drum kit. */
+export const DRUM_BUS = 'drums';
 
 /** Sounding notes that can be released early. */
 export interface NoteHandle {
@@ -106,8 +26,10 @@ export interface NoteHandle {
 }
 
 export interface NoteOptions {
-  /** Timbre, default 'chords'. */
+  /** Track role; the current sound preset maps it to an instrument. Default 'chords'. */
   role?: TrackRole;
+  /** Play this instrument instead of the preset's choice for the role. */
+  instrument?: Instrument;
   /** MIDI velocity 1-127, default 96. */
   velocity?: number;
   /** Track id: the gain bus the note goes through (default 'default'). */
@@ -115,8 +37,8 @@ export interface NoteOptions {
 }
 
 interface Voice {
-  oscillators: OscillatorNode[];
-  gain: GainNode;
+  sources: SourceLike[];
+  gain: GainLike;
   start: number;
   /** Time the release starts. */
   end: number;
@@ -125,28 +47,29 @@ interface Voice {
 }
 
 export class Synth {
-  readonly #ctx: AudioContext;
-  readonly #master: GainNode;
-  readonly #buses = new Map<string, GainNode>();
+  readonly #ctx: SynthContext;
+  readonly #master: MasterBus;
+  readonly #preset: () => SoundPresetId;
+  readonly #buses = new Map<string, GainLike>();
   #voices = new Set<Voice>();
+  #noise: BufferLike | null = null;
 
-  constructor(ctx: AudioContext) {
+  /** `preset` is read on every note, so a preset change applies to the next note. */
+  constructor(ctx: SynthContext, preset: () => SoundPresetId = () => DEFAULT_SOUND_PRESET) {
     this.#ctx = ctx;
-    const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -10;
-    limiter.knee.value = 6;
-    limiter.ratio.value = 12;
-    limiter.attack.value = 0.003;
-    limiter.release.value = 0.2;
-    this.#master = ctx.createGain();
-    this.#master.gain.value = MASTER_GAIN;
-    this.#master.connect(limiter);
-    limiter.connect(ctx.destination);
+    this.#preset = preset;
+    this.#master = buildMasterBus(ctx);
   }
 
-  /** Number of voices not yet ended (for tests and debugging). */
+  /** Number of voices not yet finished (for tests and debugging). */
   get voiceCount(): number {
+    this.#prune();
     return this.#voices.size;
+  }
+
+  /** The instrument a track of `role` plays with the current preset. */
+  instrumentFor(role: TrackRole): Instrument {
+    return instrumentFor(this.#preset(), role);
   }
 
   /** Play one MIDI note from `time` (AudioContext seconds) for `duration` seconds. */
@@ -166,6 +89,16 @@ export class Synth {
     return { release: (at) => handles.forEach((h) => h.release(at)) };
   }
 
+  /** One drum hit at `time`; `level` 0..1. */
+  playDrum(drum: Drum, level: number, time: number): void {
+    this.#prune();
+    const start = Math.max(time, this.#ctx.currentTime);
+    this.#noise ??= noiseBuffer(this.#ctx);
+    const nodes = buildDrum(this.#ctx, drum, level, start, this.#noise, this.#bus(DRUM_BUS));
+    // Drums stop on their own; `end` is when they are done, for pruning and Stop.
+    this.#voices.add({ ...nodes, start, end: start + nodes.release, track: DRUM_BUS });
+  }
+
   /** Silence one track now (muted or removed while playing). */
   stopTrack(track: string): void {
     const now = this.#ctx.currentTime;
@@ -180,67 +113,41 @@ export class Synth {
     for (const voice of [...this.#voices]) this.#release(voice, now, STOP_RELEASE);
   }
 
-  #bus(track: string): GainNode {
+  #bus(track: string): GainLike {
     let bus = this.#buses.get(track);
     if (bus === undefined) {
       bus = this.#ctx.createGain();
       bus.gain.value = 1;
-      bus.connect(this.#master);
+      bus.connect(this.#master.input);
       this.#buses.set(track, bus);
     }
     return bus;
   }
 
-  #voice(note: number, time: number, duration: number, opts: NoteOptions): Voice {
-    const ctx = this.#ctx;
-    const timbre = timbreFor(opts.role ?? 'chords');
-    const track = opts.track ?? 'default';
-    const start = Math.max(time, ctx.currentTime);
-    const frequency = midiToFrequency(note);
-
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    const peak = notePeak(timbre, opts.velocity ?? 96);
-    gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(peak, start + timbre.attack);
-    gain.gain.setTargetAtTime(peak * timbre.sustain, start + timbre.attack, timbre.decay / 3);
-    gain.connect(this.#bus(track));
-
-    let input: AudioNode = gain;
-    if (timbre.filter !== null) {
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = Math.min(9000, timbre.filter.base + frequency * timbre.filter.track);
-      filter.Q.value = timbre.filter.q;
-      filter.connect(gain);
-      input = filter;
+  /** Forget voices whose release has finished. */
+  #prune(): void {
+    const now = this.#ctx.currentTime;
+    for (const voice of this.#voices) {
+      if (voice.end + voice.release * 2 < now) this.#voices.delete(voice);
     }
+  }
 
-    const oscillators = timbre.oscillators.map((spec) => {
-      const osc = ctx.createOscillator();
-      osc.type = spec.type;
-      osc.frequency.value = frequency * 2 ** spec.octave;
-      osc.detune.value = spec.detune;
-      const mix = ctx.createGain();
-      mix.gain.value = spec.level;
-      osc.connect(mix);
-      mix.connect(input);
-      osc.start(start);
-      return osc;
-    });
-
-    const voice: Voice = {
-      oscillators,
-      gain,
+  #voice(note: number, time: number, duration: number, opts: NoteOptions): Voice {
+    this.#prune();
+    const instrument = opts.instrument ?? this.instrumentFor(opts.role ?? 'chords');
+    const track = opts.track ?? 'default';
+    const start = Math.max(time, this.#ctx.currentTime);
+    const nodes = buildVoice(
+      this.#ctx,
+      instrument,
+      note,
+      opts.velocity ?? 96,
       start,
-      end: Infinity,
-      release: timbre.release,
-      track,
-    };
+      this.#bus(track),
+    );
+    const voice: Voice = { ...nodes, start, end: Infinity, track };
     this.#voices.add(voice);
-    this.#release(voice, start + Math.max(duration, timbre.attack));
-    const [first] = oscillators;
-    if (first !== undefined) first.onended = () => this.#voices.delete(voice);
+    this.#release(voice, start + Math.max(duration, instrument.attack));
     return voice;
   }
 
@@ -259,9 +166,9 @@ export class Synth {
     } else {
       g.setTargetAtTime(0, at, release / 4);
     }
-    for (const osc of voice.oscillators) {
+    for (const source of voice.sources) {
       try {
-        osc.stop(stopAt);
+        source.stop(stopAt);
       } catch {
         // Some engines reject a second stop(); the first one already ends the voice.
       }
@@ -274,8 +181,15 @@ export class Synth {
  * created without one suspended).
  */
 export class AudioEngine {
+  /** Sound preset and drum pattern; read live by the synth and the scheduler. */
+  readonly sound: SoundSettings;
   #ctx: AudioContext | null = null;
   #synth: Synth | null = null;
+
+  /** `storage` keeps the sound settings across reloads (localStorage in the app). */
+  constructor(storage: SoundStorage | null = null) {
+    this.sound = new SoundSettings(storage);
+  }
 
   get context(): AudioContext | null {
     return this.#ctx;
@@ -295,7 +209,7 @@ export class AudioEngine {
     if (typeof AudioContext === 'undefined') return false;
     if (this.#ctx === null) {
       this.#ctx = new AudioContext({ latencyHint: 'interactive' });
-      this.#synth = new Synth(this.#ctx);
+      this.#synth = new Synth(this.#ctx, () => this.sound.preset);
     }
     if (this.#ctx.state === 'suspended') {
       try {
