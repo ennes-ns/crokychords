@@ -1,0 +1,244 @@
+{"token":"","message":"Invalid chord token \"\": empty token at position 0"}
+{"token":"rest","message":"Invalid chord token \"rest\": \"rest\" is not a chord at position 0"}
+{"token":"x","message":"Invalid chord token \"x\": expected a Roman numeral at position 0"}
+{"token":"H","message":"Invalid chord token \"H\": expected a Roman numeral at position 0"}
+{"token":"Iø","message":"Invalid chord token \"Iø\": unexpected \"ø\" at position 1"}
+{"token":"vii°x","message":"Invalid chord token \"vii°x\": unexpected \"x\" at position 4"}
+{"token":"vii°7x","message":"Invalid chord token \"vii°7x\": unexpected \"x\" at position 5"}
+{"token":"iiø7/","message":"Invalid chord token \"iiø7/\": expected a Roman numeral at position 5"}
+{"token":"V7/","message":"Invalid chord token \"V7/\": expected a Roman numeral at position 3"}
+{"token":"V7/x","message":"Invalid chord token \"V7/x\": expected a Roman numeral at position 3"}
+{"token":"I/4","message":"Invalid chord token \"I/4\": expected /1, /2 or /3 at position 2"}
+{"token":"I/0","message":"Invalid chord token \"I/0\": expected /1, /2 or /3 at position 2"}
+{"token":"I(b5","message":"Invalid chord token \"I(b5\": expected (b5), (#5), (b9), (#9), (#11) or (b13) at position 1"}
+{"token":"I(#7)","message":"Invalid chord token \"I(#7)\": expected (b5), (#5), (b9), (#9), (#11) or (b13) at position 1"}
+{"token":"Iadd2","message":"Invalid chord token \"Iadd2\": expected add6, add9 or add11 at position 1"}
+{"token":"Isus3","message":"Invalid chord token \"Isus3\": expected sus2 or sus4 at position 4"}
+{"token":"I°","message":"Invalid chord token \"I°\": unexpected \"°\" at position 1"}
+{"token":"i+","message":"Invalid chord token \"i+\": unexpected \"+\" at position 1"}
+{"token":"bbbI","message":"Invalid chord token \"bbbI\": expected a Roman numeral at position 2"}
+{"token":"I7maj7","message":"Invalid chord token \"I7maj7\": unexpected \"m\" at position 2"}
+{"token":"#Ix","message":"Invalid chord token \"#Ix\": unexpected \"x\" at position 2"}
+{"token":"Ix","message":"Invalid chord token \"Ix\": unexpected \"x\" at position 1"}
+{"token":"II9sus4x","message":"Invalid chord token \"II9sus4x\": unexpected \"x\" at position 7"}
+{"token":"IV/2x","message":"Invalid chord token \"IV/2x\": unexpected \"x\" at position 4"}
+{"token":"IVmaj11x","message":"Invalid chord token \"IVmaj11x\": unexpected \"x\" at position 7"}
+{"token":"IVmaj9x","message":"Invalid chord token \"IVmaj9x\": unexpected \"x\" at position 6"}
+{"token":"Imaj7(b5)x","message":"Invalid chord token \"Imaj7(b5)x\": unexpected \"x\" at position 9"}
+{"token":"V(#5)x","message":"Invalid chord token \"V(#5)x\": unexpected \"x\" at position 5"}
+{"token":"V/vi/2x","message":"Invalid chord token \"V/vi/2x\": unexpected \"x\" at position 6"}
+{"token":"V7(#5)/iiix","message":"Invalid chord token \"V7(#5)/iiix\": unexpected \"x\" at position 10"}
+{"token":"V7(b9)/Vx","message":"Invalid chord token \"V7(b9)/Vx\": unexpected \"x\" at position 8"}
+{"token":"V7/iii/2x","message":"Invalid chord token \"V7/iii/2x\": unexpected \"x\" at position 8"}
+{"token":"V7sus4add6x","message":"Invalid chord token \"V7sus4add6x\": unexpected \"x\" at position 10"}
+{"token":"VIImaj7x","message":"Invalid chord token \"VIImaj7x\": unexpected \"x\" at position 7"}
+{"token":"Vmaj7sus2x","message":"Invalid chord token \"Vmaj7sus2x\": unexpected \"x\" at position 9"}
+{"token":"bIII9x","message":"Invalid chord token \"bIII9x\": unexpected \"x\" at position 5"}
+{"token":"bV/1x","message":"Invalid chord token \"bV/1x\": unexpected \"x\" at position 4"}
+{"token":"bVII7/2x","message":"Invalid chord token \"bVII7/2x\": unexpected \"x\" at position 7"}
+{"token":"bVImaj13x","message":"Invalid chord token \"bVImaj13x\": unexpected \"x\" at position 8"}
+{"token":"bvi/1x","message":"Invalid chord token \"bvi/1x\": unexpected \"x\" at position 5"}
+{"token":"ii11x","message":"Invalid chord token \"ii11x\": unexpected \"x\" at position 4"}
+{"token":"iii(#9)x","message":"Invalid chord token \"iii(#9)x\": unexpected \"x\" at position 7"}
+{"token":"iiiø7/2x","message":"Invalid chord token \"iiiø7/2x\": unexpected \"x\" at position 7"}
+{"token":"ivmaj7x","message":"Invalid chord token \"ivmaj7x\": unexpected \"x\" at position 6"}
+{"token":"vix","message":"Invalid chord token \"vix\": unexpected \"x\" at position 2"}
+{"token":"vii7x","message":"Invalid chord token \"vii7x\": unexpected \"x\" at position 4"}
+{"token":"vii°/vii°x","message":"Invalid chord token \"vii°/vii°x\": unexpected \"x\" at position 9"}
+{"token":"viiø7/iix","message":"Invalid chord token \"viiø7/iix\": unexpected \"x\" at position 8"}
+{"token":"vø7/1x","message":"Invalid chord token \"vø7/1x\": unexpected \"x\" at position 5"}
+{"token":"IIIadd9/2x","message":"Invalid chord token \"IIIadd9/2x\": unexpected \"x\" at position 9"}
+{"token":"IV7sus4/2x","message":"Invalid chord token \"IV7sus4/2x\": unexpected \"x\" at position 9"}
+{"token":"V/2x","message":"Invalid chord token \"V/2x\": unexpected \"x\" at position 3"}
+{"token":"V9sus4x","message":"Invalid chord token \"V9sus4x\": unexpected \"x\" at position 6"}
+{"token":"bIIx","message":"Invalid chord token \"bIIx\": unexpected \"x\" at position 3"}
+{"token":"i7/2x","message":"Invalid chord token \"i7/2x\": unexpected \"x\" at position 4"}
+{"token":"ii°/2x","message":"Invalid chord token \"ii°/2x\": unexpected \"x\" at position 5"}
+{"token":"vadd6x","message":"Invalid chord token \"vadd6x\": unexpected \"x\" at position 5"}
+{"token":"#iiix","message":"Invalid chord token \"#iiix\": unexpected \"x\" at position 4"}
+{"token":"IIIadd6x","message":"Invalid chord token \"IIIadd6x\": unexpected \"x\" at position 7"}
+{"token":"IVsus4x","message":"Invalid chord token \"IVsus4x\": unexpected \"x\" at position 6"}
+{"token":"VImaj7/2x","message":"Invalid chord token \"VImaj7/2x\": unexpected \"x\" at position 8"}
+{"token":"iv11x","message":"Invalid chord token \"iv11x\": unexpected \"x\" at position 4"}
+{"token":"I(#5)x","message":"Invalid chord token \"I(#5)x\": unexpected \"x\" at position 5"}
+{"token":"Iadd11x","message":"Invalid chord token \"Iadd11x\": unexpected \"x\" at position 6"}
+{"token":"V7x","message":"Invalid chord token \"V7x\": unexpected \"x\" at position 2"}
+{"token":"iii7x","message":"Invalid chord token \"iii7x\": unexpected \"x\" at position 4"}
+{"token":"vii°x","message":"Invalid chord token \"vii°x\": unexpected \"x\" at position 4"}
+{"token":"I7sus4x","message":"Invalid chord token \"I7sus4x\": unexpected \"x\" at position 6"}
+{"token":"IV7sus4/1x","message":"Invalid chord token \"IV7sus4/1x\": unexpected \"x\" at position 9"}
+{"token":"Iadd6add11/2x","message":"Invalid chord token \"Iadd6add11/2x\": unexpected \"x\" at position 12"}
+{"token":"V7sus2x","message":"Invalid chord token \"V7sus2x\": unexpected \"x\" at position 6"}
+{"token":"VIImaj7/3x","message":"Invalid chord token \"VIImaj7/3x\": unexpected \"x\" at position 9"}
+{"token":"bIIImaj7x","message":"Invalid chord token \"bIIImaj7x\": unexpected \"x\" at position 8"}
+{"token":"ix","message":"Invalid chord token \"ix\": unexpected \"x\" at position 1"}
+{"token":"iii°(#5)x","message":"Invalid chord token \"iii°(#5)x\": unexpected \"x\" at position 8"}
+{"token":"v/1x","message":"Invalid chord token \"v/1x\": unexpected \"x\" at position 3"}
+{"token":"#IIIx","message":"Invalid chord token \"#IIIx\": unexpected \"x\" at position 4"}
+{"token":"#ivø7x","message":"Invalid chord token \"#ivø7x\": unexpected \"x\" at position 5"}
+{"token":"#vii°7/1x","message":"Invalid chord token \"#vii°7/1x\": unexpected \"x\" at position 8"}
+{"token":"I7sus2/1x","message":"Invalid chord token \"I7sus2/1x\": unexpected \"x\" at position 8"}
+{"token":"III7/3x","message":"Invalid chord token \"III7/3x\": unexpected \"x\" at position 6"}
+{"token":"IIIsus2/1x","message":"Invalid chord token \"IIIsus2/1x\": unexpected \"x\" at position 9"}
+{"token":"IVadd11/VIx","message":"Invalid chord token \"IVadd11/VIx\": unexpected \"x\" at position 10"}
+{"token":"Imaj11x","message":"Invalid chord token \"Imaj11x\": unexpected \"x\" at position 6"}
+{"token":"V/vx","message":"Invalid chord token \"V/vx\": unexpected \"x\" at position 3"}
+{"token":"V7(b9)(b13)x","message":"Invalid chord token \"V7(b9)(b13)x\": unexpected \"x\" at position 11"}
+{"token":"V7/v/2x","message":"Invalid chord token \"V7/v/2x\": unexpected \"x\" at position 6"}
+{"token":"VI7x","message":"Invalid chord token \"VI7x\": unexpected \"x\" at position 3"}
+{"token":"VII7sus2x","message":"Invalid chord token \"VII7sus2x\": unexpected \"x\" at position 8"}
+{"token":"VIIsus2x","message":"Invalid chord token \"VIIsus2x\": unexpected \"x\" at position 7"}
+{"token":"VImaj7/2x","message":"Invalid chord token \"VImaj7/2x\": unexpected \"x\" at position 8"}
+{"token":"Vadd9/iv/1x","message":"Invalid chord token \"Vadd9/iv/1x\": unexpected \"x\" at position 10"}
+{"token":"bII7sus2x","message":"Invalid chord token \"bII7sus2x\": unexpected \"x\" at position 8"}
+{"token":"bV/1x","message":"Invalid chord token \"bV/1x\": unexpected \"x\" at position 4"}
+{"token":"i7/1x","message":"Invalid chord token \"i7/1x\": unexpected \"x\" at position 4"}
+{"token":"ii11/VIx","message":"Invalid chord token \"ii11/VIx\": unexpected \"x\" at position 7"}
+{"token":"ii°(b5)x","message":"Invalid chord token \"ii°(b5)x\": unexpected \"x\" at position 7"}
+{"token":"iv/2x","message":"Invalid chord token \"iv/2x\": unexpected \"x\" at position 4"}
+{"token":"iv°/2x","message":"Invalid chord token \"iv°/2x\": unexpected \"x\" at position 5"}
+{"token":"v7(b9)x","message":"Invalid chord token \"v7(b9)x\": unexpected \"x\" at position 6"}
+{"token":"viadd9x","message":"Invalid chord token \"viadd9x\": unexpected \"x\" at position 6"}
+{"token":"viiø7/VIIx","message":"Invalid chord token \"viiø7/VIIx\": unexpected \"x\" at position 9"}
+{"token":"V/viix","message":"Invalid chord token \"V/viix\": unexpected \"x\" at position 5"}
+{"token":"#vi°/1x","message":"Invalid chord token \"#vi°/1x\": unexpected \"x\" at position 6"}
+{"token":"Isus2/1x","message":"Invalid chord token \"Isus2/1x\": unexpected \"x\" at position 7"}
+{"token":"V7/iv/1x","message":"Invalid chord token \"V7/iv/1x\": unexpected \"x\" at position 7"}
+{"token":"ix","message":"Invalid chord token \"ix\": unexpected \"x\" at position 1"}
+{"token":"ivx","message":"Invalid chord token \"ivx\": unexpected \"x\" at position 2"}
+{"token":"vii°7/3x","message":"Invalid chord token \"vii°7/3x\": unexpected \"x\" at position 7"}
+{"token":"Iadd6x","message":"Invalid chord token \"Iadd6x\": unexpected \"x\" at position 5"}
+{"token":"vii7x","message":"Invalid chord token \"vii7x\": unexpected \"x\" at position 4"}
+{"token":"#I°","message":"Invalid chord token \"#I°\": unexpected \"°\" at position 2"}
+{"token":"I/1°","message":"Invalid chord token \"I/1°\": unexpected \"°\" at position 3"}
+{"token":"IIsus2/1°","message":"Invalid chord token \"IIsus2/1°\": unexpected \"°\" at position 8"}
+{"token":"IVadd6add9/2°","message":"Invalid chord token \"IVadd6add9/2°\": unexpected \"°\" at position 12"}
+{"token":"IVmaj9(#11)°","message":"Invalid chord token \"IVmaj9(#11)°\": unexpected \"°\" at position 11"}
+{"token":"Imaj7sus2°","message":"Invalid chord token \"Imaj7sus2°\": unexpected \"°\" at position 9"}
+{"token":"V/V/1°","message":"Invalid chord token \"V/V/1°\": unexpected \"°\" at position 5"}
+{"token":"V7add11/3°","message":"Invalid chord token \"V7add11/3°\": unexpected \"°\" at position 9"}
+{"token":"VI7°","message":"Invalid chord token \"VI7°\": unexpected \"°\" at position 3"}
+{"token":"Vmaj7(#5)°","message":"Invalid chord token \"Vmaj7(#5)°\": unexpected \"°\" at position 9"}
+{"token":"bIIIadd9°","message":"Invalid chord token \"bIIIadd9°\": unexpected \"°\" at position 8"}
+{"token":"bVI/2°","message":"Invalid chord token \"bVI/2°\": unexpected \"°\" at position 5"}
+{"token":"bVIImaj7add6°","message":"Invalid chord token \"bVIImaj7add6°\": unexpected \"°\" at position 12"}
+{"token":"ii7/1°","message":"Invalid chord token \"ii7/1°\": unexpected \"°\" at position 5"}
+{"token":"iii7/1°","message":"Invalid chord token \"iii7/1°\": unexpected \"°\" at position 6"}
+{"token":"iv7/3°","message":"Invalid chord token \"iv7/3°\": unexpected \"°\" at position 5"}
+{"token":"vadd6°","message":"Invalid chord token \"vadd6°\": unexpected \"°\" at position 5"}
+{"token":"vii°°","message":"Invalid chord token \"vii°°\": unexpected \"°\" at position 4"}
+{"token":"viiø7(b5)°","message":"Invalid chord token \"viiø7(b5)°\": unexpected \"°\" at position 9"}
+{"token":"viø7/1°","message":"Invalid chord token \"viø7/1°\": unexpected \"°\" at position 6"}
+{"token":"IIIadd9/2°","message":"Invalid chord token \"IIIadd9/2°\": unexpected \"°\" at position 9"}
+{"token":"IVadd9/1°","message":"Invalid chord token \"IVadd9/1°\": unexpected \"°\" at position 8"}
+{"token":"V7/1°","message":"Invalid chord token \"V7/1°\": unexpected \"°\" at position 4"}
+{"token":"VIIsus2add6°","message":"Invalid chord token \"VIIsus2add6°\": unexpected \"°\" at position 11"}
+{"token":"i7/3°","message":"Invalid chord token \"i7/3°\": unexpected \"°\" at position 4"}
+{"token":"iv/2°","message":"Invalid chord token \"iv/2°\": unexpected \"°\" at position 4"}
+{"token":"vi°/2°","message":"Invalid chord token \"vi°/2°\": unexpected \"°\" at position 5"}
+{"token":"III/2°","message":"Invalid chord token \"III/2°\": unexpected \"°\" at position 5"}
+{"token":"Isus2/1°","message":"Invalid chord token \"Isus2/1°\": unexpected \"°\" at position 7"}
+{"token":"i11°","message":"Invalid chord token \"i11°\": unexpected \"°\" at position 3"}
+{"token":"v°°","message":"Invalid chord token \"v°°\": unexpected \"°\" at position 2"}
+{"token":"IV7sus2°","message":"Invalid chord token \"IV7sus2°\": unexpected \"°\" at position 7"}
+{"token":"VII/2°","message":"Invalid chord token \"VII/2°\": unexpected \"°\" at position 5"}
+{"token":"ivø7/2°","message":"Invalid chord token \"ivø7/2°\": unexpected \"°\" at position 6"}
+{"token":"I7/1°","message":"Invalid chord token \"I7/1°\": unexpected \"°\" at position 4"}
+{"token":"IV7sus2°","message":"Invalid chord token \"IV7sus2°\": unexpected \"°\" at position 7"}
+{"token":"Imaj7°","message":"Invalid chord token \"Imaj7°\": unexpected \"°\" at position 5"}
+{"token":"VII/1°","message":"Invalid chord token \"VII/1°\": unexpected \"°\" at position 5"}
+{"token":"bII/2°","message":"Invalid chord token \"bII/2°\": unexpected \"°\" at position 5"}
+{"token":"biii(b5)°","message":"Invalid chord token \"biii(b5)°\": unexpected \"°\" at position 8"}
+{"token":"iiiø7/1°","message":"Invalid chord token \"iiiø7/1°\": unexpected \"°\" at position 7"}
+{"token":"vadd9°","message":"Invalid chord token \"vadd9°\": unexpected \"°\" at position 5"}
+{"token":"#iii°7/2°","message":"Invalid chord token \"#iii°7/2°\": unexpected \"°\" at position 8"}
+{"token":"#vii°7/1°","message":"Invalid chord token \"#vii°7/1°\": unexpected \"°\" at position 8"}
+{"token":"II7sus2°","message":"Invalid chord token \"II7sus2°\": unexpected \"°\" at position 7"}
+{"token":"IIImaj7(#5)/3°","message":"Invalid chord token \"IIImaj7(#5)/3°\": unexpected \"°\" at position 13"}
+{"token":"IV7sus2°","message":"Invalid chord token \"IV7sus2°\": unexpected \"°\" at position 7"}
+{"token":"Imaj7°","message":"Invalid chord token \"Imaj7°\": unexpected \"°\" at position 5"}
+{"token":"V7°","message":"Invalid chord token \"V7°\": unexpected \"°\" at position 2"}
+{"token":"V7/VII/3°","message":"Invalid chord token \"V7/VII/3°\": unexpected \"°\" at position 8"}
+{"token":"VI+°","message":"Invalid chord token \"VI+°\": unexpected \"°\" at position 3"}
+{"token":"VII7sus4°","message":"Invalid chord token \"VII7sus4°\": unexpected \"°\" at position 8"}
+{"token":"VIadd11°","message":"Invalid chord token \"VIadd11°\": unexpected \"°\" at position 7"}
+{"token":"VIsus2add6°","message":"Invalid chord token \"VIsus2add6°\": unexpected \"°\" at position 10"}
+{"token":"bII7°","message":"Invalid chord token \"bII7°\": unexpected \"°\" at position 4"}
+{"token":"bV7/3°","message":"Invalid chord token \"bV7/3°\": unexpected \"°\" at position 5"}
+{"token":"i9(b13)°","message":"Invalid chord token \"i9(b13)°\": unexpected \"°\" at position 7"}
+{"token":"iii7/2°","message":"Invalid chord token \"iii7/2°\": unexpected \"°\" at position 6"}
+{"token":"i°°","message":"Invalid chord token \"i°°\": unexpected \"°\" at position 2"}
+{"token":"vadd11/1°","message":"Invalid chord token \"vadd11/1°\": unexpected \"°\" at position 8"}
+{"token":"vii°/iv/1°","message":"Invalid chord token \"vii°/iv/1°\": unexpected \"°\" at position 9"}
+{"token":"V/VI°","message":"Invalid chord token \"V/VI°\": unexpected \"°\" at position 4"}
+{"token":"II7°","message":"Invalid chord token \"II7°\": unexpected \"°\" at position 3"}
+{"token":"Vsus4°","message":"Invalid chord token \"Vsus4°\": unexpected \"°\" at position 5"}
+{"token":"I/1°","message":"Invalid chord token \"I/1°\": unexpected \"°\" at position 3"}
+{"token":"bI°","message":"Invalid chord token \"bI°\": unexpected \"°\" at position 2"}
+{"token":"ø#I","message":"Invalid chord token \"ø#I\": expected a Roman numeral at position 0"}
+{"token":"øI11","message":"Invalid chord token \"øI11\": expected a Roman numeral at position 0"}
+{"token":"øIV","message":"Invalid chord token \"øIV\": expected a Roman numeral at position 0"}
+{"token":"øIVmaj13","message":"Invalid chord token \"øIVmaj13\": expected a Roman numeral at position 0"}
+{"token":"øIadd6add11/2","message":"Invalid chord token \"øIadd6add11/2\": expected a Roman numeral at position 0"}
+{"token":"øIsus2sus4","message":"Invalid chord token \"øIsus2sus4\": expected a Roman numeral at position 0"}
+{"token":"øV11","message":"Invalid chord token \"øV11\": expected a Roman numeral at position 0"}
+{"token":"øV7(b13)","message":"Invalid chord token \"øV7(b13)\": expected a Roman numeral at position 0"}
+{"token":"øV7/ii/1","message":"Invalid chord token \"øV7/ii/1\": expected a Roman numeral at position 0"}
+{"token":"øV9/IV","message":"Invalid chord token \"øV9/IV\": expected a Roman numeral at position 0"}
+{"token":"øVadd6/V","message":"Invalid chord token \"øVadd6/V\": expected a Roman numeral at position 0"}
+{"token":"øbIII/2","message":"Invalid chord token \"øbIII/2\": expected a Roman numeral at position 0"}
+{"token":"øbVI(#11)","message":"Invalid chord token \"øbVI(#11)\": expected a Roman numeral at position 0"}
+{"token":"øbVIImaj7","message":"Invalid chord token \"øbVIImaj7\": expected a Roman numeral at position 0"}
+{"token":"øbiii9","message":"Invalid chord token \"øbiii9\": expected a Roman numeral at position 0"}
+{"token":"øii7/2","message":"Invalid chord token \"øii7/2\": expected a Roman numeral at position 0"}
+{"token":"øiii7add11","message":"Invalid chord token \"øiii7add11\": expected a Roman numeral at position 0"}
+{"token":"øivadd9/1","message":"Invalid chord token \"øivadd9/1\": expected a Roman numeral at position 0"}
+{"token":"øvi13","message":"Invalid chord token \"øvi13\": expected a Roman numeral at position 0"}
+{"token":"øvii°/IV/2","message":"Invalid chord token \"øvii°/IV/2\": expected a Roman numeral at position 0"}
+{"token":"øviiø7/V/3","message":"Invalid chord token \"øviiø7/V/3\": expected a Roman numeral at position 0"}
+{"token":"øI11","message":"Invalid chord token \"øI11\": expected a Roman numeral at position 0"}
+{"token":"øIV11","message":"Invalid chord token \"øIV11\": expected a Roman numeral at position 0"}
+{"token":"øV/2","message":"Invalid chord token \"øV/2\": expected a Roman numeral at position 0"}
+{"token":"øVIIadd6add9","message":"Invalid chord token \"øVIIadd6add9\": expected a Roman numeral at position 0"}
+{"token":"øbVmaj7/3","message":"Invalid chord token \"øbVmaj7/3\": expected a Roman numeral at position 0"}
+{"token":"øiiø7","message":"Invalid chord token \"øiiø7\": expected a Roman numeral at position 0"}
+{"token":"øvii°/i","message":"Invalid chord token \"øvii°/i\": expected a Roman numeral at position 0"}
+{"token":"øIII","message":"Invalid chord token \"øIII\": expected a Roman numeral at position 0"}
+{"token":"øIsus2/1","message":"Invalid chord token \"øIsus2/1\": expected a Roman numeral at position 0"}
+{"token":"øi7/1","message":"Invalid chord token \"øi7/1\": expected a Roman numeral at position 0"}
+{"token":"øv°/2","message":"Invalid chord token \"øv°/2\": expected a Roman numeral at position 0"}
+{"token":"øIadd9","message":"Invalid chord token \"øIadd9\": expected a Roman numeral at position 0"}
+{"token":"øbVI","message":"Invalid chord token \"øbVI\": expected a Roman numeral at position 0"}
+{"token":"øvii/1","message":"Invalid chord token \"øvii/1\": expected a Roman numeral at position 0"}
+{"token":"øI9sus4","message":"Invalid chord token \"øI9sus4\": expected a Roman numeral at position 0"}
+{"token":"øIVmaj9","message":"Invalid chord token \"øIVmaj9\": expected a Roman numeral at position 0"}
+{"token":"øV7","message":"Invalid chord token \"øV7\": expected a Roman numeral at position 0"}
+{"token":"øVIIsus2add6","message":"Invalid chord token \"øVIIsus2add6\": expected a Roman numeral at position 0"}
+{"token":"øbVI7","message":"Invalid chord token \"øbVI7\": expected a Roman numeral at position 0"}
+{"token":"øiii7","message":"Invalid chord token \"øiii7\": expected a Roman numeral at position 0"}
+{"token":"øv7/2","message":"Invalid chord token \"øv7/2\": expected a Roman numeral at position 0"}
+{"token":"ø#iii9","message":"Invalid chord token \"ø#iii9\": expected a Roman numeral at position 0"}
+{"token":"ø#vii°7","message":"Invalid chord token \"ø#vii°7\": expected a Roman numeral at position 0"}
+{"token":"øII7sus4","message":"Invalid chord token \"øII7sus4\": expected a Roman numeral at position 0"}
+{"token":"øIIImaj7/3","message":"Invalid chord token \"øIIImaj7/3\": expected a Roman numeral at position 0"}
+{"token":"øIVadd11/VI","message":"Invalid chord token \"øIVadd11/VI\": expected a Roman numeral at position 0"}
+{"token":"øIsus2(b5)","message":"Invalid chord token \"øIsus2(b5)\": expected a Roman numeral at position 0"}
+{"token":"øV7(#9)/v","message":"Invalid chord token \"øV7(#9)/v\": expected a Roman numeral at position 0"}
+{"token":"øV7/v/3","message":"Invalid chord token \"øV7/v/3\": expected a Roman numeral at position 0"}
+{"token":"øVII(#5)/1","message":"Invalid chord token \"øVII(#5)/1\": expected a Roman numeral at position 0"}
+{"token":"øVIIadd9/2","message":"Invalid chord token \"øVIIadd9/2\": expected a Roman numeral at position 0"}
+{"token":"øVImaj7add11","message":"Invalid chord token \"øVImaj7add11\": expected a Roman numeral at position 0"}
+{"token":"øVsus4add6","message":"Invalid chord token \"øVsus4add6\": expected a Roman numeral at position 0"}
+{"token":"øbIVmaj7","message":"Invalid chord token \"øbIVmaj7\": expected a Roman numeral at position 0"}
+{"token":"øi7add11","message":"Invalid chord token \"øi7add11\": expected a Roman numeral at position 0"}
+{"token":"øiii/1","message":"Invalid chord token \"øiii/1\": expected a Roman numeral at position 0"}
+{"token":"øimaj7/3","message":"Invalid chord token \"øimaj7/3\": expected a Roman numeral at position 0"}
+{"token":"øi°","message":"Invalid chord token \"øi°\": expected a Roman numeral at position 0"}
+{"token":"øvadd6/1","message":"Invalid chord token \"øvadd6/1\": expected a Roman numeral at position 0"}
+{"token":"øvii°/v/2","message":"Invalid chord token \"øvii°/v/2\": expected a Roman numeral at position 0"}
+{"token":"øii(b5)","message":"Invalid chord token \"øii(b5)\": expected a Roman numeral at position 0"}
+{"token":"øIV","message":"Invalid chord token \"øIV\": expected a Roman numeral at position 0"}
+{"token":"øV7/i","message":"Invalid chord token \"øV7/i\": expected a Roman numeral at position 0"}
+{"token":"øi7","message":"Invalid chord token \"øi7\": expected a Roman numeral at position 0"}
+{"token":"øvii°","message":"Invalid chord token \"øvii°\": expected a Roman numeral at position 0"}
+{"token":"øIadd11","message":"Invalid chord token \"øIadd11\": expected a Roman numeral at position 0"}

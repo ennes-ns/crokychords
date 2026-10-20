@@ -91,7 +91,7 @@ crokychords/
 │                    No DOM or Node APIs, so it can be ported to a native plugin later.
 ├── apps/web/        Vite + TypeScript editor: grid, next-chord panel, band, playback, export, MIDI out.
 ├── packages/data/   Python builders for the suggestion tables.
-├── crates/          Rust: partial port of core + terminal prototype (spike, docs/specs/tui-v1.md).
+├── crates/          Rust: port of core + terminal prototype (spike, docs/specs/tui-v1.md).
 └── docs/            ARCHITECTURE.md, WORKFLOW.md, HANDOVER.md, ROADMAP.md, BRAND.md, specs/, adr/
 ```
 

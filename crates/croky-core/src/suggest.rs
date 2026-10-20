@@ -2,8 +2,10 @@
 //! (port of `suggest.ts`). Probabilities are count / row total, as in TS.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use serde::Deserialize;
+use serde_json::{Map, Value};
 
 use crate::theory::Mode;
 
@@ -11,8 +13,28 @@ pub const DEFAULT_MIN_CONTEXT_COUNT: f64 = 20.0;
 pub const DEFAULT_SUGGESTION_LIMIT: usize = 12;
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NgramSource {
+    pub name: String,
+    pub description: Option<String>,
+    pub license: Option<String>,
+    pub exported_at: Option<String>,
+}
+
+/// Per-chord statistics of a mode; fields other than the counts are kept as JSON.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NgramChordInfo {
+    pub count: f64,
+    pub song_count: Option<f64>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct NgramMode {
     pub sections: f64,
+    pub chords: HashMap<String, NgramChordInfo>,
     /// context ("" | "I" | "IV,I") -> next token -> count
     pub ngrams: HashMap<String, HashMap<String, f64>>,
 }
@@ -21,6 +43,8 @@ pub struct NgramMode {
 #[serde(rename_all = "camelCase")]
 pub struct NgramTable {
     pub schema: u32,
+    pub source: NgramSource,
+    pub generated_at: String,
     pub max_context: usize,
     pub token_format: String,
     pub modes: HashMap<String, NgramMode>,
@@ -53,6 +77,31 @@ impl NgramTable {
         if let Some(bad) = table.modes.keys().find(|m| Mode::from_name(m).is_none()) {
             return Err(TableError(format!("modes.{bad}: unknown mode")));
         }
+        // Counts are non-negative (TS `count`); the path names one offending value.
+        let bad = |x: f64| !x.is_finite() || x < 0.0;
+        for (name, m) in &table.modes {
+            let p = format!("modes.{name}");
+            if bad(m.sections) {
+                return Err(TableError(format!(
+                    "{p}.sections: expected a non-negative number"
+                )));
+            }
+            for (token, info) in &m.chords {
+                if bad(info.count) || info.song_count.is_some_and(bad) {
+                    return Err(TableError(format!(
+                        "{p}.chords.{token}: expected a non-negative number"
+                    )));
+                }
+            }
+            for (context, row) in &m.ngrams {
+                if let Some((next, _)) = row.iter().find(|(_, &c)| bad(c)) {
+                    let context = if context.is_empty() { "\"\"" } else { context };
+                    return Err(TableError(format!(
+                        "{p}.ngrams.{context}.{next}: expected a non-negative number"
+                    )));
+                }
+            }
+        }
         Ok(table)
     }
 
@@ -70,24 +119,48 @@ pub struct Suggestion {
     pub context_used: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct SuggestOptions {
+/// Keeps a suggested token (`filter` in TS); applied after ranking, before the limit.
+pub type TokenFilter<'a> = &'a dyn Fn(&str) -> bool;
+
+#[derive(Clone, Copy)]
+pub struct SuggestOptions<'a> {
+    /// Default: the table's `max_context`.
     pub max_context: Option<usize>,
+    /// Back off if the matched context has fewer total observations (default 20).
     pub min_context_count: f64,
+    /// Default 12.
     pub limit: usize,
+    pub filter: Option<TokenFilter<'a>>,
 }
 
-impl Default for SuggestOptions {
+impl Default for SuggestOptions<'_> {
     fn default() -> Self {
         SuggestOptions {
             max_context: None,
             min_context_count: DEFAULT_MIN_CONTEXT_COUNT,
             limit: DEFAULT_SUGGESTION_LIMIT,
+            filter: None,
         }
     }
 }
 
-fn rank_row(row: &HashMap<String, f64>, context_used: &[String], limit: usize) -> Vec<Suggestion> {
+impl std::fmt::Debug for SuggestOptions<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SuggestOptions")
+            .field("max_context", &self.max_context)
+            .field("min_context_count", &self.min_context_count)
+            .field("limit", &self.limit)
+            .field("filter", &self.filter.map(|_| "fn"))
+            .finish()
+    }
+}
+
+fn rank_row(
+    row: &HashMap<String, f64>,
+    context_used: &[String],
+    filter: Option<TokenFilter<'_>>,
+    limit: usize,
+) -> Vec<Suggestion> {
     let total: f64 = row.values().sum();
     if total <= 0.0 {
         return Vec::new();
@@ -100,6 +173,7 @@ fn rank_row(row: &HashMap<String, f64>, context_used: &[String], limit: usize) -
     });
     entries
         .into_iter()
+        .filter(|(token, _)| filter.is_none_or(|f| f(token)))
         .take(limit)
         .map(|(token, count)| Suggestion {
             token: token.clone(),
@@ -117,7 +191,7 @@ pub fn suggest_next(
     table: &NgramTable,
     mode: Mode,
     context: &[String],
-    opts: SuggestOptions,
+    opts: SuggestOptions<'_>,
 ) -> Vec<Suggestion> {
     let Some(mode_table) = table.mode(mode) else {
         return Vec::new();
@@ -131,10 +205,46 @@ pub fn suggest_next(
         };
         let total: f64 = row.values().sum();
         if total >= opts.min_context_count || (n == 0 && total > 0.0) {
-            return rank_row(row, used, opts.limit);
+            return rank_row(row, used, opts.filter, opts.limit);
         }
     }
     Vec::new()
+}
+
+#[derive(Clone, Copy)]
+pub struct PopularOptions<'a> {
+    /// Default 12.
+    pub limit: usize,
+    pub filter: Option<TokenFilter<'a>>,
+}
+
+impl Default for PopularOptions<'_> {
+    fn default() -> Self {
+        PopularOptions {
+            limit: DEFAULT_SUGGESTION_LIMIT,
+            filter: None,
+        }
+    }
+}
+
+/// `popularChords`: the unigram row, the most common chords of the mode. Probabilities are
+/// normalised over the whole row before filter and limit, as in `suggest_next`.
+pub fn popular_chords(table: &NgramTable, mode: Mode, opts: PopularOptions<'_>) -> Vec<Suggestion> {
+    table
+        .mode(mode)
+        .and_then(|m| m.ngrams.get(""))
+        .map_or_else(Vec::new, |row| rank_row(row, &[], opts.filter, opts.limit))
+}
+
+/// `seedTable`: the hand-seeded starter table (major and minor), so the app works without a
+/// data build. `data/seed-ngrams.json` is a copy of `packages/core/src/data/seed-ngrams.json`
+/// (a parity test keeps them equal).
+pub fn seed_table() -> &'static NgramTable {
+    static SEED: OnceLock<NgramTable> = OnceLock::new();
+    SEED.get_or_init(|| {
+        NgramTable::from_json(include_str!("../data/seed-ngrams.json"))
+            .expect("the seed table is valid")
+    })
 }
 
 #[cfg(test)]

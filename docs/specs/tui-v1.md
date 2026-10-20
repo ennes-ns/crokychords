@@ -1,7 +1,7 @@
 # Spec: terminal version (TUI) v1 — spike
 
-Status: spike done (2026-10-20, issue #39). Prototype in `crates/croky-tui`, partial core port in
-`crates/croky-core`. Owner: main session. Decision: **option (a), Rust + ratatui on a Rust port of
+Status: spike done (2026-10-20, issue #39); phase 1 (full core port, issue #65) done. Prototype in
+`crates/croky-tui`, core port in `crates/croky-core`. Owner: main session. Decision: **option (a), Rust + ratatui on a Rust port of
 `core`**; see section 6.
 
 ## Goal
@@ -78,7 +78,7 @@ here (no second machine in the spike): RTP-MIDI over the LAN. Procedure for the 
 
 ```
 Cargo.toml                 workspace: crates/croky-core, crates/croky-tui
-crates/croky-core/         partial port of packages/core (section 5)
+crates/croky-core/         port of packages/core (section 5)
 crates/croky-tui/src/
   main.rs                  CLI, terminal loop (15 fps, poll 66 ms), MIDI port selection
   app.rs                   screen state + key handling, no I/O (unit tested)
@@ -107,8 +107,8 @@ back to the `--song` file, `q` quit (stops playback; nothing is written unless `
 is in `docs/readme/tui.txt`.
 
 Playback: every chord as bass (octave 2) plus close voicing from octave 4 (`voiceChord` defaults),
-channel 1, velocity 90, gate 0.95, loops by default. Tracks in the song are kept and written back
-untouched but not played. Without a MIDI port (e.g. `--port rtpmidid` while rtpmidid is down) the TUI
+channel 1, velocity 90, gate 0.95, loops by default. Tracks and the melody are read and validated
+(older songs migrate to schema 3, as in the web app) and written back with `w`, but not played. Without a MIDI port (e.g. `--port rtpmidid` while rtpmidid is down) the TUI
 still runs and shows the reason in red.
 
 Not done in the prototype: SaveStore records (it reads and writes the bare `serializeSong` JSON),
@@ -116,38 +116,61 @@ editing key/tempo/length, replace mode, tracks, SCHED_FIFO for the scheduler thr
 
 ## 5. The port (`crates/croky-core`)
 
-Ported, with the TS file as reference:
+Complete since issue #65 (Phase 1); the TS file is the reference for every module:
 
 | Rust module | From                     | What                                                                                  |
 | ----------- | ------------------------ | ------------------------------------------------------------------------------------- |
 | `theory`    | `theory.ts`              | modes, scales, pitch classes, key signature, note names                               |
-| `token`     | `token.ts`, `chords.ts`  | `Chord` model, `parse_token`, `format_token`                                          |
+| `token`     | `token.ts`, `chords.ts`  | `Chord` model, `parse_token`, `format_token` (error positions in UTF-16 units, as TS)  |
 | `chords`    | `chords.ts`              | intervals, root/bass, `voice_chord`, `chord_name`                                     |
-| `suggest`   | `suggest.ts`             | `NgramTable` (schema 1), `suggest_next` with stupid backoff (no `filter` option yet)  |
-| `song`      | `progression.ts` (part)  | song JSON schema 1/2 read/write (tracks kept as raw JSON; output byte-identical to `serializeSong` for the demo song), a subset of `validateSong` |
+| `diatonic`  | `diatonic.ts`            | `diatonic_quality`, `diatonic_triad_token`, `is_diatonic`                              |
+| `suggest`   | `suggest.ts`             | `NgramTable` (schema 1, incl. `chords` info), `suggest_next` and `popular_chords` with `filter`, `seed_table` |
+| `tracks`    | `tracks.ts`              | `Track`, `Pattern`, `NoteSelector`, `new_track_id` (random source passed in)          |
+| `patterns`  | `patterns.ts`            | the 15 presets, `pattern_roles`, `role_defaults`, `create_track`, `default_tracks`    |
+| `melody`    | `melody.ts`              | the melody lane model and constants, `melody_note_pitch`                              |
+| `song`      | `progression.ts`         | song schema 3, full `validate_song` (same error paths and messages, schema 1/2 migration), `serialize_song` byte for byte, `create_song`, `chord_at_beat`, tokens, total beats |
+| `render`    | `render.ts`              | `layout_pattern`, `render_track`, `render_song`, `render_melody`, `melody_note_harmony` |
+| `midi`      | `midi.ts`                | `song_to_midi`: format 0 and format 1 (band tracks + melody), byte-identical; same `RangeError` messages |
+| `json`      | (JS runtime)             | `Math.round`, `Number#toString` and `JSON.stringify` semantics, so numbers and text match |
 
-Parity tests (`crates/croky-core/tests/parity.rs`):
+Parity tests (`crates/croky-core/tests/parity*.rs`) against goldens generated from TS:
 
 - every token in `packages/core/test/fixtures/tokens-roman-v1.json` (all nine modes) parses and
-  formats back byte for byte;
-- `tests/golden/chords.jsonl`: chord name and voicing of every fixture token in a rotating key, as
-  computed by TS;
-- `tests/golden/suggest.jsonl`: suggestions (token, count, probability, matched context) for 70
-  contexts against the committed `default.json`, including contexts that back off.
+  formats back byte for byte; `token-errors.jsonl`: parse errors with the same message;
+- `chords.jsonl`: chord name and voicing of every fixture token in a rotating key;
+- `suggest.jsonl`, `popular.jsonl`: suggestions for 70 contexts on `default.json`, plus
+  `popularChords` and the `filter` option on the default and the seed table;
+- `diatonic.jsonl`: triads per mode and `isDiatonic` for a sample of fixture tokens;
+- `tracks.jsonl`: presets, roles, role defaults, ids from recorded random values,
+  `createTrack`, `DEFAULT_TRACKS`;
+- `render.jsonl`: `layoutPattern` of every preset and five edge-case patterns over 13 chord
+  lengths; `renderTrack` of each pattern with four track settings (voicing, octave,
+  transpose out of range, velocity, gate, channel, muted) on three songs; `renderSong` of the
+  default band; the melody (harmony class, events, mute, cut at the end);
+- `songs.jsonl`: `validateSong` on a schema-3 base song and ~250 mutations of it (every
+  error path, plus valid edge values), schema 1/2 migration, unknown fields and string escapes;
+  the normalised `serializeSong` text must match byte for byte;
+- `midi.jsonl` + `midi/*.mid`: 15 `.mid` files (format 0 with options, format 1 with band,
+  presets, coarse ppq, melody, mute, empty songs) must be byte-identical, and 13 error cases
+  must give the same message.
 
 The golden files are generated from `packages/core` with `scripts/gen-rust-golden.sh` (bundles
 `crates/croky-core/tools/gen-golden.ts` with the esbuild already in `node_modules`). Rerun it after a
-change in `packages/core` that the port must follow; a stale golden file shows up as a failing
-`cargo test`.
+change in `packages/core` that the port must follow; CI fails when the committed goldens are stale.
 
-A full port still needs: `tracks.ts` + `patterns.ts` (track model, preset patterns,
-`DEFAULT_TRACKS`), `render.ts` (`layoutPattern`, `renderTrack`, `renderSong`), the rest of
-`progression.ts` (`createSong` defaults, full `validateSong` with schema-1 migration and track
-validation, `chordAtBeat`, editing helpers), `diatonic.ts`, `midi.ts` (SMF writer, golden-tested
-byte for byte against TS output), `popularChords` and the `filter` option, the `chords` info of the
-n-gram table, and the seed table. Estimate: the remaining ~1300 lines of TS, about two implementer
-tasks. Each ported module gets a golden file from the generator, so TS stays the single reference
-until the plugin ships.
+Known differences (none reachable from a song that passes `validate_song`):
+
+- `deserialize_song` on malformed JSON: path `''` as in TS, but the message after
+  `invalid JSON: ` comes from serde_json, not from `JSON.parse`. A number literal outside the
+  `f64` range (`1e400`) is a syntax error in Rust, `Infinity` (→ "expected a finite number")
+  in TS.
+- `NgramTable::from_json` checks the schema, token format, mode names and that counts are
+  non-negative, but does not reproduce every `parseNgramTable` error path; with several bad
+  values it may name a different one.
+- `create_song` takes no `partial`; set fields with struct update syntax.
+- A hand-built song (not validated) with an unparsable token renders and exports nothing for
+  that chord instead of throwing; `format_token` errors describe the chord with its Rust
+  `Debug` form instead of the TS `describe`.
 
 ## 6. Recommendation
 
@@ -207,7 +230,7 @@ programs): build croky-tui against the same nixpkgs as the host. Use wired Ether
 | Phase | Task                                                                                                                                                                  | Size |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
 | 0     | This spike: comparison, prototype, partial port with parity tests, loopback latency.                                                                                 | done |
-| 1     | `croky-core` full port (section 5) + a `cargo` job in CI running `scripts/check-rust.sh` and checking the golden files are up to date (`gen-rust-golden.sh` + `git diff --exit-code`). | M    |
+| 1     | `croky-core` full port (section 5) + a `cargo` job in CI running `scripts/check-rust.sh` and checking the golden files are up to date (`gen-rust-golden.sh` + `git diff --exit-code`). | done |
 | 2     | `croky-tui` v1: tracks and patterns playback (port of `render.ts`), key/tempo/length editing, replace mode, SaveStore record files (`schema_version: 1`) in `~/.local/share/croky-chords/saves/`, SCHED_FIFO scheduler thread, ADR for the TUI. | M    |
 | 3     | Nexus deployment: `flake.nix` (package + module, section 7), rtpmidid, measure RTP-MIDI over the LAN with `--latency-test --out/--in` (section 3), decide on the raw UDP fallback. | S    |
 | 4     | Sync with the API (`sync-v1.md`): device login, push/pull of the same records.                                                                                       | M    |
@@ -216,6 +239,6 @@ programs): build croky-tui against the same nixpkgs as the host. Use wired Ether
 ## 9. Checks
 
 `scripts/check-rust.sh` runs `cargo fmt --check`, `cargo clippy --workspace --all-targets -D
-warnings` and `cargo test --workspace` (unit, parity and render tests). It is not part of `pnpm check`
-and CI has no cargo job yet (Phase 1). Render snapshots: `UPDATE_SNAPSHOTS=1 cargo test -p croky-tui`
+warnings` and `cargo test --workspace` (unit, parity and render tests). It is not part of `pnpm check`;
+CI runs it in the `rust check` job, which also fails when the goldens are stale. Render snapshots: `UPDATE_SNAPSHOTS=1 cargo test -p croky-tui`
 rewrites `crates/croky-tui/tests/snapshots/*.txt`; review the diff.

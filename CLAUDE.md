@@ -10,7 +10,7 @@ Read `docs/HANDOVER.md` for history and `docs/ARCHITECTURE.md` for how the piece
 | `packages/core` | Pure TS: theory, chord tokens, song model, n-gram suggestions, MIDI writer | pnpm, vitest |
 | `apps/web` | Vite + TS editor (grid, Next chord panel, playback, MIDI out) | pnpm, vitest/jsdom |
 | `packages/data` | Python builder for `ngrams.json` (Chordonomicon) | uv, pytest |
-| `crates/` | Rust: partial port of core (`croky-core`) + terminal prototype (`croky-tui`), spike, see `docs/specs/tui-v1.md` | cargo |
+| `crates/` | Rust: port of core (`croky-core`, parity-tested against TS goldens) + terminal prototype (`croky-tui`), spike, see `docs/specs/tui-v1.md` | cargo |
 | `docs/specs` | One spec per deliverable; agents implement from these | |
 | `docs/adr` | Architecture decision records | |
 
