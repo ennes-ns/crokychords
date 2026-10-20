@@ -9,7 +9,6 @@ import {
   decodeInput,
   hueRgb,
   ledCc,
-  oledBandsSysex,
   oledSysex,
   padFromNote,
   padNote,
@@ -53,11 +52,6 @@ describe('Fire protocol vs the Python reference', () => {
     const sysex = oledSysex(frame);
     expect(sysex).toHaveLength(1183);
     expect(sysex).toEqual(reference.oledPattern);
-    // Partial updates: one band (159 bytes) and a run of bands, packing restarted at the first.
-    expect(oledBandsSysex(frame, 3, 3)).toEqual(reference.oledBand3);
-    expect(oledBandsSysex(frame, 3, 3)).toHaveLength(159);
-    expect(oledBandsSysex(frame, 2, 5)).toEqual(reference.oledBands2to5);
-    expect(oledBandsSysex(frame, 0, 7)).toEqual(sysex);
   });
 
   it('pad notes and relative encoder values match', () => {

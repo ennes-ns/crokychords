@@ -34,10 +34,6 @@ out = {
     ],
     "oledBlank": F.oled_sysex(F.blank()),
     "oledPattern": F.oled_sysex([[pattern(x, y) for x in range(F.OLED_W)] for y in range(F.OLED_H)]),
-    "oledBand3": F.oled_bands_sysex([[pattern(x, y) for x in range(F.OLED_W)] for y in range(F.OLED_H)], 3, 3),
-    "oledBands2to5": F.oled_bands_sysex(
-        [[pattern(x, y) for x in range(F.OLED_W)] for y in range(F.OLED_H)], 2, 5
-    ),
     "relative": {str(v): F.relative(v) for v in (1, 2, 63, 64, 65, 126, 127)},
     "padNotes": {f"{r},{c}": F.pad_note(r, c) for r in range(F.ROWS) for c in (0, 7, 15)},
 }

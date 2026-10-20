@@ -192,7 +192,7 @@ capped at 30 fps; see v2 as built).
 | "FL Studio mode" | none on the device: it is a plain MIDI controller, all behaviour is host-side. Its own DAW script only runs inside that DAW, which must not be open on the same port at the same time on Windows |
 | Two apps on the port | Linux (ALSA sequencer) and macOS share ports: both apps receive input and both paint, last writer wins. Windows opens ports exclusively: a second app fails to open it. Show "Fire busy" and repaint fully on focus |
 | Pad LED refresh | one 264-byte SysEx repaints all 64 pads; diff and coalesce to one message per animation frame, playhead at beat rate |
-| OLED bandwidth | 1183 bytes per frame, ~59 frames/s at most (measured); redraw on change only, changed bands only, cap 30 fps |
+| OLED bandwidth | 1183 bytes per frame, ~59 frames/s at most (measured); redraw on change only, full frames (partial bands do not display), cap 30 fps |
 | Browser tab in background | Web MIDI keeps working, but timers are throttled: repaint is event-driven, not timer-driven |
 | Stale LEDs after closing the tab | send all-off + blank OLED on `pagehide`; the device keeps the last frame otherwise |
 
@@ -222,7 +222,7 @@ capped at 30 fps; see v2 as built).
 
 ### v2 as built (issue #62)
 
-Files: `oled.ts` (model, drawing, band diffing), `font.ts` (generated), controller and connection
+Files: `oled.ts` (model, drawing, change check), `font.ts` (generated), controller and connection
 changes; tests in `fireOled.test.ts` with golden frames in `apps/web/test/fixtures/fire-oled/`.
 
 **Replace / Add mode.** BANK (note `0x1A`) toggles `fire.mode` (outside the song, no undo). LED 1
@@ -275,14 +275,16 @@ The web app caps OLED updates at **30 fps** (`OLED_MAX_FPS`), half the measured 
 room for pad SysEx and LED messages on the same port; a change inside the interval is held and sent
 when it ends, coalesced with later changes.
 
-**Band diffing.** The OLED SysEx addresses a range of 8-row bands (`F0 47 7F 43 0E hh ll <first>
-<last> 00 7F <data> F7`). The connection keeps the frame it last sent and sends one message per
-run of changed bands (a single band is 159 bytes instead of 1183); the packing restarts at the
-first band (`oled_bands_sysex` in `tools/fire/fire.py`, golden-tested). A beat change while playing
-only rewrites band 0-1. The partial-band packing is derived from the full-frame encoder and has not
-been checked by eye on the device yet (the SEGGER write-up only documents full frames). Check:
-`tools/fire/fire.py --band-check` must show clean vertical bars in rows 8-15, 24-31 and 40-55 only;
-if it shows scrambled dots, partial packing differs and full frames at 30 fps are the fallback.
+**Full frames only (no band diffing).** The OLED SysEx header names a range of 8-row bands and
+columns (`F0 47 7F 43 0E hh ll <first band> <last band> <first col> <last col> <data> F7`), so
+per-band updates looked possible. They do not work: on the device (observed 2026-10-20, the Fire
+re-enumerated as bcdDevice 0.22) `tools/fire/fire.py --band-check` (blank frame, then bands 1, 3
+and 5-6 only, packing restarted at the first band) leaves the screen completely dark, while a full
+frame sent just before displays fine. Either the guessed packing is wrong or this firmware ignores
+partial regions. The web app therefore always sends full 1183-byte frames: it keeps the frame it
+last sent and skips frames whose pixels did not change (`oledUpdate`), under the 30 fps cap. The
+per-band encoder stays in `tools/fire/fire.py` (`oled_bands_sysex`) only as an experiment, marked
+as not working on firmware 0.22.
 
 **PAN / FILTER.** PAN steps the selected chord through the inversions the chord editor offers
 (root, /1, /2, and /3 only on seventh chords), clamped at the ends. FILTER steps through the

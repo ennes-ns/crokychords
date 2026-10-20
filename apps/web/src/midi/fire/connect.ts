@@ -1,8 +1,9 @@
 /**
  * Akai Fire connection: asks for Web MIDI with SysEx only when the user clicks "Connect Fire",
  * finds the Fire's ports by name, feeds its input to the controller, and paints the pads, LEDs
- * and OLED from the store. Repaints are diffed (only changed pads, in one SysEx; only changed
- * OLED bands) and coalesced to one per animation frame; the OLED is capped at OLED_MAX_FPS. The device is cleared on disconnect and page hide, and the
+ * and OLED from the store. Repaints are diffed (only changed pads, in one SysEx; the OLED only
+ * when its frame changed, as one full frame) and coalesced to one per animation frame; the OLED
+ * is capped at OLED_MAX_FPS. The device is cleared on disconnect and page hide, and the
  * connection re-attaches when the Fire is plugged in again (statechange).
  *
  * This is a second MIDIAccess next to `MidiOut` (the DAW output without SysEx); the two use
@@ -12,7 +13,7 @@ import type { FireStatus, Store } from '../../state';
 import type { MidiOutputLike } from '../webmidi';
 import type { FireController } from './controller';
 import { buttonLeds, followScroll } from './controller';
-import { OLED_MAX_FPS, oledModel, oledUpdates, renderOled } from './oled';
+import { OLED_MAX_FPS, oledModel, oledUpdate, renderOled } from './oled';
 import type { OledFrame, Rgb } from './protocol';
 import {
   PAD_COUNT,
@@ -285,7 +286,7 @@ export class FireConnection {
     this.#flushOled();
   }
 
-  /** Send the pending OLED frame (changed bands only), at most OLED_MAX_FPS times a second. */
+  /** Send the pending OLED frame if it changed, at most OLED_MAX_FPS times a second. */
   #flushOled(): void {
     const next = this.#oledNext;
     if (next === null || this.#output === null) return;
@@ -301,10 +302,11 @@ export class FireConnection {
       return;
     }
     this.#oledNext = null;
-    const updates = oledUpdates(this.#oled, next);
-    for (const message of updates) this.#send(message);
+    const update = oledUpdate(this.#oled, next);
     this.#oled = next;
-    if (updates.length > 0) this.#oledAt = this.#now();
+    if (update === null) return;
+    this.#send(update);
+    this.#oledAt = this.#now();
   }
 
   #send(data: number[]): void {

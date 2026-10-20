@@ -141,9 +141,11 @@ def blank() -> list[list[bool]]:
 
 
 def oled_bands_sysex(pixels: Sequence[Sequence[bool]], first: int, last: int) -> list[int]:
-    """SysEx that writes bands `first..last` (8 rows each), all 128 columns.
+    """EXPERIMENT, does not work on firmware 0.22: SysEx for bands `first..last` only.
 
-    The packing restarts at the first band: column index = x + 128 * (band - first).
+    Guessed packing: restarts at the first band, column index = x + 128 * (band - first). On the
+    device (bcdDevice 0.22, 2026-10-20) these messages leave the screen dark, so the web app sends
+    full frames only. Kept for `--band-check` and further experiments.
     """
     width = OLED_W
     count = (last - first + 1) * width * 8
@@ -322,7 +324,8 @@ def bench_oled(fire: Fire, fps: float | None, seconds: float, path: str) -> dict
 
 
 def band_check(fire: Fire, seconds: float = 8.0) -> None:
-    """Visual check of partial OLED updates: blank the screen, then send only bands 1, 3 and 5-6.
+    """EXPERIMENT (fails on firmware 0.22: the screen stays dark). Visual check of partial OLED
+    updates: blank the screen, then send only bands 1, 3 and 5-6.
 
     Correct packing shows clean vertical bars, 2 px wide every 8 px, in rows 8-15, 24-31 and 40-55
     and nothing else; scrambled dots mean the device packs partial regions differently.

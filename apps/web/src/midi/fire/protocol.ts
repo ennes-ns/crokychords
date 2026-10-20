@@ -158,6 +158,7 @@ export function hueRgb(hue: number, light = 1, sat = 1): Rgb {
 
 export const OLED_W = 128;
 export const OLED_H = 64;
+const OLED_BYTES = 1171; // ceil(128 * 64 / 7)
 const BIT_MUTATE: readonly (readonly number[])[] = [
   [13, 19, 25, 31, 37, 43, 49],
   [0, 20, 26, 32, 38, 44, 50],
@@ -176,34 +177,24 @@ export function blankFrame(): OledFrame {
   return new Uint8Array(OLED_W * OLED_H);
 }
 
-export const OLED_BANDS = 8;
-/** Rows per band: the unit of partial OLED updates. */
-export const BAND_ROWS = 8;
-
 /**
- * SysEx that writes bands `first..last` (8 rows each, all 128 columns). The pixel packing
- * restarts at `first`: column index = x + 128 * (band - first), as in `oled_bands_sysex`.
+ * SysEx that writes a full OLED frame (1183 bytes): bands 0-7, columns 0-127. Only full frames
+ * are sent: partial-band updates did not display on the device (spec, "v2 as built").
  */
-export function oledBandsSysex(pixels: OledFrame, first: number, last: number): number[] {
-  const bands = last - first + 1;
-  const data = new Array<number>(Math.ceil((bands * OLED_W * BAND_ROWS) / 7)).fill(0);
-  for (let y = first * BAND_ROWS; y < (last + 1) * BAND_ROWS; y++) {
+export function oledSysex(pixels: OledFrame): number[] {
+  const data = new Array<number>(OLED_BYTES).fill(0);
+  for (let y = 0; y < OLED_H; y++) {
     const mutate = BIT_MUTATE[y % 8] ?? [];
     for (let x = 0; x < OLED_W; x++) {
       if (!pixels[y * OLED_W + x]) continue;
-      const col = x + OLED_W * (Math.floor(y / BAND_ROWS) - first);
+      const col = x + OLED_W * Math.floor(y / 8);
       const bit = mutate[col % 7] ?? 0;
       const at = Math.floor(col / 7) * 8 + Math.floor(bit / 7);
       data[at] = (data[at] ?? 0) | (1 << (bit % 7));
     }
   }
-  const payload = [first, last, 0x00, 0x7f, ...data]; // bands first..last, columns 0..127
+  const payload = [0x00, 0x07, 0x00, 0x7f, ...data]; // bands 0..7, columns 0..127
   return [...SYSEX_HEADER, CMD_OLED, ...len14(payload.length), ...payload, 0xf7];
-}
-
-/** SysEx that writes a full OLED frame (1183 bytes). */
-export function oledSysex(pixels: OledFrame): number[] {
-  return oledBandsSysex(pixels, 0, OLED_BANDS - 1);
 }
 
 // --- Input -------------------------------------------------------------------------------------

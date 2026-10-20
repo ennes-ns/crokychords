@@ -1,7 +1,7 @@
 /**
  * Akai Fire OLED (docs/specs/akai-fire-v1.md §v2): what the 128x64 screen shows, drawn in the
  * Pixel theme's font. Pure: `oledModel` turns state into a few strings, `renderOled` draws them,
- * `oledUpdates` diffs two frames into per-band SysEx. The connection decides when to send.
+ * `oledUpdate` turns a changed frame into one full-frame SysEx. The connection decides when.
  *
  *   rows  0-9   status: mode badge, bar:beat, loop and play/stop icons
  *   rows 11-30  selected chord: Roman numeral (2x), letter name and length on the right
@@ -17,16 +17,14 @@ import type { SuggestionItem } from '../../views/suggest';
 import { GLYPHS, GLYPH_H, GLYPH_W } from './font';
 import type { OledFrame } from './protocol';
 import {
-  BAND_ROWS,
   ENC_FILTER,
   ENC_PAN,
   ENC_RESONANCE,
   ENC_VOLUME,
-  OLED_BANDS,
   OLED_H,
   OLED_W,
   blankFrame,
-  oledBandsSysex,
+  oledSysex,
 } from './protocol';
 import { cursorLimit } from './view';
 
@@ -288,27 +286,20 @@ export function renderOled(model: OledModel): OledFrame {
   return frame;
 }
 
-// --- band diffing -------------------------------------------------------------------------
+// --- updates ------------------------------------------------------------------------------
 
-/** Runs of consecutive bands whose pixels differ, as [first, last] pairs. */
-export function changedBands(previous: OledFrame, next: OledFrame): [number, number][] {
-  const runs: [number, number][] = [];
-  for (let band = 0; band < OLED_BANDS; band++) {
-    let changed = false;
-    const end = (band + 1) * BAND_ROWS * OLED_W;
-    for (let i = band * BAND_ROWS * OLED_W; i < end && !changed; i++) {
-      changed = !previous[i] !== !next[i];
-    }
-    if (!changed) continue;
-    const last = runs.at(-1);
-    if (last !== undefined && last[1] === band - 1) last[1] = band;
-    else runs.push([band, band]);
-  }
-  return runs;
+/** True when two frames light the same pixels. */
+export function sameFrame(a: OledFrame, b: OledFrame): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!a[i] !== !b[i]) return false;
+  return true;
 }
 
-/** SysEx messages that turn the device's `previous` frame into `next` (null: send it all). */
-export function oledUpdates(previous: OledFrame | null, next: OledFrame): number[][] {
-  if (previous === null) return [oledBandsSysex(next, 0, OLED_BANDS - 1)];
-  return changedBands(previous, next).map(([first, last]) => oledBandsSysex(next, first, last));
+/**
+ * The SysEx that shows `next` when the device shows `previous` (null: unknown), or null when
+ * nothing changed. Always a full 1183-byte frame: partial-band updates did not display on the
+ * device (firmware 0.22, spec "v2 as built").
+ */
+export function oledUpdate(previous: OledFrame | null, next: OledFrame): number[] | null {
+  return previous !== null && sameFrame(previous, next) ? null : oledSysex(next);
 }

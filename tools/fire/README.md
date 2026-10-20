@@ -23,7 +23,7 @@ $RUN tools/fire/demo.py --monitor --seconds 30   # print every pad/button/encode
 $RUN tools/fire/demo.py                          # interactive demo, Ctrl+C to quit
 $RUN tools/fire/promo.py                         # the animation
 $RUN tools/fire/fire.py --oled-fps 10 20 30 60   # OLED frame-rate measurement (Linux, 10 s per rate)
-$RUN tools/fire/fire.py --band-check             # partial OLED update test pattern (look at the screen)
+$RUN tools/fire/fire.py --band-check             # partial OLED update experiment (stays dark on firmware 0.22)
 $RUN tools/fire/oled_font.py                     # regenerate the OLED font (needs --with fonttools --with brotli)
 ```
 

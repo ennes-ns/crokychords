@@ -1,6 +1,6 @@
 import { createSong } from '@crokychords/core';
 import { describe, expect, it } from 'vitest';
-import { changedBands, drawText, oledModel, oledUpdates, renderOled } from '../src/midi/fire/oled';
+import { drawText, oledModel, oledUpdate, renderOled, sameFrame } from '../src/midi/fire/oled';
 import type { OledFrame } from '../src/midi/fire/protocol';
 import { ENC_PAN, ENC_RESONANCE, ENC_VOLUME, blankFrame } from '../src/midi/fire/protocol';
 import { initialState } from '../src/state';
@@ -117,33 +117,18 @@ describe('Fire OLED frames (golden)', () => {
   });
 });
 
-describe('Fire OLED band diffing', () => {
-  it('finds runs of changed bands', () => {
-    const a = blankFrame();
-    const b = blankFrame();
-    expect(changedBands(a, b)).toEqual([]);
-    b[0] = 1; // band 0
-    b[9 * 128 + 5] = 1; // band 1
-    b[40 * 128] = 1; // band 5
-    b[63 * 128 + 127] = 1; // band 7
-    expect(changedBands(a, b)).toEqual([
-      [0, 1],
-      [5, 5],
-      [7, 7],
-    ]);
-  });
-
-  it('sends a full frame first, then only the changed bands', () => {
+describe('Fire OLED updates', () => {
+  it('sends one full frame when the frame changed, nothing when it did not', () => {
     const a = blankFrame();
     drawText(a, 'C', 0, 0);
-    const full = oledUpdates(null, a);
-    expect(full.map((m) => m.length)).toEqual([1183]);
+    expect(oledUpdate(null, a)).toHaveLength(1183);
     const b = a.slice();
-    drawText(b, 'x', 60, 40); // rows 40..50: bands 5 and 6
-    const updates = oledUpdates(a, b);
-    expect(updates).toHaveLength(1);
-    expect(updates[0]?.slice(7, 9)).toEqual([5, 6]);
-    expect(updates[0]).toHaveLength(12 + Math.ceil((2 * 1024) / 7));
-    expect(oledUpdates(b, b)).toEqual([]);
+    expect(sameFrame(a, b)).toBe(true);
+    expect(oledUpdate(a, b)).toBeNull();
+    drawText(b, 'x', 60, 40);
+    expect(sameFrame(a, b)).toBe(false);
+    // Always the whole screen: partial-band updates do not display on the device.
+    expect(oledUpdate(a, b)?.slice(7, 11)).toEqual([0x00, 0x07, 0x00, 0x7f]);
+    expect(oledUpdate(a, b)).toHaveLength(1183);
   });
 });

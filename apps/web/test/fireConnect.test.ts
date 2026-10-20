@@ -93,8 +93,6 @@ function setup(request: (() => Promise<FireAccessLike>) | null) {
 const sysexPads = (m: number[]) => m[0] === 0xf0 && m[4] === 0x65;
 const padCount = (m: number[]) => (((m[5] ?? 0) << 7) | (m[6] ?? 0)) / 4;
 const sysexOled = (m: number[]) => m[0] === 0xf0 && m[4] === 0x0e;
-/** First and last band of an OLED SysEx. */
-const oledBands = (m: number[]) => [m[7], m[8]];
 
 describe('FireConnection', () => {
   it('says unsupported without Web MIDI and denied when SysEx is refused', async () => {
@@ -176,14 +174,14 @@ describe('FireConnection', () => {
     expect(output.sent).toEqual([]);
   });
 
-  it('sends only the OLED bands that changed, at most 30 frames a second', async () => {
+  it('sends a full OLED frame only when it changed, at most 30 frames a second', async () => {
     const fake = fakeAccess();
     const { store, connection, flush, advance, clock } = setup(() => Promise.resolve(fake.access));
     await connection.connect();
     const { input, output } = fake.plug();
     flush();
     output.sent = [];
-    // BANK toggles Add mode: the badge in band 0 (and its descender rows in band 1) changes.
+    // BANK toggles Add mode: the badge on the OLED changes.
     input.emit(0x90, 0x1a, 0x7f);
     input.emit(0x80, 0x1a, 0);
     expect(store.state.fire.mode).toBe('add');
@@ -194,9 +192,7 @@ describe('FireConnection', () => {
     expect(clock.timers).toHaveLength(1);
     advance(40);
     const first = output.sent.filter(sysexOled);
-    expect(first.length).toBeGreaterThan(0);
-    expect(first.every((m) => m.length < 1183)).toBe(true);
-    expect(first.map(oledBands)[0]?.[0]).toBe(0);
+    expect(first.map((m) => m.length)).toEqual([1183]);
     // Two changes inside one interval coalesce into one update with the latest state.
     output.sent = [];
     input.emit(0x90, 0x1a, 0x7f);
