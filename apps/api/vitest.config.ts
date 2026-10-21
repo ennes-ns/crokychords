@@ -9,6 +9,9 @@ export default defineWorkersConfig(async () => {
       poolOptions: {
         workers: {
           singleWorker: true,
+          // The Workers AI binding (moderation, docs/specs/moderation-v1.md §3.1) is always remote;
+          // tests inject a fake model instead, so no remote session (and no Cloudflare login) is needed.
+          remoteBindings: false,
           wrangler: { configPath: './wrangler.toml' },
           miniflare: {
             // Stand-in for ../web/dist, so the tests run without building the web app first.
