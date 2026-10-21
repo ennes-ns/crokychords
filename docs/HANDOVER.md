@@ -10,8 +10,8 @@ collaboration process in `docs/WORKFLOW.md`.
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core` | Done: theory, chord tokens, song model (schema 4: tracks, melody, song pattern presets), n-gram suggestions with backoff, MIDI writer with program changes, chord tones. |
 | `packages/data` | Done: Chordonomicon n-gram builder with deterministic `--trim`, chord-symbol parser, token-format helpers. Python, uv, pytest. 119 tests.                                    |
-| `apps/web`      | Done for v1.1: single-screen shell, replace-first grid with "+" slot, loop points, melody lane (degree colours, chord-tone tint), pattern editor, Band panel with SoundFont or synth instrument per track and a melody row, master chain, Breakcore mode, Default and Pixel themes, SaveStore + sync, Akai Fire controller. |
-| `apps/api`      | Done and deployed: Hono Worker with Access-JWT verification, D1/R2 saves, limits; serves the web app and the SoundFont samples (fetched at build time, never in git) as static assets. |
+| `apps/web`      | Done for v1.2: one integrated timeline (chord rows with melody strips), replace-first grid, loop points, pattern editor, Band panel with SoundFont / synth / sampler per track, community tab, master chain, Breakcore, themes, SaveStore + sync, import, command API for agents (assistant hidden), Akai Fire v1–v3. |
+| `apps/api`      | Deployed: Hono Worker with Access-JWT verification, saves (D1/R2), community samples with maintainer review, moderation advice routes, weekly backups by cron, assistant route (off), admin routes gated by `ADMIN_EMAILS`. Migrations 0001–0005. |
 | `crates/`       | `croky-core`: full Rust port of `packages/core`, golden-tested byte for byte against the TypeScript output; `croky-tui`: terminal app v1 (ALSA sequencer, real-time scheduler thread, SaveStore-compatible records). `scripts/check-rust.sh`; CI job `rust check` is required. |
 | Data            | `apps/web/public/data/default.json`: trimmed Chordonomicon table (333 KB), loaded by default; seed table as fallback.                                                       |
 | Brand           | Done: pixel banner (`docs/readme/`), favicon and toolbar mark from the pixel master (`tools/brand/`), `docs/BRAND.md`.                                                       |
@@ -60,6 +60,11 @@ collaboration process in `docs/WORKFLOW.md`.
   themes Default and Pixel; the pixel master is the single source for banner, favicon and mark.
 
 ## Changes
+
+- 2026-10-21: sampler (#94), command API + assistant (#99, hidden #101), MIDI/MusicXML import (#102),
+  community bank (#103), weekly backups (#106, first set taken), Fire SAMPLE mode (#107), integrated
+  timeline (#108), moderation advice job (#109, enabled). Production secrets/vars set: `ADMIN_EMAILS`,
+  `MODERATION_*`, deploy token now also has R2 and Access service-token rights.
 
 - 2026-10-21 (import, #98): MIDI/MusicXML import (`docs/specs/import-v1.md`): `importMidi`,
   `importMusicXml`, `importFile` in `packages/core/src/import/` (own SMF and XML readers, chord
