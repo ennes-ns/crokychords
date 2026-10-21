@@ -1,0 +1,185 @@
+# Moderation policy v1 (docs/specs/moderation-v1.md §1). The job only recommends: a flag sets
+# auto_verdict = flag:<category>, a note shows as borderline; the maintainer decides.
+# tests/test_policy_table.py keeps this file and the spec's table in step.
+id: moderation-v1/1
+
+# When several rules flag, the verdict names the first of these categories.
+order: [sexual, violence, hate, personal, speech, copyright, loudness, quality]
+
+quality:
+  max_duration_s: 30
+  silence_peak_dbfs: { flag: -60, note: -45 }
+
+loudness:
+  # Sustained clipping: true peak above 0 dBTP and at least this share of samples in runs of
+  # clip_run or more consecutive samples at or above clip_level (full scale = 1.0).
+  true_peak_dbtp: 0.0
+  clip_level: 0.999
+  clip_run: 4
+  clipped_ratio: { flag: 0.001 }
+  integrated_lufs: { flag: -5, note: -8 }
+
+speech:
+  # A segment whose no-speech probability is above this is dropped from the transcript.
+  max_no_speech_prob: 0.6
+  # A single word below this probability is dropped (Whisper invents words on short clips).
+  min_word_probability: 0.5
+  # Words outside this list count as words (rule 6). Repeated letters are collapsed first;
+  # single characters are not words.
+  allow:
+    [
+      a,
+      ah,
+      aah,
+      aha,
+      ay,
+      aye,
+      eh,
+      ehh,
+      ha,
+      hah,
+      haha,
+      he,
+      hey,
+      hi,
+      hm,
+      hmm,
+      hmmm,
+      ho,
+      hoo,
+      huh,
+      la,
+      lala,
+      mm,
+      mmm,
+      mhm,
+      na,
+      nah,
+      ne,
+      o,
+      oh,
+      ohh,
+      ooh,
+      oooh,
+      oo,
+      uh,
+      uhh,
+      uh-huh,
+      um,
+      wa,
+      wah,
+      wo,
+      woah,
+      woo,
+      whoa,
+      ya,
+      yah,
+      yay,
+      ye,
+      yeah,
+      yeh,
+      yo,
+    ]
+  max_words_outside_allow: 0
+  # Rule 7: VAD speech share of the sample, together with a transcript of at least vad_min_words
+  # words (any words, so a chanted "hey hey hey hey" counts; "oh yeah" does not).
+  vad_ratio: { flag: 0.40, note: 0.25 }
+  vad_min_words: 3
+
+# Rules 8-15: YAMNet (AudioSet) display names; max score over frames.
+events:
+  - { rule: 8, category: violence, what: screaming, classes: [Screaming], flag: 0.35, note: 0.15 }
+  - {
+      rule: 9,
+      category: violence,
+      what: crying,
+      classes: ['Crying, sobbing', 'Baby cry, infant cry', Whimper],
+      flag: 0.40,
+      note: 0.20,
+    }
+  - {
+      rule: 10,
+      category: violence,
+      what: shouting,
+      classes: [Shout, Yell, Bellow, Children shouting],
+      flag: 0.70,
+      note: 0.30,
+    }
+  - {
+      rule: 11,
+      category: violence,
+      what: gunshots,
+      classes: ['Gunshot, gunfire', Machine gun, Fusillade, Artillery fire, Cap gun],
+      flag: 0.40,
+      note: 0.20,
+    }
+  - {
+      rule: 12,
+      category: violence,
+      what: explosions,
+      classes: [Explosion, Eruption],
+      flag: 0.60,
+      note: 0.30,
+    }
+  - {
+      rule: 13,
+      category: sexual,
+      what: moaning,
+      classes: ['Wail, moan', Groan],
+      flag: 0.35,
+      note: 0.15,
+    }
+  - {
+      rule: 14,
+      category: sexual,
+      what: heavy breathing,
+      classes: [Pant, Gasp, Breathing],
+      note: 0.30,
+    }
+  - {
+      rule: 15,
+      category: speech,
+      what: speech-like sound,
+      classes:
+        [
+          Speech,
+          Conversation,
+          'Narration, monologue',
+          Babbling,
+          Speech synthesizer,
+          Whispering,
+          'Hubbub, speech noise, speech babble',
+        ],
+      note: 0.50,
+    }
+
+text:
+  # Whole words after lower-casing and folding (rule 16). Deliberately short: Llama Guard
+  # (rule 18) covers the long tail; extend here when something slips through.
+  fold: { '0': o, '1': i, '3': e, '4': a, '5': s, '7': t, '@': a, '$': s }
+  words:
+    hate: [nazi, nazis, heil, sieg, '1488', kkk, swastika, white-power, whitepower]
+    sexual: [porn, porno, sex, sexy, nsfw, orgasm, moan, moaning, cum, xxx, nude, naked, rape]
+    violence:
+      [kill, killing, murder, murdered, gore, gunshot, execution, suicide, torture, massacre]
+  # Llama Guard 3 hazard codes → category (rule 18); unmapped unsafe codes become a note.
+  guard_model: '@cf/meta/llama-guard-3-8b'
+  guard_categories:
+    S1: violence
+    S9: violence
+    S11: violence
+    S3: sexual
+    S4: sexual
+    S12: sexual
+    S10: hate
+    S7: personal
+
+models:
+  asr: { name: faster-whisper, size: small, compute_type: int8 }
+  vad: { name: silero-vad, source: faster-whisper bundled v5 }
+  events:
+    name: yamnet
+    url: https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite
+    sha256: 4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf
+    class_map_url: https://raw.githubusercontent.com/tensorflow/models/dfffd623b6be8d1d9744b8e261fbac370d17c46d/research/audioset/yamnet/yamnet_class_map.csv
+    class_map_sha256: cdf24d193e196d9e95912a2667051ae203e92a2ba09449218ccb40ef787c6df2

@@ -1,15 +1,22 @@
 /**
  * The community parts of the Sampler panel (docs/specs/community-v1.md §4.3–§4.4): the Share
  * toggle with its licence form and status, and the Community tab (search, tags, audition through
- * the sampler voice, Add to slot, the handle, Your shares). Only built when sync is on; every
- * request goes through `CommunitySync` and its client.
+ * the sampler voice, Add to slot, the handle, Your shares, Report and Request review of
+ * docs/specs/moderation-v1.md §5.2). Only built when sync is on; every request goes through
+ * `CommunitySync` and its client.
  */
 import type { SamplerId } from '../audio/instruments';
 import { samplerSlot } from '../audio/instruments';
 import type { AuditionHandle, Samplers } from '../audio/sampler';
-import { h } from '../dom';
+import { h, option } from '../dom';
 import type { CommunitySample, OwnSample, Share } from '../sync/community';
-import { LICENCE_TEXT, communityMessage, rejectLabel } from '../sync/community';
+import {
+  LICENCE_TEXT,
+  REJECT_LABELS,
+  REPORT_REASONS,
+  communityMessage,
+  rejectLabel,
+} from '../sync/community';
 import type { CommunitySync } from '../sync/communitySync';
 
 export interface CommunityDeps {
@@ -21,7 +28,9 @@ export interface CommunityDeps {
 export function shareStatus(share: Share | null): { text: string; title: string } {
   switch (share?.state) {
     case 'pending':
-      return { text: 'Checking…', title: 'Waiting for the maintainer to listen to it' };
+      return share.appealed_at !== null
+        ? { text: 'Checking… (review requested)', title: 'The maintainer looks at it again' }
+        : { text: 'Checking…', title: 'Waiting for the maintainer to listen to it' };
     case 'listed':
       return { text: 'Shared', title: 'In the community bank' };
     case 'unlisted':
@@ -427,6 +436,76 @@ export function createCommunityViews(
     return button;
   };
 
+  /** Samples this browser reported (the item then thanks instead of offering Report again). */
+  const reported = new Set<string>();
+
+  /** Report → a reason (no default) with Send report and Cancel; the sample stays listed. */
+  const reportControl = (sample: CommunitySample): HTMLElement => {
+    const box = h('span', { class: 'community-report', attrs: { 'data-field': 'report-box' } });
+    const thanks = (): void => {
+      box.replaceChildren(h('span', { class: 'share-status' }, 'Reported, thank you'));
+    };
+    if (reported.has(sample.id)) {
+      thanks();
+      return box;
+    }
+    const open = h(
+      'button',
+      {
+        props: { type: 'button' },
+        attrs: { title: 'Tell the maintainer something is wrong with it', 'data-field': 'report' },
+      },
+      'Report',
+    );
+    const reason = h(
+      'select',
+      { attrs: { 'aria-label': 'What is wrong with it', 'data-field': 'report-reason' } },
+      option('', 'Reason…', true),
+      ...REPORT_REASONS.map((r) => option(r, REJECT_LABELS[r])),
+    );
+    const send = h(
+      'button',
+      {
+        class: 'danger',
+        props: { type: 'button', disabled: true },
+        attrs: { 'data-field': 'report-send' },
+      },
+      'Send report',
+    );
+    const cancel = h(
+      'button',
+      { props: { type: 'button' }, attrs: { 'data-field': 'report-cancel' } },
+      'Cancel',
+    );
+    reason.onchange = () => {
+      send.disabled = reason.value === '';
+    };
+    open.onclick = () => box.replaceChildren(reason, send, cancel);
+    cancel.onclick = () => {
+      reason.value = '';
+      send.disabled = true;
+      box.replaceChildren(open);
+    };
+    send.onclick = () => {
+      const picked = REPORT_REASONS.find((r) => r === reason.value);
+      if (picked === undefined) return;
+      send.disabled = true;
+      client.report(sample.id, picked).then(
+        () => {
+          reported.add(sample.id);
+          thanks();
+          showStatus(null);
+        },
+        (e: unknown) => {
+          send.disabled = false;
+          showStatus(communityMessage(e), true);
+        },
+      );
+    };
+    box.append(open);
+    return box;
+  };
+
   const renderList = (): void => {
     const target = options.slot();
     list.replaceChildren(
@@ -481,6 +560,7 @@ export function createCommunityViews(
           ),
           h('span', { class: 'sampler-value' }, lengthLabel(sample.duration)),
           add,
+          ...(sample.own ? [] : [reportControl(sample)]),
         );
       }),
     );
@@ -538,6 +618,25 @@ export function createCommunityViews(
             },
           );
         };
+        const canAppeal = sample.share?.state === 'rejected' && sample.share.appealed_at === null;
+        const appeal = h(
+          'button',
+          {
+            props: { type: 'button', hidden: !canAppeal },
+            attrs: {
+              title: 'Ask the maintainer to listen to it again (once)',
+              'data-field': 'appeal',
+            },
+          },
+          'Request review',
+        );
+        appeal.onclick = () => {
+          appeal.disabled = true;
+          client.appeal(sample.id).then(putMine, (e: unknown) => {
+            appeal.disabled = false;
+            showStatus(communityMessage(e), true);
+          });
+        };
         return h(
           'li',
           { class: 'community-item', attrs: { 'data-id': sample.id } },
@@ -547,6 +646,7 @@ export function createCommunityViews(
             h('span', { class: 'community-name' }, sample.name),
             h('span', { class: 'share-status', attrs: { title: shared.title } }, text),
           ),
+          appeal,
           unshare,
           remove,
         );

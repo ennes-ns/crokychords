@@ -6,6 +6,8 @@
 #   ACCESS_AUD          Audience (AUD) tag of the Access application
 #   ANTHROPIC_API_KEY   key for the in-app assistant (docs/specs/assistant-v1.md §B2); without it
 #                       the assistant says it is unavailable and nothing else changes
+#   MODERATION_TOKEN    bearer token of the scheduled moderation job (docs/specs/moderation-v1.md
+#                       §3.1); without it the job routes answer 500 and nothing else changes
 name = "crokychords"
 main = "src/index.ts"
 compatibility_date = "2026-03-01"
@@ -74,3 +76,8 @@ binding = "CF_VERSION_METADATA"
 
 [triggers]
 crons = ["0 3 * * 1", "5,20,35,50 3-11 * * 1"]
+
+# Workers AI, only for the moderation job's text check of sample names and tags
+# (docs/specs/moderation-v1.md §3.1, model @cf/meta/llama-guard-3-8b). Free tier allocation.
+[ai]
+binding = "AI"

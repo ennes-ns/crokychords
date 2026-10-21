@@ -1910,6 +1910,53 @@ button.icon.danger:hover:not(:disabled) {
   color: var(--danger);
 }
 
+/* Automatic recommendation, reports and appeals (docs/specs/moderation-v1.md §5.1). */
+
+.review-auto {
+  display: flex;
+  flex-direction: column;
+  grid-column: 1 / -1;
+  gap: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+}
+
+.review-auto strong {
+  color: var(--text);
+  font-size: var(--font-size-sm);
+}
+
+.review-auto strong.flagged {
+  color: var(--danger);
+}
+
+.review-reasons,
+.review-notes {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.review-reasons {
+  color: var(--text);
+}
+
+.review-wave {
+  width: 100%;
+  height: 32px;
+  margin-top: 2px;
+  fill: var(--accent);
+}
+
+.review-meta .review-reports,
+.review-meta .review-appeal {
+  color: var(--text);
+}
+
+.review-actions button.armed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 /* Toolbar channel map */
 
 .channel-map {

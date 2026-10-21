@@ -18,8 +18,10 @@ side a sample is never deleted while anyone references it.
 `pending` until the maintainer lists or rejects it by hand in the review queue. Nothing is listed,
 rejected or deleted automatically; the automatic checks of #96 will only add a recommendation.
 
-Non-goals for v1: automatic moderation (#96), reports from users (#96), hard deletes by the
-maintainer (#96), syncing the patches themselves between devices, the terminal app.
+Non-goals for v1: syncing the patches themselves between devices, the terminal app. The
+automatic checks (a recommendation only), reports from users, the owner's one appeal and the
+maintainer's hard delete are specified in [`moderation-v1.md`](moderation-v1.md) (#96), which
+extends `Share`, `QueueItem`, the queue's views and the decisions below.
 
 ## 1. Data
 

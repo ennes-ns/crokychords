@@ -6,6 +6,7 @@ import {
   HttpCommunityClient,
   OFFLINE_MESSAGE,
   SIGNED_OUT_MESSAGE,
+  parseQueueItem,
   rejectLabel,
   sha256Hex,
   uploadType,
@@ -162,6 +163,84 @@ describe('HttpCommunityClient: requests', () => {
     await c.release(own.id, 'sampler-4');
     expect(sent[7]?.init.method).toBe('DELETE');
     expect(sent[7]?.url).toBe(`/api/samples/${own.id}/take?slot=sampler-4`);
+  });
+});
+
+describe('HttpCommunityClient: moderation (docs/specs/moderation-v1.md)', () => {
+  it('reports, appeals, deletes for good and asks for the reported view', async () => {
+    const { c, sent } = client(({ url }) => {
+      if (url.endsWith('/appeal'))
+        return respond(200, { sample: { ...own, share: { ...own.share, appealed_at: 'x' } } });
+      if (url.includes('/queue?state=')) return respond(200, { items: [] });
+      return respond(200, { reported: true, deleted: true });
+    });
+    await c.report(own.id, 'violence');
+    expect(sent[0]?.url).toBe(`/api/samples/${own.id}/report`);
+    expect(sent[0]?.init.method).toBe('POST');
+    expect(JSON.parse(String(sent[0]?.init.body))).toEqual({ reason: 'violence' });
+    const appealed = await c.appeal(own.id);
+    expect(sent[1]?.url).toBe(`/api/samples/${own.id}/appeal`);
+    expect(appealed.share?.appealed_at).toBe('x');
+    await c.hardDelete(own.id);
+    expect(sent[2]?.url).toBe(`/api/moderation/${own.id}/delete`);
+    expect(JSON.parse(String(sent[2]?.init.body))).toEqual({ confirm: own.id });
+    await c.queue('reported');
+    expect(sent[3]?.url).toBe('/api/moderation/queue?state=reported');
+  });
+
+  it('parses the recommendation, reports and appeal of a queue item, tolerating junk', () => {
+    const base = {
+      ...listed,
+      listed_at: null,
+      state: 'pending',
+      shared_at: own.created_at,
+      owner_id: 'u1',
+      revision: 1,
+    };
+    const item = parseQueueItem({
+      ...base,
+      auto: {
+        verdict: 'flag:speech',
+        checked_at: 'now',
+        current: true,
+        scores: { Speech: 0.9, bad: 'x' },
+        reasons: ['speech: words', 3],
+        notes: [],
+        peaks: [0.1, 'x', 1],
+        models: { asr: 'w' },
+        policy: 'moderation-v1/1',
+      },
+      reports: { open: 2, reasons: { hate: 2 } },
+      appeal: { at: 'then', of: 'speech' },
+    });
+    expect(item.auto).toEqual({
+      verdict: 'flag:speech',
+      checked_at: 'now',
+      current: true,
+      scores: { Speech: 0.9 },
+      reasons: ['speech: words'],
+      notes: [],
+      peaks: [0.1, 1],
+      models: { asr: 'w' },
+      policy: 'moderation-v1/1',
+    });
+    expect(item.reports).toEqual({ open: 2, reasons: { hate: 2 } });
+    expect(item.appeal).toEqual({ at: 'then', of: 'speech' });
+    const bare = parseQueueItem(base);
+    expect(bare.auto).toBeNull();
+    expect(bare.reports).toEqual({ open: 0, reasons: {} });
+    expect(bare.appeal).toBeNull();
+    expect(parseQueueItem({ ...base, auto: { verdict: 3 } }).auto).toBeNull();
+  });
+
+  it('words the report limit', async () => {
+    const { c } = client(() =>
+      respond(429, { error: { code: 'rate_limited', message: 'at most 20 reports per day' } }),
+    );
+    await expect(c.report(own.id, 'hate')).rejects.toMatchObject({
+      kind: 'rejected',
+      message: 'You have sent many reports today. Thank you; try again tomorrow.',
+    });
   });
 });
 

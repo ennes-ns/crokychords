@@ -78,6 +78,17 @@ interface ShareColumns {
   shared_at: string | null;
   listed_at: string | null;
   unlisted_at: string | null;
+  appealed_at: string | null;
+}
+
+interface QueueColumns {
+  auto_verdict: string | null;
+  auto_detail: string | null;
+  auto_revision: number | null;
+  auto_checked_at: string | null;
+  open_reports: number;
+  /** Reasons of the open reports, space separated. */
+  report_reasons: string | null;
 }
 
 interface OwnerColumns {
@@ -87,6 +98,7 @@ interface OwnerColumns {
 
 type OwnRow = SampleRow & ShareColumns & { refs: number };
 type ListedRow = SampleRow & ShareColumns & OwnerColumns;
+type QueueRow = ListedRow & QueueColumns;
 
 export interface Share {
   state: ShareState;
@@ -94,6 +106,8 @@ export interface Share {
   shared_at: string;
   listed_at: string | null;
   unlisted_at: string | null;
+  /** When the owner asked for a second review (once); docs/specs/moderation-v1.md §3.2. */
+  appealed_at: string | null;
 }
 
 export interface OwnSample {
@@ -124,6 +138,21 @@ export interface CommunitySample {
   own: boolean;
 }
 
+/** The automatic checks' recommendation (docs/specs/moderation-v1.md §3.3). */
+export interface AutoVerdict {
+  /** `ok` | `flag:<category>`. */
+  verdict: string;
+  checked_at: string;
+  /** Whether it is about the revision shown (a rename since makes it outdated). */
+  current: boolean;
+  scores: Record<string, number>;
+  reasons: string[];
+  notes: string[];
+  peaks: number[];
+  models: Record<string, string>;
+  policy: string;
+}
+
 export interface QueueItem extends Omit<CommunitySample, 'listed_at'> {
   listed_at: string | null;
   state: ShareState;
@@ -131,7 +160,14 @@ export interface QueueItem extends Omit<CommunitySample, 'listed_at'> {
   owner_id: string;
   /** The share's revision; a decision must name it (docs/specs/community-v1.md §3). */
   revision: number;
+  auto: AutoVerdict | null;
+  reports: { open: number; reasons: Record<string, number> };
+  /** The owner's request for a second review, with the category of the rejection. */
+  appeal: { at: string; of: string | null } | null;
 }
+
+export type Decision =
+  { action: 'list' } | { action: 'reject'; reason: RejectReason } | { action: 'dismiss' };
 
 /** The display name: the chosen handle, else the neutral `user-<first 6 hex of the id>`. */
 export function displayHandle(userId: string, handle: string | null): string {
@@ -164,6 +200,7 @@ function shareOf(row: ShareColumns): Share | null {
     shared_at: row.shared_at,
     listed_at: row.listed_at,
     unlisted_at: row.unlisted_at,
+    appealed_at: row.appealed_at,
   };
 }
 
@@ -198,7 +235,60 @@ function toCommunity(row: ListedRow, viewer: string): CommunitySample {
   };
 }
 
-function toQueueItem(row: ListedRow): QueueItem {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function numbers(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (isRecord(value)) {
+    for (const [k, v] of Object.entries(value)) if (typeof v === 'number') out[k] = v;
+  }
+  return out;
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+function stringMap(value: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (isRecord(value)) {
+    for (const [k, v] of Object.entries(value)) if (typeof v === 'string') out[k] = v;
+  }
+  return out;
+}
+
+/** The stored verdict and its JSON detail; null when the share was never checked. */
+export function parseAuto(row: QueueColumns & { revision: number | null }): AutoVerdict | null {
+  if (row.auto_verdict === null || row.auto_checked_at === null) return null;
+  let detail: unknown = null;
+  try {
+    detail = JSON.parse(row.auto_detail ?? 'null');
+  } catch {
+    detail = null;
+  }
+  const d = isRecord(detail) ? detail : {};
+  return {
+    verdict: row.auto_verdict,
+    checked_at: row.auto_checked_at,
+    current: row.auto_revision !== null && row.auto_revision === row.revision,
+    scores: numbers(d['scores']),
+    reasons: strings(d['reasons']),
+    notes: strings(d['notes']),
+    peaks: Array.isArray(d['peaks'])
+      ? d['peaks'].filter((v): v is number => typeof v === 'number')
+      : [],
+    models: stringMap(d['models']),
+    policy: typeof d['policy'] === 'string' ? d['policy'] : '',
+  };
+}
+
+function toQueueItem(row: QueueRow): QueueItem {
+  const reasons: Record<string, number> = {};
+  for (const r of (row.report_reasons ?? '').split(' ')) {
+    if (r !== '') reasons[r] = (reasons[r] ?? 0) + 1;
+  }
   return {
     ...toCommunity(row, ''),
     listed_at: row.listed_at,
@@ -206,12 +296,18 @@ function toQueueItem(row: ListedRow): QueueItem {
     shared_at: row.shared_at ?? '',
     owner_id: row.owner_id,
     revision: row.revision ?? 1,
+    auto: parseAuto(row),
+    reports: { open: row.open_reports, reasons },
+    appeal:
+      row.appealed_at === null
+        ? null
+        : { at: row.appealed_at, of: row.state === 'pending' ? row.reason : null },
   };
 }
 
 const SHARE_COLUMNS =
   'sh.state AS state, sh.reason AS reason, sh.shared_at AS shared_at, ' +
-  'sh.listed_at AS listed_at, sh.unlisted_at AS unlisted_at';
+  'sh.listed_at AS listed_at, sh.unlisted_at AS unlisted_at, sh.appealed_at AS appealed_at';
 const OWN_SELECT =
   `SELECT s.*, ${SHARE_COLUMNS}, ` +
   '(SELECT COUNT(*) FROM sample_refs r WHERE r.sample_id = s.id AND r.user_id <> s.owner_id) AS refs ' +
@@ -219,6 +315,51 @@ const OWN_SELECT =
 const LISTED_SELECT =
   `SELECT s.*, ${SHARE_COLUMNS}, sh.revision AS revision, u.handle AS owner_handle ` +
   'FROM samples s JOIN shares sh ON sh.sample_id = s.id JOIN users u ON u.id = s.owner_id';
+const OPEN_REPORTS = 'FROM reports r WHERE r.sample_id = s.id AND r.resolved_at IS NULL';
+const QUEUE_SELECT =
+  `SELECT s.*, ${SHARE_COLUMNS}, sh.revision AS revision, u.handle AS owner_handle, ` +
+  'sh.auto_verdict AS auto_verdict, sh.auto_detail AS auto_detail, ' +
+  'sh.auto_revision AS auto_revision, sh.auto_checked_at AS auto_checked_at, ' +
+  `(SELECT COUNT(*) ${OPEN_REPORTS}) AS open_reports, ` +
+  `(SELECT group_concat(r.reason, ' ') ${OPEN_REPORTS}) AS report_reasons ` +
+  'FROM samples s JOIN shares sh ON sh.sample_id = s.id JOIN users u ON u.id = s.owner_id';
+
+/** One row of `moderation_log` (docs/specs/moderation-v1.md §2). */
+export interface LogEntry {
+  sample_id: string;
+  revision: number | null;
+  actor: 'auto' | 'maintainer' | 'owner' | 'user';
+  action: 'verdict' | 'list' | 'reject' | 'dismiss' | 'report' | 'appeal' | 'delete';
+  verdict?: string | null;
+  reason?: string | null;
+  detail?: string | null;
+  created_at: string;
+}
+
+/** An INSERT into the log, optionally only when `condition` (an SQL expression) holds. */
+export function logStatement(
+  db: D1Database,
+  entry: LogEntry,
+  condition?: { sql: string; binds: (string | number)[] },
+): D1PreparedStatement {
+  const binds: (string | number | null)[] = [
+    entry.sample_id,
+    entry.revision,
+    entry.actor,
+    entry.action,
+    entry.verdict ?? null,
+    entry.reason ?? null,
+    entry.detail ?? null,
+    entry.created_at,
+  ];
+  const where = condition === undefined ? '' : ` WHERE ${condition.sql}`;
+  return db
+    .prepare(
+      'INSERT INTO moderation_log (sample_id, revision, actor, action, verdict, reason, detail, created_at) ' +
+        `SELECT ?, ?, ?, ?, ?, ?, ?, ?${where}`,
+    )
+    .bind(...binds, ...(condition?.binds ?? []));
+}
 
 export type InsertResult =
   | { status: 'created'; sample: OwnSample }
@@ -374,6 +515,45 @@ export class CommunityStore {
   }
 
   /**
+   * The maintainer's hard delete (docs/specs/moderation-v1.md §3.3), in any state, unless
+   * another user references the sample (one conditional statement). Removes the row, its share,
+   * the owner's refs and its reports, logs it, and drops the R2 object when no other row has the
+   * same content. False when the sample is unknown or referenced.
+   */
+  async hardDelete(id: string, now: string): Promise<'deleted' | 'not_found' | 'in_use'> {
+    const row = await this.db
+      .prepare(
+        'SELECT s.sha256 AS sha256, sh.revision AS revision FROM samples s ' +
+          'LEFT JOIN shares sh ON sh.sample_id = s.id WHERE s.id = ?',
+      )
+      .bind(id)
+      .first<{ sha256: string; revision: number | null }>();
+    if (row === null) return 'not_found';
+    const result = await this.db
+      .prepare(
+        'DELETE FROM samples WHERE id = ?1 ' +
+          'AND NOT EXISTS (SELECT 1 FROM sample_refs r WHERE r.sample_id = ?1 AND r.user_id <> samples.owner_id)',
+      )
+      .bind(id)
+      .run();
+    if (result.meta.changes !== 1) return 'in_use';
+    await this.db.batch([
+      this.db.prepare('DELETE FROM shares WHERE sample_id = ?').bind(id),
+      this.db.prepare('DELETE FROM sample_refs WHERE sample_id = ?').bind(id),
+      this.db.prepare('DELETE FROM reports WHERE sample_id = ?').bind(id),
+      logStatement(this.db, {
+        sample_id: id,
+        revision: row.revision,
+        actor: 'maintainer',
+        action: 'delete',
+        created_at: now,
+      }),
+    ]);
+    await this.#dropObjectIfUnused(row.sha256);
+    return 'deleted';
+  }
+
+  /**
    * Delete `samples/<sha256>` when no row names it. An upload of the same content may race
    * with this (its row lands between the count and the delete), so the bytes are read first and
    * put back when a row has appeared by the time the object is gone.
@@ -518,51 +698,86 @@ export class CommunityStore {
     };
   }
 
-  /** Pending shares oldest first, or listed ones newest first (for a take-down). */
-  async queue(state: 'pending' | 'listed'): Promise<QueueItem[]> {
-    const order = state === 'pending' ? 'sh.shared_at, s.id' : 'sh.listed_at DESC, s.id';
+  /**
+   * Pending shares oldest first, listed ones newest first (for a take-down), or listed ones with
+   * open reports, oldest open report first (docs/specs/moderation-v1.md §3.3).
+   */
+  async queue(state: 'pending' | 'listed' | 'reported'): Promise<QueueItem[]> {
+    const query =
+      state === 'pending'
+        ? `${QUEUE_SELECT} WHERE sh.state = 'pending' ORDER BY sh.shared_at, s.id LIMIT ?`
+        : state === 'listed'
+          ? `${QUEUE_SELECT} WHERE sh.state = 'listed' ORDER BY sh.listed_at DESC, s.id LIMIT ?`
+          : `${QUEUE_SELECT} WHERE sh.state = 'listed' AND EXISTS (SELECT 1 ${OPEN_REPORTS}) ` +
+            `ORDER BY (SELECT MIN(r.created_at) ${OPEN_REPORTS}), s.id LIMIT ?`;
     const { results } = await this.db
-      .prepare(`${LISTED_SELECT} WHERE sh.state = ? ORDER BY ${order} LIMIT ?`)
-      .bind(state, COMMUNITY_LIMITS.queueSize)
-      .all<ListedRow>();
+      .prepare(query)
+      .bind(COMMUNITY_LIMITS.queueSize)
+      .all<QueueRow>();
     return results.map(toQueueItem);
   }
 
   async queueItem(id: string): Promise<QueueItem | null> {
-    const row = await this.db
-      .prepare(`${LISTED_SELECT} WHERE s.id = ?`)
-      .bind(id)
-      .first<ListedRow>();
+    const row = await this.db.prepare(`${QUEUE_SELECT} WHERE s.id = ?`).bind(id).first<QueueRow>();
     return row === null ? null : toQueueItem(row);
   }
 
   /**
-   * The maintainer's decision on revision `revision` (what they saw): pending → listed, or
-   * pending | listed → rejected. False when the state or the revision has moved on.
+   * The maintainer's decision on revision `revision` (what they saw): pending → listed,
+   * pending | listed → rejected, or dismiss: a listed share's open reports are resolved and it
+   * stays listed. Every decision resolves open reports and is logged, in one batch whose later
+   * statements run only when the share was updated. False when the state or the revision has
+   * moved on.
    */
-  async decide(
-    id: string,
-    decision: { action: 'list' } | { action: 'reject'; reason: RejectReason },
-    revision: number,
-    now: string,
-  ): Promise<boolean> {
-    const result =
+  async decide(id: string, decision: Decision, revision: number, now: string): Promise<boolean> {
+    const update =
       decision.action === 'list'
-        ? await this.db
+        ? this.db
             .prepare(
               "UPDATE shares SET state = 'listed', listed_at = ?1, reviewed_at = ?1, reason = NULL " +
                 "WHERE sample_id = ?2 AND state = 'pending' AND revision = ?3",
             )
             .bind(now, id, revision)
-            .run()
-        : await this.db
-            .prepare(
-              "UPDATE shares SET state = 'rejected', reviewed_at = ?1, reason = ?2 " +
-                "WHERE sample_id = ?3 AND state IN ('pending', 'listed') AND revision = ?4",
-            )
-            .bind(now, decision.reason, id, revision)
-            .run();
-    return result.meta.changes === 1;
+        : decision.action === 'reject'
+          ? this.db
+              .prepare(
+                "UPDATE shares SET state = 'rejected', reviewed_at = ?1, reason = ?4 " +
+                  "WHERE sample_id = ?2 AND state IN ('pending', 'listed') AND revision = ?3",
+              )
+              .bind(now, id, revision, decision.reason)
+          : this.db
+              .prepare(
+                'UPDATE shares SET reviewed_at = ?1 ' +
+                  "WHERE sample_id = ?2 AND state = 'listed' AND revision = ?3 " +
+                  'AND EXISTS (SELECT 1 FROM reports WHERE sample_id = ?2 AND resolved_at IS NULL)',
+              )
+              .bind(now, id, revision);
+    const decided = {
+      sql: 'EXISTS (SELECT 1 FROM shares WHERE sample_id = ? AND reviewed_at = ? AND revision = ?)',
+      binds: [id, now, revision],
+    };
+    const [result] = await this.db.batch([
+      update,
+      this.db
+        .prepare(
+          'UPDATE reports SET resolved_at = ?1 WHERE sample_id = ?2 AND resolved_at IS NULL ' +
+            'AND EXISTS (SELECT 1 FROM shares WHERE sample_id = ?2 AND reviewed_at = ?1 AND revision = ?3)',
+        )
+        .bind(now, id, revision),
+      logStatement(
+        this.db,
+        {
+          sample_id: id,
+          revision,
+          actor: 'maintainer',
+          action: decision.action,
+          reason: decision.action === 'reject' ? decision.reason : null,
+          created_at: now,
+        },
+        decided,
+      ),
+    ]);
+    return (result?.meta.changes ?? 0) === 1;
   }
 
   /** Set (or clear) the handle; false when another user has it (ignoring case). */
