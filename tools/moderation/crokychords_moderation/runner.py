@@ -1,9 +1,11 @@
 """The scheduled job (docs/specs/moderation-v1.md §4): fetch pending shares, check them, post a
 recommendation for each. It never lists, rejects or deletes; one failing item does not stop the
-others. Logs name samples only by id."""
+others. Logs are one JSON object per line (``docker logs`` / the journal) and name samples only
+by id."""
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -31,6 +33,11 @@ def verdict_payload(item_revision: int, verdict: Verdict, m: Measurements, model
     return payload
 
 
+def log_line(event: str, **fields: Any) -> str:
+    """One log record as a JSON line: ``{"event": ..., ...}``; no names, tags or transcripts."""
+    return json.dumps({"event": event, **fields}, ensure_ascii=False, separators=(",", ":"))
+
+
 def api_guard(api: JobApi, model_versions: dict[str, str]) -> Callable[[str, list[str]], GuardResult | None]:
     """Llama Guard through the Worker's text route; ``None`` when it is unavailable."""
 
@@ -38,7 +45,7 @@ def api_guard(api: JobApi, model_versions: dict[str, str]) -> Callable[[str, lis
         try:
             available, model, results = api.text([guard_text(name, tags)])
         except ApiError as e:
-            print(f"text route failed: {e.code}")
+            print(log_line("text_route_failed", status=e.status, code=e.code))
             return None
         if not available or not results:
             return None
@@ -59,9 +66,10 @@ class RunStats:
 def run_once(api: JobApi, models: Models, policy: Policy, limit: int = 20, log: Callable[[str], None] = print) -> RunStats:
     stats = RunStats()
     items: list[JobItem] = api.pending(limit)
-    log(f"{len(items)} pending share(s) to check")
+    log(log_line("pending", count=len(items)))
     for item in items:
         started = time.monotonic()
+        base: dict[str, Any] = {"id": item.id, "revision": item.revision}
         try:
             data = api.sample(item.id)
             verdict, m = recommend(data, item.name, item.tags, models, policy)
@@ -69,22 +77,31 @@ def run_once(api: JobApi, models: Models, policy: Policy, limit: int = 20, log: 
         except ApiError as e:
             if e.status == 409:
                 stats.skipped += 1
-                log(f"{item.id}: changed meanwhile, checked again next run")
+                log(log_line("skipped", **base, status=409, why="changed meanwhile, checked again next run"))
             elif e.status == 404:
                 stats.skipped += 1
-                log(f"{item.id}: no longer pending")
+                log(log_line("skipped", **base, status=404, why="no longer pending"))
             else:
                 stats.failed += 1
-                log(f"{item.id}: API error {e.status} {e.code}")
+                log(log_line("failed", **base, status=e.status, code=e.code))
             continue
         except Exception as e:  # noqa: BLE001 - one bad file must not stop the run
             stats.failed += 1
-            log(f"{item.id}: failed ({type(e).__name__})")
+            log(log_line("failed", **base, error=type(e).__name__))
             continue
         stats.checked += 1
         if verdict.verdict == "flag":
             stats.flagged += 1
-        log(f"{item.id}: {verdict.label} in {time.monotonic() - started:.1f} s")
+        log(
+            log_line(
+                "verdict",
+                **base,
+                verdict=verdict.label,
+                reasons=len(verdict.reasons),
+                notes=len(verdict.notes),
+                seconds=round(time.monotonic() - started, 2),
+            )
+        )
     return stats
 
 

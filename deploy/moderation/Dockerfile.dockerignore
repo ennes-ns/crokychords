@@ -1,0 +1,9 @@
+# The build context is the repository root; only the moderation tool and the entry script go in.
+*
+!tools/moderation/pyproject.toml
+!tools/moderation/uv.lock
+!tools/moderation/policy.yaml
+!tools/moderation/run.py
+!tools/moderation/crokychords_moderation/
+!deploy/moderation/run.sh
+**/__pycache__

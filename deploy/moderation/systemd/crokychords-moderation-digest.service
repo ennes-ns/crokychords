@@ -1,0 +1,13 @@
+# The daily digest on the moderation inbox issue (docs/specs/moderation-v1.md §4.1); skipped with
+# a log line when moderation.env has no GITHUB_TOKEN. install.sh fills in the placeholders.
+[Unit]
+Description=Croky Chords moderation: daily digest
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@DEPLOY_DIR@
+ExecStart=@DOCKER@ compose run --rm -T crokychords-moderation --digest
+TimeoutStartSec=5min

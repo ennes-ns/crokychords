@@ -1,0 +1,11 @@
+# Every 15 minutes, with up to a minute of jitter (docs/specs/moderation-v1.md §4.1).
+[Unit]
+Description=Croky Chords moderation: check pending shares every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+RandomizedDelaySec=60
+Unit=crokychords-moderation.service
+
+[Install]
+WantedBy=timers.target

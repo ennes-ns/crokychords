@@ -1,14 +1,18 @@
 """Entry point of the moderation job (docs/specs/moderation-v1.md §4).
 
     uv run python run.py                      # the scheduled job: check pending shares, post verdicts
-    uv run python run.py --digest             # print the daily digest (empty when nothing waits)
+    uv run python run.py --digest             # comment the daily digest on the inbox issue
+    uv run python run.py --self-test          # ffmpeg, models on the fixtures, API and GitHub reachability
     uv run python run.py --files a.wav b.wav  # local dry run, no API: print the verdicts as JSON
     uv run python run.py --fixtures           # generate the test fixtures and check them
     uv run python run.py --warm               # download and load the models (fills the cache)
 
-The job only writes recommendations; the maintainer decides in the review queue.
+The job only writes recommendations; the maintainer decides in the review queue. Logs are one
+JSON object per line on stdout.
 Environment: MODERATION_API_BASE, MODERATION_TOKEN, MODERATION_ACCESS_CLIENT_ID,
-MODERATION_ACCESS_CLIENT_SECRET (optional), MODERATION_CACHE (model cache directory).
+MODERATION_ACCESS_CLIENT_SECRET (optional), MODERATION_INBOX_ISSUE and GITHUB_TOKEN (digest;
+skipped when either is missing), MODERATION_CACHE (model cache directory), MODERATION_THREADS
+(CPU threads per model).
 """
 
 from __future__ import annotations
@@ -26,8 +30,9 @@ from pathlib import Path
 from crokychords_moderation.analyse import Models, recommend
 from crokychords_moderation.api import JobApi
 from crokychords_moderation.fixtures import FIXTURES, wav_bytes
+from crokychords_moderation.ops import SelfTest, check_api, check_ffmpeg, check_github, check_models, post_digest
 from crokychords_moderation.policy import Policy, load_policy
-from crokychords_moderation.runner import api_guard, digest_markdown, run_once
+from crokychords_moderation.runner import api_guard, log_line, run_once
 
 SPOKEN_SENTENCE = "Please call me back tomorrow morning about the new song."
 
@@ -45,15 +50,22 @@ def load_models(policy: Policy, with_models: bool) -> Models:
     models.events = events
     models.versions.update(speech.versions())
     models.versions.update(events.versions())
-    print(f"models ready in {time.monotonic() - started:.1f} s", file=sys.stderr)
+    print(log_line("models_ready", seconds=round(time.monotonic() - started, 1), **models.versions), file=sys.stderr)
     return models
 
 
 def api_from_env() -> JobApi:
+    api = optional_api_from_env()
+    if api is None:
+        sys.exit("MODERATION_API_BASE and MODERATION_TOKEN must be set")
+    return api
+
+
+def optional_api_from_env() -> JobApi | None:
     base = os.environ.get("MODERATION_API_BASE", "").strip()
     token = os.environ.get("MODERATION_TOKEN", "").strip()
     if not base or not token:
-        sys.exit("MODERATION_API_BASE and MODERATION_TOKEN must be set")
+        return None
     return JobApi(
         base,
         token,
@@ -96,23 +108,43 @@ def tts_fixture(command: str) -> bytes:
         return out.read_bytes()
 
 
+def self_test(policy: Policy, with_models: bool) -> int:
+    """Exit 0 when every configured part works; unconfigured API or GitHub token count as skipped."""
+    test = SelfTest()
+    if check_ffmpeg(test) and with_models:
+        try:
+            models = load_models(policy, True)
+        except Exception as e:  # noqa: BLE001 - report any load or download failure as a check
+            test.record("models", "failed", error=f"{type(e).__name__}: {str(e)[:200]}")
+        else:
+            test.record("models", "ok", **models.versions)
+            check_models(test, models, policy)
+    elif not with_models:
+        test.record("models", "skipped", why="--no-models")
+    check_api(test, optional_api_from_env())
+    check_github(test)
+    print(log_line("self_test_done", ok=test.ok))
+    return 0 if test.ok else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--files", nargs="+", type=Path)
     parser.add_argument("--fixtures", action="store_true")
     parser.add_argument("--tts-command", help='e.g. "my-tts --output {out} {text}" (optional, local only)')
-    parser.add_argument("--digest", action="store_true")
+    parser.add_argument("--digest", action="store_true", help="comment the digest on the inbox issue")
+    parser.add_argument("--self-test", action="store_true", help="check ffmpeg, models, API and GitHub, then exit")
     parser.add_argument("--warm", action="store_true")
     parser.add_argument("--no-models", action="store_true", help="level and text rules only")
     args = parser.parse_args()
     policy = load_policy()
 
     if args.digest:
-        text = digest_markdown(api_from_env().digest())
-        if text is not None:
-            print(text)
-        return 0
+        return post_digest(api_from_env())
+
+    if args.self_test:
+        return self_test(policy, not args.no_models)
 
     if args.warm:
         load_models(policy, True)
@@ -134,8 +166,14 @@ def main() -> int:
     started = time.monotonic()
     stats = run_once(api, models, policy, args.limit)
     print(
-        f"checked {stats.checked} (flagged {stats.flagged}), skipped {stats.skipped}, "
-        f"failed {stats.failed} in {time.monotonic() - started:.1f} s"
+        log_line(
+            "run",
+            checked=stats.checked,
+            flagged=stats.flagged,
+            skipped=stats.skipped,
+            failed=stats.failed,
+            seconds=round(time.monotonic() - started, 1),
+        )
     )
     return 1 if stats.failed > 0 and stats.checked == 0 else 0
 

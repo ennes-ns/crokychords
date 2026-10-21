@@ -1,6 +1,6 @@
 # Spec: Moderation v1 — automatic checks as a recommendation, the maintainer decides
 
-Status: in progress (issue #96). One PR on branch `feat/moderation`: `tools/moderation/` (Python,
+Status: done (issue #96); the job moved to the maintainer's host in issue #112 (§4.1). One PR on branch `feat/moderation`: `tools/moderation/` (Python,
 uv), `.github/workflows/moderation.yml`, `apps/api` (job routes, reports, appeals, hard delete,
 D1 migration `0005`), `apps/web` (review page, Community tab), this spec, `docs/DATA.md` (model
 licences). Builds on [`community-v1`](community-v1.md) (shares, states, the review queue),
@@ -200,38 +200,91 @@ interface QueueItem { /* community-v1 fields */ auto: AutoVerdict | null;
 New error code: none (`401 unauthorized`, `409 conflict`, `429 rate_limited` and
 `500 server_misconfigured` exist).
 
-## 4. The job (`tools/moderation/`, `.github/workflows/moderation.yml`)
+## 4. The job (`tools/moderation/`, `deploy/moderation/`)
 
-- **Schedule**: every 15 minutes and `workflow_dispatch`; one run at a time (concurrency group,
-  no cancelling). Inert until the repository variable `MODERATION_ENABLED` is `true`.
-- **Steps**: checkout → uv (`tools/moderation`, `uv sync --frozen --group models`) → model cache
-  (`actions/cache` of `MODERATION_CACHE`, keyed on `uv.lock`) → `uv run python run.py`. ffmpeg is
-  preinstalled on `ubuntu-latest` (installed when missing). A manual run also runs the model
-  self-test (`tests/test_models.py`) first.
+- **Where**: on the maintainer's own host, in Docker, started by a systemd timer (§4.1, issue
+  #112), so the API needs no Access or WAF exception for foreign runner addresses.
+  `.github/workflows/moderation.yml` is an emergency fallback only: no schedule, `workflow_dispatch`
+  only, inert until the repository variable `MODERATION_ENABLED` is `true`.
+- **Schedule**: every 15 minutes (`RandomizedDelaySec=60`); one pass at a time (a oneshot unit is
+  not started again while it runs).
+- **Fallback workflow steps**: checkout → uv (`tools/moderation`, `uv sync --frozen --group
+  models`) → model cache (`actions/cache` of `MODERATION_CACHE`, keyed on `uv.lock` and
+  `policy.yaml`) → the model self-test (`tests/test_models.py`) → `uv run python run.py`.
 - **Per run**: `GET pending` (20 items) → per item: download, decode with ffmpeg (16 kHz mono
   float for the models, native rate for the levels), the checks of §1, the text route, the
   decision function (`policy.decide`, pure) → `POST verdict`. A failure on one item logs a line
   and goes on with the next; nothing in the logs names a sample beyond its id.
-- **Budget**: 20 samples ≤ 30 s each in under 5 minutes on the 4-core runner (faster-whisper
-  `small` int8 on CPU ≈ 1–3 s per sample, YAMNet TFLite < 0.2 s). Models are downloaded once
-  and cached (`MODERATION_CACHE`), with SHA-256 checks for the YAMNet files.
-- **Daily digest**: a second job of the same workflow at 07:00 UTC asks `GET digest` and, when
-  something waits, comments on the issue in the repository variable `MODERATION_INBOX_ISSUE` with
-  `gh issue comment` (counts only, no names). No e-mail.
+- **Logs**: one JSON object per line on stdout (`docker logs`, the journal): `pending` (count),
+  one `verdict` / `skipped` / `failed` line per share (`id`, `revision`, the label, counts of
+  reasons and notes, seconds; never the name, tags or transcript), and a closing `run` line with
+  the totals. The verdict itself is logged in `moderation_log` in D1 by the Worker, as before.
+- **Budget**: 20 samples ≤ 30 s each in under 5 minutes on 4 cores (faster-whisper `small` int8
+  on CPU ≈ 1–3 s per sample, YAMNet TFLite < 0.2 s). Models are downloaded once and cached
+  (`MODERATION_CACHE`), every file SHA-256 checked against `policy.yaml` (Whisper at a pinned
+  commit of its Hugging Face repository, YAMNet and its class map at pinned URLs).
+- **Daily digest**: `run.py --digest` at 07:00 UTC asks `GET digest` and, when something waits,
+  comments on the issue `MODERATION_INBOX_ISSUE` through the GitHub REST API with the token in
+  `GITHUB_TOKEN` (counts only, no names). Either one missing: the digest is skipped with a log
+  line. No e-mail.
+- **Self-test**: `run.py --self-test` checks ffmpeg on a generated WAV, loads the models
+  (fetching them on the first run), runs the vowel (`ok`) and the scream proxy
+  (`flag:violence`) through them, and checks that the job routes answer (`GET digest`, read-only)
+  and that the GitHub token can read the inbox issue. An unconfigured API or GitHub token is
+  `skipped`, anything that fails makes the exit code 1. One JSON line per check.
 - **Local dry run**: `uv run python run.py --files a.wav b.wav` prints the verdicts as JSON
   without any API; `uv run python run.py --fixtures` generates the test fixtures and runs them.
 
 ### Configuration
 
+On the host everything lives in `deploy/moderation/moderation.env` (git-ignored, mode `600`;
+template `moderation.env.example`). The fallback workflow reads the same names from the
+`moderation` environment's secrets and the repository variables.
+
 | Name | Kind | Where | Meaning |
 |------|------|-------|---------|
 | `MODERATION_TOKEN` | Worker secret | `wrangler secret put MODERATION_TOKEN` | the bearer token of §3.1 |
-| `MODERATION_TOKEN` | Actions secret | `gh secret set MODERATION_TOKEN --env moderation` | the same value |
-| `MODERATION_ACCESS_CLIENT_ID`, `MODERATION_ACCESS_CLIENT_SECRET` | Actions secrets | `gh secret set … --env moderation` | the Access service token |
-| `MODERATION_API_BASE` | Actions variable | `gh variable set MODERATION_API_BASE --body https://<host>/api` | the API base |
-| `MODERATION_ENABLED` | Actions variable | `gh variable set MODERATION_ENABLED --body true` | switches the schedule on |
-| `MODERATION_INBOX_ISSUE` | Actions variable | `gh variable set MODERATION_INBOX_ISSUE --body <n>` | issue number for the digest; unset: no digest |
+| `MODERATION_TOKEN` | job secret | `moderation.env` (fallback: Actions secret) | the same value |
+| `MODERATION_ACCESS_CLIENT_ID`, `MODERATION_ACCESS_CLIENT_SECRET` | job secrets | `moderation.env` (fallback: Actions secrets) | the Access service token |
+| `MODERATION_API_BASE` | job setting | `moderation.env` (fallback: Actions variable) | the API base, `https://<host>/api` |
+| `MODERATION_INBOX_ISSUE` | job setting | `moderation.env` (fallback: Actions variable) | issue number for the digest; unset: no digest |
+| `GITHUB_TOKEN` | job secret | `moderation.env` (fallback: the workflow's own token) | fine-grained token, this repository only, Issues read and write; unset: no digest |
+| `MODERATION_CACHE`, `MODERATION_THREADS` | container settings | `compose.yml` | model cache (`/models` volume), CPU threads per model (4) |
+| `MODERATION_ENABLED` | Actions variable | `gh variable set MODERATION_ENABLED --body true` | lets the fallback workflow run |
 | `AI` | Worker binding | `wrangler.toml` `[ai]` | Workers AI for the text route |
+
+### 4.1 Deployment on the host (`deploy/moderation/`)
+
+| File | What |
+|------|------|
+| `Dockerfile` | Python 3.12 slim (Debian), uv, the `models` dependency group as CPU wheels (faster-whisper on CTranslate2 with ONNX Runtime for the VAD, LiteRT for YAMNet; no torch, no CUDA), and a small ffmpeg/ffprobe built from the release tarball (SHA-256 pinned) with every built-in demuxer and decoder but no external libraries, encoders, network or devices. Runs as an unprivileged user. Models are not in the image. |
+| `Dockerfile.dockerignore` | the build context is the repository root; only `tools/moderation` (without tests) and `run.sh` go in |
+| `compose.yml` | service `crokychords-moderation`: `restart: "no"`, `env_file: ./moderation.env`, volume `models:/models`, `cpus: 4`, `mem_limit: 6g`, read-only root file system with a `/tmp` tmpfs, no capabilities |
+| `run.sh` | the entry point: one pass (no arguments), `--digest` or `--self-test`, then exit |
+| `moderation.env.example` | the six settings above, documented, without values |
+| `systemd/crokychords-moderation.{service,timer}` | one pass every 15 minutes, `RandomizedDelaySec=60`: `docker compose run --rm -T crokychords-moderation` |
+| `systemd/crokychords-moderation-digest.{service,timer}` | the digest daily at 07:00 UTC (`Persistent=true`): `… run --rm -T crokychords-moderation --digest` |
+| `systemd/install.sh` | as root: writes the four units to `/etc/systemd/system` with the clone's path and the `docker` path filled in, reloads systemd and enables both timers, printing every step; `--uninstall` removes them |
+
+The first run fetches the models (~485 MB) into the `models` volume; later runs start in a few
+seconds. Nothing is played; the container has no sound device.
+
+**Install** (on the host, as a user that may run `docker`; Docker with the compose plugin
+installed):
+
+```bash
+git clone https://github.com/ennes-ns/crokychords.git && cd crokychords/deploy/moderation
+cp moderation.env.example moderation.env && chmod 600 moderation.env && "${EDITOR:-nano}" moderation.env
+docker compose build
+docker compose run --rm crokychords-moderation --self-test
+sudo systemd/install.sh
+```
+
+The self-test must end with `{"event":"self_test_done","ok":true}` and show `api` and `github` as
+`ok` (not `skipped`). **Update**: `git pull && docker compose build` in the same directory (the
+next timer run uses the new image; rerun `sudo systemd/install.sh` when files under `systemd/`
+changed). **Logs**: `journalctl -u crokychords-moderation.service` (digest:
+`-u crokychords-moderation-digest.service`). **Stop**: `sudo systemd/install.sh --uninstall`.
 
 ## 5. Web
 
@@ -260,7 +313,9 @@ New error code: none (`401 unauthorized`, `409 conflict`, `429 rate_limited` and
 ## 6. Privacy
 
 - The job gets sample bytes, name and tags only; the Worker sends name and tags to Workers AI
-  (Cloudflare) and nothing anywhere else. The models run in the Actions runner.
+  (Cloudflare) and nothing anywhere else. The models run on the maintainer's host (§4.1; in the
+  fallback, in the Actions runner); the runtimes' usage telemetry is switched off
+  (`ORT_DISABLE_TELEMETRY`, `HF_HUB_DISABLE_TELEMETRY`).
 - The digest and the job logs contain counts and sample ids, never names, handles or e-mails.
 - `moderation_log` holds no e-mail address and no reporter id.
 
@@ -271,7 +326,8 @@ New error code: none (`401 unauthorized`, `409 conflict`, `429 rate_limited` and
   policy table in this spec against `policy.yaml`, the speech word rules and the allow-list
   folding, the text rules (word list, leetspeak folding, e-mail/URL/phone), the level metrics on
   generated audio (vowel, noise burst, silence, clipped square, too long), the waveform peaks,
-  the runner against a fake API (verdict posted, failures isolated, digest text). Tests with the
+  the runner against a fake API (verdict posted, failures isolated, JSON log lines, digest
+  text), the digest posting and the self-test against fakes (`tests/test_ops.py`). Tests with the
   real models run only when `MODERATION_MODELS=1` and the models are cached.
 - **API** (Workers runtime): job auth (no token, wrong token, missing secret, user token alone,
   service-token JWT without e-mail), pending list (stale revision included, current excluded,
