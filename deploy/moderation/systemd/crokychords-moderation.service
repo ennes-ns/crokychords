@@ -1,0 +1,14 @@
+# One pass of the moderation job (docs/specs/moderation-v1.md §4.1); started by the timer of the
+# same name. install.sh fills in @DEPLOY_DIR@ and @DOCKER@. A oneshot unit never runs twice at
+# once: a timer tick while a pass is still running is skipped.
+[Unit]
+Description=Croky Chords moderation: check pending shares (one pass)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@DEPLOY_DIR@
+ExecStart=@DOCKER@ compose run --rm -T crokychords-moderation
+TimeoutStartSec=20min

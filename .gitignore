@@ -32,3 +32,6 @@ apps/web/public/data/*.json
 # Rust (crates/)
 target/
 crates/croky-core/tools/.gen.mjs
+
+# Moderation job on the host: filled-in settings (deploy/moderation/moderation.env.example)
+deploy/moderation/moderation.env

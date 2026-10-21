@@ -293,9 +293,11 @@ Rollback: an empty e-mail list closes the door.
 
 ### 13. Moderation job (optional, `docs/specs/moderation-v1.md` §4)
 
-The scheduled job checks pending shares and writes a recommendation; nothing is decided by it.
-It reaches the API through Access with a service token and authenticates to the Worker with a
-bearer token. No value below belongs in the repository.
+The job checks pending shares and writes a recommendation; nothing is decided by it. It runs on
+the maintainer's own host in Docker with a systemd timer (`deploy/moderation`, `moderation-v1`
+§4.1); the GitHub workflow is only a manual fallback. It reaches the API through Access with a
+service token and authenticates to the Worker with a bearer token. No value below belongs in the
+repository.
 
 1. **[dashboard]** Zero Trust → Access controls → Service credentials → **Service Tokens** →
    Create, name `crokychords-moderation`, duration 1 year (renew before it expires). Copy the
@@ -303,36 +305,35 @@ bearer token. No value below belongs in the repository.
 2. **[dashboard]** The application `Croky Chords` (step 6) → Policies → add a policy
    `Moderation job`: action **Service Auth**, Include → **Service Token** →
    `crokychords-moderation`. Leave the `Invited` policy as it is.
-3. Generate the bearer token and store it in both places, without it touching the shell history
-   or the repository:
+3. Generate the bearer token and store it as the Worker secret, without it touching the shell
+   history or the repository:
 
    ```bash
    cd apps/api
-   openssl rand -hex 32 | tee >(pnpm exec wrangler secret put MODERATION_TOKEN) \
-     | gh secret set MODERATION_TOKEN --env moderation
+   openssl rand -hex 32 | tee >(pnpm exec wrangler secret put MODERATION_TOKEN)
    ```
 
-   (or run `pnpm exec wrangler secret put MODERATION_TOKEN` and
-   `gh secret set MODERATION_TOKEN --env moderation` and paste the same value twice).
-4. The service token for the job:
+   The printed value goes into `moderation.env` on the host (step 5); clear the terminal after.
+4. Daily digest: open an issue such as "Moderation inbox" and note its number. On GitHub create a
+   fine-grained token for this repository only with **Issues: read and write** (nothing else).
+5. Deploy (migration `0005` and the `AI` binding come with it), then on the host follow
+   `moderation-v1` §4.1 (five commands): `moderation.env` gets `MODERATION_API_BASE`,
+   `MODERATION_TOKEN`, the service token, the inbox issue number and the GitHub token.
 
-   ```bash
-   gh secret set MODERATION_ACCESS_CLIENT_ID --env moderation       # paste the Client ID
-   gh secret set MODERATION_ACCESS_CLIENT_SECRET --env moderation   # paste the Client Secret
-   gh variable set MODERATION_API_BASE --body https://chords.cr0ky.com/api
-   ```
+Check: `docker compose run --rm crokychords-moderation --self-test` ends with
+`{"event":"self_test_done","ok":true}` and shows `api` and `github` as `ok`; after a timer run,
+`journalctl -u crokychords-moderation.service` shows one JSON line per share and a `run` line;
+the review page shows `Auto: …` on pending items; the digest comments only when something waits.
+Rollback: `sudo deploy/moderation/systemd/install.sh --uninstall` (the job stops;
+recommendations already written stay, harmless), and
+`pnpm exec wrangler secret delete MODERATION_TOKEN` closes the job routes (`500`). Workers AI runs
+on its free daily allocation; the job asks it once per sample.
 
-5. Daily digest: open an issue such as "Moderation inbox" and note its number, then
-   `gh variable set MODERATION_INBOX_ISSUE --body <number>`. Unset: no digest.
-6. Deploy (migration `0005` and the `AI` binding come with it), then
-   `gh variable set MODERATION_ENABLED --body true` and start one run by hand:
-   Actions → Moderation → Run workflow (it also runs the model self-test).
-
-Check: the run's log ends with `checked N (flagged M) …`; the review page shows `Auto: …` on
-pending items; the digest job comments only when something waits. Rollback:
-`gh variable set MODERATION_ENABLED --body false` (the job stops; recommendations already
-written stay, harmless), and `pnpm exec wrangler secret delete MODERATION_TOKEN` closes the job
-routes (`500`). Workers AI runs on its free daily allocation; the job asks it once per sample.
+**Fallback on GitHub Actions** (host down for longer): the Actions secrets `MODERATION_TOKEN`,
+`MODERATION_ACCESS_CLIENT_ID`, `MODERATION_ACCESS_CLIENT_SECRET` (`gh secret set … --env
+moderation`), the variables `MODERATION_API_BASE`, `MODERATION_INBOX_ISSUE` and
+`MODERATION_ENABLED=true`, then Actions → Moderation (fallback) → Run workflow. A runner outside
+the host's network may be stopped by Cloudflare's country or bot rules in front of the API.
 
 ## 5. Cloudflare Access details
 

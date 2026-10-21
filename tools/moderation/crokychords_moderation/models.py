@@ -1,6 +1,7 @@
 """The open models (docs/specs/moderation-v1.md §1, rules 6-15), loaded lazily and cached on disk:
 faster-whisper (ASR) with its bundled silero VAD, and YAMNet (AudioSet events) as TFLite. They run
-on the CPU of the machine running the job; no audio leaves it."""
+on the CPU of the machine running the job; no audio leaves it. Every model file is fetched once
+from a pinned URL and refused when its SHA-256 differs."""
 
 from __future__ import annotations
 
@@ -30,6 +31,14 @@ def cache_dir() -> Path:
     return path
 
 
+def threads() -> int:
+    """CPU threads per model: ``MODERATION_THREADS`` (the container's CPU quota), else all cores."""
+    value = os.environ.get("MODERATION_THREADS", "").strip()
+    if value.isdigit() and int(value) > 0:
+        return int(value)
+    return os.cpu_count() or 2
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as f:
@@ -54,6 +63,21 @@ def fetch_checked(url: str, sha256: str, target: Path) -> Path:
     return target
 
 
+HF_RESOLVE = "https://huggingface.co/{repo}/resolve/{revision}/{name}"
+
+
+def fetch_whisper(asr: dict[str, Any]) -> Path:
+    """The CTranslate2 Whisper files at the pinned commit, each SHA-256 checked, in one folder
+    per revision (so a new pin never mixes with old files)."""
+    repo, revision = str(asr["repo"]), str(asr["revision"])
+    folder = cache_dir() / "whisper" / f"{repo.replace('/', '--')}-{revision[:12]}"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, sha256 in dict(asr["files"]).items():
+        url = HF_RESOLVE.format(repo=repo, revision=revision, name=name)
+        fetch_checked(url, str(sha256), folder / str(name))
+    return folder
+
+
 @dataclass
 class SpeechResult:
     transcript: str
@@ -64,22 +88,31 @@ class SpeechModel:
     """faster-whisper plus the silero VAD it bundles (ONNX)."""
 
     def __init__(self, config: dict[str, Any]) -> None:
+        # No usage telemetry from the runtimes (ONNX Runtime ships one that posts to Microsoft);
+        # set before the libraries load. The model files never come from the hub client here.
+        for name in ("ORT_DISABLE_TELEMETRY", "HF_HUB_DISABLE_TELEMETRY", "HF_HUB_OFFLINE"):
+            os.environ.setdefault(name, "1")
         from faster_whisper import WhisperModel
 
-        self.size = str(config["asr"]["size"])
-        self.compute_type = str(config["asr"]["compute_type"])
+        asr = config["asr"]
+        self.size = str(asr["size"])
+        self.compute_type = str(asr["compute_type"])
+        self.revision = str(asr["revision"])
         self.model = WhisperModel(
-            self.size,
+            str(fetch_whisper(asr)),
             device="cpu",
             compute_type=self.compute_type,
-            download_root=str(cache_dir() / "whisper"),
+            cpu_threads=threads(),
         )
 
     def versions(self) -> dict[str, str]:
         import faster_whisper
 
         return {
-            "asr": f"faster-whisper {faster_whisper.__version__} whisper-{self.size} {self.compute_type}",
+            "asr": (
+                f"faster-whisper {faster_whisper.__version__} whisper-{self.size} {self.compute_type}"
+                f" rev:{self.revision[:12]}"
+            ),
             "vad": f"silero-vad (faster-whisper {faster_whisper.__version__})",
         }
 
@@ -137,7 +170,7 @@ class EventModel:
         )
         with map_path.open(encoding="utf-8") as f:
             self.classes = [row["display_name"] for row in csv.DictReader(f)]
-        self.interpreter = Interpreter(model_path=str(model_path), num_threads=os.cpu_count() or 2)
+        self.interpreter = Interpreter(model_path=str(model_path), num_threads=threads())
         self.interpreter.allocate_tensors()
         self.input = self.interpreter.get_input_details()[0]["index"]
         self.output = self.interpreter.get_output_details()[0]["index"]

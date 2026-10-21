@@ -78,18 +78,20 @@ What it means:
 ### Moderation models
 
 The automatic checks of pending shares (`docs/specs/moderation-v1.md`) use open models that run
-in the GitHub Actions runner of `.github/workflows/moderation.yml`. They are downloaded at run
-time into the runner's cache (never into git, the build or the app) and only recommend; the
-maintainer decides.
+on the maintainer's own host in the container of `deploy/moderation` (fallback: the GitHub
+Actions runner of `.github/workflows/moderation.yml`). They are downloaded at run time into the
+container's `models` volume or the runner's cache (never into git, the image, the build or the
+app), every file SHA-256 checked, and only recommend; the maintainer decides.
 
 | Model / data | Used for | Source | Licence |
 |--------------|----------|--------|---------|
-| Whisper `small` (CTranslate2 conversion) | transcript of speech (rule 6) | OpenAI Whisper weights, converted by the faster-whisper project, fetched from the Hugging Face hub by `faster-whisper` | MIT (weights and conversion) |
+| Whisper `small` (CTranslate2 conversion) | transcript of speech (rule 6) | OpenAI Whisper weights, converted by the faster-whisper project; fetched from its Hugging Face repository at a pinned commit, each file SHA-256 pinned in `tools/moderation/policy.yaml` | MIT (weights and conversion) |
 | faster-whisper, CTranslate2 | running Whisper on the CPU | PyPI | MIT |
 | silero VAD v5 (bundled with faster-whisper) | share of the sample that is speech (rule 7) | PyPI (inside `faster-whisper`) | MIT |
 | YAMNet (TFLite, float32) | AudioSet event scores (rules 8–15) | Google's MediaPipe model storage, SHA-256 pinned in `tools/moderation/policy.yaml` | Apache 2.0 |
 | YAMNet class map (`yamnet_class_map.csv`) | the AudioSet class names | `tensorflow/models` at a pinned commit, SHA-256 pinned | Apache 2.0; the AudioSet ontology's class names are CC BY-SA 4.0 |
 | LiteRT (`ai-edge-litert`), ONNX Runtime | running YAMNet and the VAD | PyPI | Apache 2.0, MIT |
+| FFmpeg (ffmpeg, ffprobe) | decoding the samples | built in the container image from the release tarball (SHA-256 pinned), no external libraries; not redistributed | LGPL 2.1 or later (this build enables no GPL parts) |
 | Llama Guard 3 8B (`@cf/meta/llama-guard-3-8b`) | name and tags (rule 18) | Cloudflare Workers AI, called by the Worker; nothing is downloaded or redistributed | Llama 3.1 Community License (open weights) |
 
 Nothing is sent to a third party beyond Cloudflare: the audio stays in the runner, and only a

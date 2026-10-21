@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -69,8 +70,16 @@ def test_posts_a_verdict_per_item_and_isolates_failures(policy: Policy) -> None:
     assert len(payload["peaks"]) == 64
     assert stats.checked == 3 and stats.flagged == 2 and stats.skipped == 1 and stats.failed == 1
     assert len(api.texts) == 3
-    # Logs name samples by id only.
+    # Logs are one JSON object per line and name samples by id only.
     assert not any("Sample" in line for line in lines)
+    records = [json.loads(line) for line in lines]
+    assert records[0] == {"event": "pending", "count": 5}
+    by_id = {r["id"]: r for r in records[1:]}
+    assert by_id["a"]["event"] == "verdict" and by_id["a"]["verdict"] == "ok"
+    assert by_id["a"]["revision"] == 3 and isinstance(by_id["a"]["seconds"], float)
+    assert by_id["b"]["verdict"] == "flag:quality"
+    assert by_id["d"] == {"event": "skipped", "id": "d", "revision": 3, "status": 404, "why": "no longer pending"}
+    assert by_id["e"] == {"event": "failed", "id": "e", "revision": 3, "status": 500, "code": "internal"}
 
 
 def test_guard_unavailable_is_none() -> None:

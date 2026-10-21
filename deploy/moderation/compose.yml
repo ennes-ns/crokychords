@@ -1,0 +1,34 @@
+# The moderation job on the maintainer's own host (docs/specs/moderation-v1.md §4.1). Not a
+# long-running service: the systemd timers in ./systemd start one pass with
+# `docker compose run --rm crokychords-moderation` and the container exits.
+name: crokychords-moderation
+
+services:
+  crokychords-moderation:
+    build:
+      context: ../..
+      dockerfile: deploy/moderation/Dockerfile
+    image: crokychords-moderation:local
+    restart: 'no'
+    # Secrets and settings; copy moderation.env.example (git-ignored, never committed).
+    env_file:
+      - path: ./moderation.env
+        required: false
+    environment:
+      MODERATION_CACHE: /models
+      MODERATION_THREADS: '4'
+    volumes:
+      - models:/models
+    cpus: 4
+    mem_limit: 6g
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: '3' }
+
+volumes:
+  models:
